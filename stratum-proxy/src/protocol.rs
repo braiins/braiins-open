@@ -12,7 +12,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
 use tokio::codec::{Decoder, LinesCodec, Framed};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::await;
+
 
 //trait Message: Serialize + DeserializeOwned {
 trait Message {
@@ -123,7 +123,7 @@ impl<REQ, RESP> Client<REQ, RESP> where
 
     pub async fn connect(self, addr: &str) {
         let addr: SocketAddr = addr.parse().expect("Failed to parse server address");
-        let mut stream = await!(TcpStream::connect(&addr)).expect("Connection Failed");
+        let mut stream = await!(TcpStream::connect(&addr).compat()).expect("Connection Failed");
 
         // TODO generalize this and pass in codec object externally
         let mut lines =

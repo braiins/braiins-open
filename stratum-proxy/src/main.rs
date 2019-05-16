@@ -1,20 +1,14 @@
 #![feature(await_macro, async_await)]
 
-use std::io;
-use std::net::SocketAddr;
-use std::str::FromStr;
-
 use tokio::await;
-use tokio::codec::{Decoder, LinesCodec};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::prelude::*;
 
 use stratum;
 use stratum::v1::messages::SubscribeResponse;
 
 use stratumproxy::protocol;
-
-use failure::ResultExt;
+use stratumproxy::utils::CompatFix;
 
 static LISTEN_ADDR: &'static str = "127.0.0.1:3000";
 
@@ -24,7 +18,7 @@ static STRATUM_ADDR: &'static str = "52.212.249.159:3333";
 async fn run_client(addr: &'static str) {
     let (mut dispatcher, client) = protocol::Dispatcher::new_client();
 
-    tokio::spawn_async(client.connect(addr));
+    tokio::spawn(client.connect(addr).compat_fix());
 
     let subscribe_rpc: stratum::v1::rpc::Request = stratum::v1::messages::Subscribe {
         id: 0,
@@ -70,5 +64,5 @@ fn run_server() {
 }
 
 fn main() {
-    tokio::run_async(run_client(STRATUM_ADDR));
+    tokio::run(run_client(STRATUM_ADDR).compat_fix());
 }

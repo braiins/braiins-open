@@ -4,3 +4,4 @@
 #![feature(await_macro, async_await, futures_api)]
 
 pub mod protocol;
+pub mod utils;
