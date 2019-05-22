@@ -1,6 +1,6 @@
 #![feature(await_macro, async_await)]
 
-use tokio::await;
+use tokio::r#await;
 use tokio::net::TcpListener;
 use tokio::prelude::*;
 
@@ -38,30 +38,30 @@ async fn run_client(addr: &'static str) {
     println!("response: {:?}", resp);
 }
 
-fn run_server() {
-    let addr = LISTEN_ADDR.parse().unwrap();
-    let socket = TcpListener::bind(&addr).unwrap();
+// fn run_server() {
+//     let addr = LISTEN_ADDR.parse().unwrap();
+//     let socket = TcpListener::bind(&addr).unwrap();
 
-    let mut incoming = socket.incoming();
-    let server = async move {
-        while let Some(Ok(socket)) = await!(incoming.next()) {
-            let (reader, writer) = socket.split();
-            let copy = tokio::io::copy(reader, writer);
+//     let mut incoming = socket.incoming();
+//     let server = async move {
+//         while let Some(Ok(socket)) = await!(incoming.next()) {
+//             let (reader, writer) = socket.split();
+//             let copy = tokio::io::copy(reader, writer);
 
-            let msg = async move {
-                match await!(copy) {
-                    Ok((amount, _, _)) => eprintln!("wrote {} bytes", amount),
-                    Err(e) => eprintln!("error: {}", e),
-                }
-            };
+//             let msg = async move {
+//                 match await!(copy) {
+//                     Ok((amount, _, _)) => eprintln!("wrote {} bytes", amount),
+//                     Err(e) => eprintln!("error: {}", e),
+//                 }
+//             };
 
-            tokio::spawn_async(msg);
-        }
-    };
+//             tokio::spawn_async(msg);
+//         }
+//     };
 
-    eprintln!("Server running on {}", LISTEN_ADDR);
-    tokio::run_async(server);
-}
+//     eprintln!("Server running on {}", LISTEN_ADDR);
+//     tokio::run_async(server);
+// }
 
 fn main() {
     tokio::run(run_client(STRATUM_ADDR).compat_fix());

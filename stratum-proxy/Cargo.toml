@@ -5,7 +5,10 @@ authors = ["Braiins <braiins@braiins.com>"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "0.1.19", features = ["async-await-preview"] }
+# Note: Tokio is currently pinned to 0.1.19 and rustc is pinned to nightly-2019-05-10
+# using the toolchain file, becase async-await-preview is broken in Tokio 0.1.20
+# cf. https://github.com/tokio-rs/tokio/issues/1094
+tokio = { version = "=0.1.19", features = ["async-await-preview"] }
 stratum = { path = "../protocols/stratum" }
 futures-preview = { version = "0.3.0-alpha.15", features = ["compat"] }
 failure = "0.1.5"
