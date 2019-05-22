@@ -1,68 +1,48 @@
+//! Simple proxy that translates V2 protocol from clients to V1 protocol and connects to a
+//! requested pool
+
 #![feature(await_macro, async_await)]
 
-use tokio::r#await;
+use clap::{self, Arg};
+use futures::future::FutureExt;
+use slog::{error, info, trace};
 use tokio::net::TcpListener;
 use tokio::prelude::*;
+use tokio::r#await;
+use wire::utils::CompatFix;
+use wire::{tokio, Framing};
 
-use stratum;
-use stratum::v1::messages::SubscribeResponse;
+use stratumproxy::server;
 
-use stratumproxy::protocol;
-use stratumproxy::utils::CompatFix;
-
-static LISTEN_ADDR: &'static str = "127.0.0.1:3000";
-
-static STRATUM_ADDR: &'static str = "52.212.249.159:3333";
-
-
-async fn run_client(addr: &'static str) {
-    let (mut dispatcher, client) = protocol::Dispatcher::new_client();
-
-    tokio::spawn(client.connect(addr).compat_fix());
-
-    let subscribe_rpc: stratum::v1::rpc::Request = stratum::v1::messages::Subscribe {
-        id: 0,
-        agent_signature: "bOS".into(),
-        extra_nonce1: None,
-    }
-        .into();
-    // let resp: SubscribeResponse = await!(dispatcher.send(subscribe_rpc)).expect("Sending failed");
-    let resp: stratum::v1::rpc::Response = await!(dispatcher.send(subscribe_rpc)).expect("Sending failed");
-    //    let subscribe_rpc: stratum::v1::rpc::Request = stratum::v1::messages::Subscribe::create(
-    //        0,
-    //        "bOS",
-    //        None,
-    //    )
-    //        .into();
-
-    println!("response: {:?}", resp);
-}
-
-// fn run_server() {
-//     let addr = LISTEN_ADDR.parse().unwrap();
-//     let socket = TcpListener::bind(&addr).unwrap();
-
-//     let mut incoming = socket.incoming();
-//     let server = async move {
-//         while let Some(Ok(socket)) = await!(incoming.next()) {
-//             let (reader, writer) = socket.split();
-//             let copy = tokio::io::copy(reader, writer);
-
-//             let msg = async move {
-//                 match await!(copy) {
-//                     Ok((amount, _, _)) => eprintln!("wrote {} bytes", amount),
-//                     Err(e) => eprintln!("error: {}", e),
-//                 }
-//             };
-
-//             tokio::spawn_async(msg);
-//         }
-//     };
-
-//     eprintln!("Server running on {}", LISTEN_ADDR);
-//     tokio::run_async(server);
-// }
+static V2_ADDR: &'static str = "127.0.0.1:3334";
+static V1_ADDR: &'static str = "127.0.0.1:3335";
 
 fn main() {
-    tokio::run(run_client(STRATUM_ADDR).compat_fix());
+    let args = clap::App::new("stratum-proxy")
+        .arg(
+            Arg::with_name("listen")
+                .short("l")
+                .long("listen")
+                .value_name("ADDR")
+                .help("Address the V2 end listen on")
+                .required(true)
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("remote")
+                .short("r")
+                .long("remote")
+                .value_name("ADDR")
+                .help("Address the V1 end connects to")
+                .required(true)
+                .takes_value(true),
+        )
+        .get_matches();
+
+    // Unwraps should be ok as long as the flags are required
+    let v2_addr = args.value_of("listen").unwrap();
+    let v1_addr = args.value_of("remote").unwrap();
+
+    let (server_task, _) = server::run(v2_addr.to_string(), v1_addr.to_string());
+    tokio::run(server_task.compat_fix());
 }

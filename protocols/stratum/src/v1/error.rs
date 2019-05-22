@@ -1,7 +1,6 @@
 //! Version 1 errors only
 
-use failure::{Backtrace, Context, Fail};
-use std::fmt::{self, Display};
+use failure::Fail;
 
 #[derive(Clone, Eq, PartialEq, Debug, Fail)]
 pub enum ErrorKind {

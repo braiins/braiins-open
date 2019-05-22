@@ -3,7 +3,9 @@ use lazy_static::lazy_static;
 use slog::{o, Drain, Level, LevelFilter, Logger};
 use slog_async;
 use slog_term;
-use std::panic::PanicInfo;
+
+// TODO: is it best practice to reexport this?
+pub use packed_struct;
 
 pub mod error;
 pub mod v1;
@@ -59,3 +61,8 @@ pub fn logger() -> &'static Logger {
 //    rurminer::init_logger(logger.clone());
 //}
 //
+
+// This is here because some test utilities need to be shared between
+// both unit and integration tests.
+#[doc(hidden)]
+pub mod test_utils;

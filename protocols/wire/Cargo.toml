@@ -1,0 +1,17 @@
+[package]
+name = "wire"
+version = "0.1.0"
+authors = ["Braiins <braiins@braiins.com>"]
+edition = "2018"
+
+[dependencies]
+# Note: Tokio is currently pinned to 0.1.19 and rustc is pinned to nightly-2019-05-10
+# using the toolchain file, becase async-await-preview is broken in Tokio 0.1.20
+# cf. https://github.com/tokio-rs/tokio/issues/1094
+# Also, this dependency spec is used by dependant crates:
+# This is the central place to specify Tokio dependency.
+tokio = { version = "=0.1.19", features = ["async-await-preview"] }
+bytes = "0.4"
+futures-preview = { version = "0.3.0-alpha.15", features = ["compat"] }
+futures-01 = { version = "0.1.27", package = "futures" }
+failure = "0.1.5"

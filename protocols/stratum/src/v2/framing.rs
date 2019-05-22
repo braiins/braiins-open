@@ -4,6 +4,8 @@ use packed_struct::prelude::*;
 use packed_struct_codegen::PackedStruct;
 use packed_struct_codegen::PrimitiveEnum_u8;
 
+pub mod codec;
+
 /// Header of the protocol message
 #[derive(PackedStruct, Debug)]
 #[packed_struct(endian = "lsb")]
@@ -13,9 +15,23 @@ pub struct Header {
     pub msg_length: Integer<u32, packed_bits::Bits24>,
 }
 
+impl Header {
+    pub const SIZE: usize = 4;
+
+    pub fn new(msg_type: MessageType, msg_length: usize) -> Header {
+        assert!(msg_length <= 0xffffff, "Message too large");
+        let msg_length = (msg_length as u32).into();
+
+        Header {
+            msg_type,
+            msg_length,
+        }
+    }
+}
+
 /// All message recognized by the protocol
 //#[derive(PrimitiveEnum_u8, Clone, Copy, Debug, PartialEq)]
-#[derive(PrimitiveEnum_u8, Clone, Copy, Debug)]
+#[derive(PrimitiveEnum_u8, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MessageType {
     SetupMiningConnection = 0x00,
     SetupMiningConnectionSuccess = 0x01,
@@ -34,10 +50,7 @@ mod test {
     #[test]
     fn test_header_pack() {
         let expected_bytes = [0x00u8, 0xcc, 0xbb, 0xaa];
-        let header = Header {
-            msg_type: MessageType::SetupMiningConnection,
-            msg_length: 0xaabbcc.into(),
-        };
+        let header = Header::new(MessageType::SetupMiningConnection, 0xaabbcc);
         let header_bytes = header.pack();
         assert_eq!(
             expected_bytes, header_bytes,

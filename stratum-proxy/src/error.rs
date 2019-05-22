@@ -1,9 +1,11 @@
-//! Module that represents stratum protocol errors
+//! Module that represents custom stratum proxy errors
 
 use failure::{Backtrace, Context, Fail};
 use std;
 use std::fmt::{self, Display};
 use std::io;
+
+use stratum::error;
 
 #[derive(Debug)]
 pub struct Error {
@@ -12,28 +14,17 @@ pub struct Error {
 
 #[derive(Clone, Eq, PartialEq, Debug, Fail)]
 pub enum ErrorKind {
-    /// Input/Output error.
-    #[fail(display = "I/O error: {}", _0)]
-    Io(String),
-
-    /// Errors emitted by serde
-    #[fail(display = "Serde: {}", _0)]
-    Serde(String),
-
     /// General error used for more specific .
     #[fail(display = "General error: {}", _0)]
     General(String),
 
-    /// Unexpected version of something.
-    #[fail(display = "Unexpected {} version: {}, expected: {}", _0, _1, _2)]
-    UnexpectedVersion(String, String, String),
-
-    /// Stratum version 1 error
-    #[fail(display = "V1 error: {}", _0)]
-    V1(super::v1::error::ErrorKind),
-    /// Stratum version 2 error
-    #[fail(display = "V2 error: {}", _0)]
-    V2(super::v2::error::ErrorKind),
+    /// Input/Output error.
+    #[fail(display = "I/O error: {}", _0)]
+    Io(String),
+    // TODO remove
+    // Stratum error
+    //    #[fail(display = "Stratum error: {}", _0)]
+    //    Stratum(super::v1::error::ErrorKind),
 }
 
 /// Implement Fail trait instead of use Derive to get more control over custom type.
@@ -71,26 +62,6 @@ impl From<ErrorKind> for Error {
     }
 }
 
-/// V1 Protocol version specific convenience conversion to Error
-impl From<super::v1::error::ErrorKind> for Error {
-    fn from(kind: super::v1::error::ErrorKind) -> Self {
-        ErrorKind::V1(kind).into()
-    }
-}
-
-/// V2 Protocol version specific convenience conversion to Error
-impl From<super::v2::error::ErrorKind> for Error {
-    fn from(kind: super::v2::error::ErrorKind) -> Self {
-        ErrorKind::V2(kind).into()
-    }
-}
-
-impl From<Context<ErrorKind>> for Error {
-    fn from(inner: Context<ErrorKind>) -> Self {
-        Self { inner }
-    }
-}
-
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
         let msg = e.to_string();
@@ -121,15 +92,6 @@ impl From<Context<String>> for Error {
     fn from(context: Context<String>) -> Self {
         Self {
             inner: context.map(|info| ErrorKind::General(info)),
-        }
-    }
-}
-
-impl From<serde_json::error::Error> for Error {
-    fn from(e: serde_json::error::Error) -> Self {
-        let msg = e.to_string();
-        Self {
-            inner: e.context(ErrorKind::Serde(msg)),
         }
     }
 }

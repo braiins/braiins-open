@@ -1,10 +1,41 @@
 //! All stratum V2 protocol messages
 
+use super::framing::{Header, MessageType};
 use super::types::*;
+use packed_struct::PackedStruct;
 use serde;
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
+use std::io::{Cursor, Write};
+use wire;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[cfg(test)]
+pub mod test;
+
+/// Serializes the specified message into a frame
+/// TODO maybe this should return an error, too
+fn serialize_with_header<M: Serialize>(message: M, msg_type: MessageType) -> wire::TxFrame {
+    // FIXME: temporary JSON serialization
+
+    let buffer = Vec::with_capacity(128); // This is what serde does
+
+    // TODO review the behavior below, that would mean it would optimize the move completely?
+    // Cursor is used here to write JSON and then the header in front of it
+    // otherwise the JSON would have to be shifted in memory
+    let mut cursor = Cursor::new(buffer);
+    cursor.set_position(Header::SIZE as u64);
+    serde_json::to_writer(&mut cursor, &message).expect("Error serializing JSON value"); // This shouldn't actually fail
+
+    let payload_len = cursor.position() as usize - Header::SIZE;
+    let header = Header::new(msg_type, payload_len);
+    cursor.set_position(0);
+    // TODO this may also fail...
+    cursor.write(&header.pack()).expect("Writing header failed");
+
+    wire::Frame::new(cursor.into_inner().into_boxed_slice())
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct SetupMiningConnection {
     pub protocol_version: u16,
     pub connection_url: String,
@@ -12,11 +43,70 @@ pub struct SetupMiningConnection {
     pub required_extranonce_size: u16,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct SetupMiningConnectionSuccess {
+/// TODO this code is to be generated
+impl From<SetupMiningConnection> for wire::TxFrame {
+    fn from(m: SetupMiningConnection) -> wire::TxFrame {
+        serialize_with_header(&m, MessageType::SetupMiningConnection)
+    }
+}
+
+/// TODO: the from type should be RxFrame
+impl TryFrom<&[u8]> for SetupMiningConnection {
+    type Error = crate::error::Error;
+
+    fn try_from(msg: &[u8]) -> Result<Self, Self::Error> {
+        serde_json::from_slice(msg).map_err(Into::into)
+    }
+}
+
+//  specific protocol implementation
+impl wire::Payload<super::V2Protocol> for SetupMiningConnection {
+    fn accept(
+        &self,
+        msg: &wire::Message<super::V2Protocol>,
+        handler: &<super::V2Protocol as wire::ProtocolBase>::Handler,
+    ) {
+        handler.visit_setup_mining_connection(msg, self);
+    }
+}
+
+// specific protocol implementation
+//impl wire::Payload<P> for SetupMiningConnection {
+//    fn accept(&self, msg: &wire::Message<P>, handler: &<P as wire::Protocol>::Handler) {
+//        unimplemented!()
+//    }
+//}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct SetupMiningConnectionSuccess {
     pub used_protocol_version: u16,
     pub max_extranonce_size: u16,
     pub pub_key: Vec<u8>,
+}
+
+impl From<SetupMiningConnectionSuccess> for wire::TxFrame {
+    fn from(m: SetupMiningConnectionSuccess) -> wire::TxFrame {
+        serialize_with_header(&m, MessageType::SetupMiningConnectionSuccess)
+    }
+}
+
+impl TryFrom<&[u8]> for SetupMiningConnectionSuccess {
+    type Error = crate::error::Error;
+
+    fn try_from(msg: &[u8]) -> Result<Self, Self::Error> {
+        serde_json::from_slice(msg).map_err(Into::into)
+    }
+}
+
+//  specific protocol implementation
+impl wire::Payload<super::V2Protocol> for SetupMiningConnectionSuccess {
+    fn accept(
+        &self,
+        msg: &wire::Message<super::V2Protocol>,
+        handler: &<super::V2Protocol as wire::ProtocolBase>::Handler,
+    ) {
+        handler.visit_setup_mining_connection_success(msg, self);
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
