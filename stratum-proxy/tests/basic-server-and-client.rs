@@ -58,10 +58,7 @@ fn test_v2server() {
                 msg.accept(&test_utils::v2::TestIdentityHandler);
 
                 // test response frame
-                let response: TxFrame =
-                    test_utils::v2::build_setup_mining_connection_success().into();
-
-                await!(conn.send(response));
+                await!(conn.send(test_utils::v2::build_setup_mining_connection_success()));
             });
 
             // Testing client
