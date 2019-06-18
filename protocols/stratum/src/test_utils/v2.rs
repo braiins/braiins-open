@@ -23,7 +23,7 @@ impl TestIdentityHandler {
 
 impl V2Handler for TestIdentityHandler {
     fn visit_setup_mining_connection(
-        &self,
+        &mut self,
         msg: &wire::Message<V2Protocol>,
         payload: &SetupMiningConnection,
     ) {
@@ -31,7 +31,7 @@ impl V2Handler for TestIdentityHandler {
     }
 
     fn visit_setup_mining_connection_success(
-        &self,
+        &mut self,
         msg: &wire::Message<V2Protocol>,
         payload: &SetupMiningConnectionSuccess,
     ) {

@@ -19,16 +19,17 @@ impl ProtocolBase for V2Protocol {
 }
 
 /// Specifies all messages to be visited
-pub trait V2Handler {
+/// TODO document why anything implementing the Handler must be static
+pub trait V2Handler: 'static {
     fn visit_setup_mining_connection(
-        &self,
+        &mut self,
         _msg: &Message<V2Protocol>,
         _payload: &messages::SetupMiningConnection,
     ) {
     }
 
     fn visit_setup_mining_connection_success(
-        &self,
+        &mut self,
         _msg: &Message<V2Protocol>,
         _payload: &messages::SetupMiningConnectionSuccess,
     ) {

@@ -64,7 +64,7 @@ impl wire::Payload<super::V2Protocol> for SetupMiningConnection {
     fn accept(
         &self,
         msg: &wire::Message<super::V2Protocol>,
-        handler: &<super::V2Protocol as wire::ProtocolBase>::Handler,
+        handler: &mut <super::V2Protocol as wire::ProtocolBase>::Handler,
     ) {
         handler.visit_setup_mining_connection(msg, self);
     }
@@ -103,7 +103,7 @@ impl wire::Payload<super::V2Protocol> for SetupMiningConnectionSuccess {
     fn accept(
         &self,
         msg: &wire::Message<super::V2Protocol>,
-        handler: &<super::V2Protocol as wire::ProtocolBase>::Handler,
+        handler: &mut <super::V2Protocol as wire::ProtocolBase>::Handler,
     ) {
         handler.visit_setup_mining_connection_success(msg, self);
     }

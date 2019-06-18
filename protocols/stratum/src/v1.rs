@@ -20,13 +20,23 @@ impl ProtocolBase for V1Protocol {
 }
 
 /// Specifies all messages to be visited
-pub trait V1Handler {
+pub trait V1Handler: 'static {
     /// Handles the result part of the response
-    fn visit_stratum_result(&self, _msg: &Message<V1Protocol>, _payload: &framing::StratumResult) {}
+    fn visit_stratum_result(
+        &mut self,
+        _msg: &Message<V1Protocol>,
+        _payload: &framing::StratumResult,
+    ) {
+    }
     /// Handles the response part of the response
-    fn visit_stratum_error(&self, _msg: &Message<V1Protocol>, _payload: &framing::StratumError) {}
+    fn visit_stratum_error(
+        &mut self,
+        _msg: &Message<V1Protocol>,
+        _payload: &framing::StratumError,
+    ) {
+    }
 
-    fn visit_subscribe(&self, _msg: &Message<V1Protocol>, _payload: &messages::Subscribe) {}
+    fn visit_subscribe(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Subscribe) {}
 }
 
 pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {

@@ -6,7 +6,7 @@ pub trait ProtocolBase {
 
 /// Generic payload for a message.
 pub trait Payload<P: ProtocolBase>: Sync + Send {
-    fn accept(&self, msg: &Message<P>, handler: &P::Handler);
+    fn accept(&self, msg: &Message<P>, handler: &mut P::Handler);
 }
 
 /// Generic message as e.g. created by reading from a stream.
@@ -24,7 +24,7 @@ impl<P: ProtocolBase> Message<P> {
 
     /// Adaptor method to allow visiting messages directly even if the actual
     /// visitor pattern is implemented over payloads.
-    pub fn accept(&self, handler: &P::Handler) {
+    pub fn accept(&self, handler: &mut P::Handler) {
         self.payload.accept(self, handler);
     }
 }

@@ -55,7 +55,7 @@ fn test_v2server() {
                 let mut conn = await!(server.next()).unwrap().unwrap();
                 let msg = await!(conn.next()).unwrap().unwrap();
                 // test handler verifies that the message
-                msg.accept(&test_utils::v2::TestIdentityHandler);
+                msg.accept(&mut test_utils::v2::TestIdentityHandler);
 
                 // test response frame
                 await!(conn.send(test_utils::v2::build_setup_mining_connection_success()));
@@ -67,7 +67,7 @@ fn test_v2server() {
             await!(connection.send(test_utils::v2::build_setup_mining_connection()));
 
             let response = await!(connection.next()).unwrap().unwrap();
-            response.accept(&test_utils::v2::TestIdentityHandler);
+            response.accept(&mut test_utils::v2::TestIdentityHandler);
         }
             .compat_fix(),
     );
@@ -133,7 +133,7 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
             while let Some(msg) = await!(conn.next()) {
                 let msg: wire::Message<V1Protocol> = msg.unwrap();
                 // test handler verifies that the message
-                msg.accept(&test_utils::v1::TestIdentityHandler);
+                msg.accept(&mut test_utils::v1::TestIdentityHandler);
 
                 // test response frame
                 let response: TxFrame =
@@ -166,7 +166,7 @@ fn test_v1server() {
             await!(connection.send(request));
 
             let response = await!(connection.next()).unwrap().unwrap();
-            response.accept(&test_utils::v1::TestIdentityHandler);
+            response.accept(&mut test_utils::v1::TestIdentityHandler);
         }
             .compat_fix(),
     );

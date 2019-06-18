@@ -86,7 +86,7 @@ impl TryFrom<framing::Request> for Subscribe {
 
 /// Specific protocol implementation for subscribe
 impl wire::Payload<V1Protocol> for Subscribe {
-    fn accept(&self, msg: &wire::Message<V1Protocol>, handler: &V1Handler) {
+    fn accept(&self, msg: &wire::Message<V1Protocol>, handler: &mut V1Handler) {
         handler.visit_subscribe(msg, self);
     }
 }

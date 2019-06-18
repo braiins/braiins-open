@@ -108,7 +108,7 @@ pub fn build_stratum_err_rpc_response() -> Response {
 pub struct TestIdentityHandler;
 
 impl TestIdentityHandler {
-    fn visit_and_check<P, F>(&self, msg: &wire::Message<V1Protocol>, payload: &P, build: F)
+    fn visit_and_check<P, F>(&mut self, msg: &wire::Message<V1Protocol>, payload: &P, build: F)
     where
         P: Debug + PartialEq,
         F: FnOnce() -> P,
@@ -121,11 +121,11 @@ impl TestIdentityHandler {
 }
 
 impl V1Handler for TestIdentityHandler {
-    fn visit_subscribe(&self, msg: &wire::Message<V1Protocol>, payload: &Subscribe) {
+    fn visit_subscribe(&mut self, msg: &wire::Message<V1Protocol>, payload: &Subscribe) {
         self.visit_and_check(msg, payload, build_subscribe);
     }
 
-    fn visit_stratum_result(&self, msg: &wire::Message<V1Protocol>, payload: &StratumResult) {
+    fn visit_stratum_result(&mut self, msg: &wire::Message<V1Protocol>, payload: &StratumResult) {
         self.visit_and_check(msg, payload, || {
             StratumResult::new_from(build_subscribe_ok_result())
                 .expect("Cannot convert to stratum result")
