@@ -23,13 +23,7 @@ pub fn build_subscribe_rpc_request() -> Request {
         // TODO reuse build_subscribe() + try_from
         payload: RequestPayload {
             method: Method::Subscribe,
-            params: to_value(vec![
-                MINER_SW_SIGNATURE.into(),
-                Value::Null,
-                POOL_URL.into(),
-                format!("{}", POOL_PORT).into(),
-            ])
-            .unwrap(),
+            params: to_value(build_subscribe()).unwrap(),
         },
     }
 }
