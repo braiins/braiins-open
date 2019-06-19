@@ -126,8 +126,6 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
     let addr = format!("{}:{}", ADDR, PORT_V1).parse().unwrap();
     let mut server = Server::<V1Framing>::bind(&addr).unwrap();
 
-    // Define a server task that reacts to any incoming message and responds
-    // with SetupMiningConnectionSuccess
     async move {
         while let Some(conn) = await!(server.next()) {
             let mut conn = conn.unwrap();
@@ -169,6 +167,24 @@ fn test_v1server() {
     );
 }
 
+async fn test_v2_client(server_addr: String) {
+    let sock_server_addr = server_addr.parse().expect("Invalid server address");
+    // Test client for V2
+    await!(utils::backoff(50, 4, async move || -> Result<(), Error> {
+        let mut conn = await!(Connection::<V2Framing>::connect(&sock_server_addr))?;
+
+        // Initialize server connection
+        await!(conn.send(test_utils::v2::build_setup_mining_connection()))
+            .expect("Could not send message");
+
+        // let response = await!(conn.next()).unwrap().unwrap();
+        // response.accept(&test_utils::v2::TestIdentityHandler);
+
+        Ok(())
+    }))
+    .unwrap_or_else(|e| panic!("Could not connect to {}: {}", server_addr, e));
+}
+
 #[test]
 fn test_v2server_full() {
     runtime::run(
@@ -180,24 +196,11 @@ fn test_v2server_full() {
             let (v2server_task, mut v2server_quit) = server::run(addr_v2.clone(), addr_v1);
             runtime::spawn(v2server_task.compat_fix());
 
-            let sock_addr_v2 = addr_v2.parse().expect("Invalid server address");
-            await!(utils::backoff(50, 4, async move || -> Result<(), Error> {
-                // Testing client
-                let mut conn = await!(Connection::<V2Framing>::connect(&sock_addr_v2))?;
-
-                // Initialize server connection
-                await!(conn.send(test_utils::v2::build_setup_mining_connection()))
-                    .expect("Could not send message");
-
-                // let response = await!(conn.next()).unwrap().unwrap();
-                // response.accept(&test_utils::v2::TestIdentityHandler);
-
-                Ok(())
-            }))
-            .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr_v2, e));
+            await!(test_v2_client(addr_v2));
 
             // Signal the server to shut down
             let _ = v2server_quit.try_send(());
+            // TODO kill v1 server
         }
             .compat_fix(),
     );
