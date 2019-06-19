@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::ops::Deref;
 use tokio::codec::{Decoder, Encoder};
 use tokio::io::Error as IOError;
@@ -51,5 +52,6 @@ pub trait Framing: 'static {
         + Default
         + Unpin
         + Send
+        + Debug
         + 'static;
 }

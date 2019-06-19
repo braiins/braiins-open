@@ -36,8 +36,8 @@ impl<F: StdFuture + Send + 'static> CompatFix for F {
 #[cfg(target_family = "unix")]
 mod raw_fd {
     use std::io;
-    use std::net::SocketAddr;
     use std::net::TcpStream as StdStream;
+    use std::net::{Shutdown, SocketAddr};
     use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
     use tokio::net::TcpStream as TokioStream;
 
@@ -51,11 +51,19 @@ mod raw_fd {
     }
 
     impl Fd {
+        // WARN: It's imperative to convert the stream back into raw fd
+        // after using it, this prevents its drop() from closing the socket.
+
+        pub fn shutdown(&self, how: Shutdown) -> Result<(), io::Error> {
+            let stream = unsafe { StdStream::from_raw_fd(self.0) };
+            let res = stream.shutdown(how);
+            let _ = stream.into_raw_fd();
+            res
+        }
+
         pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
             let stream = unsafe { StdStream::from_raw_fd(self.0) };
             let res = stream.local_addr();
-            // Converting the stream back into raw fd prevents its drop()
-            // from closing the socket:
             let _ = stream.into_raw_fd();
             res
         }
@@ -74,8 +82,8 @@ mod raw_fd {
 #[cfg(target_family = "windows")]
 mod raw_fd {
     use std::io;
-    use std::net::SocketAddr;
     use std::net::TcpStream as StdStream;
+    use std::net::{Shutdown, SocketAddr};
     use std::os::windows::io::{AsRawSocket, IntoRawSocket, RawSocket};
     use tokio::net::TcpStream as TokioStream;
 
@@ -89,6 +97,16 @@ mod raw_fd {
     }
 
     impl Fd {
+        // WARN: It's imperative to convert the stream back into raw fd
+        // after using it, this prevents its drop() from closing the socket.
+
+        pub fn shutdown(&self, how: Shutdown) -> Result<(), io::Error> {
+            let stream = unsafe { StdStream::from_raw_socket(self.0) };
+            let res = stream.shutdown(how);
+            let _ = stream.into_raw_socket();
+            res
+        }
+
         pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
             let stream = unsafe { StdStream::from_raw_socket(self.0) };
             let res = stream.local_addr();
@@ -127,9 +145,8 @@ fn wrap_as_io<T>(t: Async<T>) -> Result<Async<T>, io::Error> {
 }
 
 impl TcpStreamRecv {
-    pub async fn shutdown(self, how: Shutdown) -> Result<(), io::Error> {
-        let locker = await!(self.inner.lock().compat()).expect("internal error"); // Docs say this doesn't actually fail
-        locker.shutdown(how)
+    pub fn shutdown(&self, how: Shutdown) -> Result<(), io::Error> {
+        self.fd.shutdown(how)
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
@@ -168,9 +185,8 @@ unsafe impl Send for TcpStreamSend {}
 unsafe impl Sync for TcpStreamSend {}
 
 impl TcpStreamSend {
-    pub async fn shutdown(self, how: Shutdown) -> Result<(), io::Error> {
-        let locker = await!(self.inner.lock().compat()).expect("internal error"); // Docs say this doesn't actually fail
-        locker.shutdown(how)
+    pub fn shutdown(&self, how: Shutdown) -> Result<(), io::Error> {
+        self.fd.shutdown(how)
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {

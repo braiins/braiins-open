@@ -38,7 +38,7 @@ struct ConnTranslation {
     v1_translation_rx: mpsc::Receiver<TxFrame>,
     /// Downstream connection
     v2_conn: Connection<V2Framing>,
-    /// Frames from the translator to be sent out via V1 connection
+    /// Frames from the translator to be sent out via V2 connection
     v2_translation_rx: mpsc::Receiver<TxFrame>,
 }
 
@@ -62,7 +62,16 @@ impl ConnTranslation {
     }
 
     async fn run(mut self) {
-        while let Some(msg) = await!(self.v2_conn.next()) {
+        // TODO:
+        // let mut v1_translation_rx = self.v1_translation_rx;
+        // let mut v1_conn = self.v1_conn;
+        // let v1_send_task = async move { while let Some(msg) = await!(v1_translation_rx.next()) {} };
+
+        let (mut v2_conn_rx, v2_conn_tx) = self.v2_conn.split();
+
+        // TODO: v2 send task
+
+        while let Some(msg) = await!(v2_conn_rx.next()) {
             let msg = match msg {
                 Ok(msg) => msg,
                 Err(e) => {
@@ -76,7 +85,7 @@ impl ConnTranslation {
         info!(
             LOGGER,
             "Terminating connection from: {:?}",
-            self.v2_conn.peer_addr()
+            v2_conn_rx.peer_addr()
         )
     }
 }

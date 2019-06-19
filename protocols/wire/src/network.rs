@@ -108,7 +108,7 @@ impl<F: Framing> Client<F> {
                     // Client is to be disconnected.
                     // This shutdown() call forwards to TcpStream::shutdown(),
                     // see comments in utils::tcp_split() as to how this is done.
-                    let _ = await!(lines_tx.into_inner().shutdown(Shutdown::Both));
+                    let _ = lines_tx.into_inner().shutdown(Shutdown::Both);
                     return;
                 }
             };
@@ -134,29 +134,29 @@ impl<F: Framing> Client<F> {
         }
     }
 
-    pub async fn connect(mut self, addr: &str) {
-        let addr: SocketAddr = addr.parse().expect("Failed to parse server address");
-        let stream = await!(TcpStream::connect(&addr).compat()).expect("Connection Failed");
+    // pub async fn connect(mut self, addr: &str) {
+    //     let addr: SocketAddr = addr.parse().expect("Failed to parse server address");
+    //     let stream = await!(TcpStream::connect(&addr).compat()).expect("Connection Failed");
 
-        // We will be handling request and response asynchronously
-        //
-        // We're splitting the stream first using custom function
-        // and aplying framing to each half separately rather than
-        // the other way around.
-        // This is done to make connection shutdown easier and avoid
-        // locking between writing and reading half.
-        // See comments in utils::tcp_split()
-        let (stream_tx, stream_rx) = tcp_split(stream);
-        let codec_tx = FramedWrite::new(stream_tx, F::Codec::default());
-        let codec_rx = FramedRead::new(stream_rx, F::Codec::default());
+    //     // We will be handling request and response asynchronously
+    //     //
+    //     // We're splitting the stream first using custom function
+    //     // and aplying framing to each half separately rather than
+    //     // the other way around.
+    //     // This is done to make connection shutdown easier and avoid
+    //     // locking between writing and reading half.
+    //     // See comments in utils::tcp_split()
+    //     let (stream_tx, stream_rx) = tcp_split(stream);
+    //     let codec_tx = FramedWrite::new(stream_tx, F::Codec::default());
+    //     let codec_rx = FramedRead::new(stream_rx, F::Codec::default());
 
-        tokio::spawn_async(Self::run_rx(
-            self.req_map.clone(),
-            // self.ntf_handler.take(),
-            codec_rx,
-        ));
-        await!(self.run_tx(codec_tx));
-    }
+    //     tokio::spawn_async(Self::run_rx(
+    //         self.req_map.clone(),
+    //         // self.ntf_handler.take(),
+    //         codec_rx,
+    //     ));
+    //     await!(self.run_tx(codec_tx));
+    // }
 
     // pub fn set_notification_handler<H: NotificationHandler<P::Message>>(&mut self, handler: H) {
     //     self.ntf_handler = Some(Box::new(handler));
@@ -219,70 +219,109 @@ impl<F: Framing> Drop for Dispatcher<F> {
 }
 
 #[derive(Debug)]
-struct ConnectionTx<F: Framing> {
-    queue: mpsc::Receiver<Option<F::Send>>,
-    sink: FramedWrite<TcpStreamSend, F::Codec>,
+pub struct ConnectionTx<F: Framing> {
+    inner: FramedWrite<TcpStreamSend, F::Codec>,
 }
 
 impl<F: Framing> ConnectionTx<F> {
-    async fn run(mut self) {
-        while let Some(Ok(dispatch_msg)) = await!(self.queue.next()) {
-            let msg = match dispatch_msg {
-                Some(msg) => msg,
-                None => {
-                    // Client is to be disconnected.
-                    // This shutdown() call forwards to TcpStream::shutdown(),
-                    // see comments in utils::tcp_split() as to how this is done.
-                    await!(self.sink.into_inner().shutdown(Shutdown::Both));
-                    return;
-                }
-            };
+    pub async fn send<M, E>(&mut self, message: M) -> Result<(), F::Error>
+    where
+        F::Error: From<E>,
+        M: TryInto<F::Send, Error = E>,
+    {
+        let message = message.try_into()?;
+        await!(self.send_async(message))?;
+        Ok(())
+    }
 
-            // Can't be done in async, because codec_tx can't be shared:
-            await!(self.sink.send_async(msg))
-                .map_err(|_| ())
-                .expect("Could not send message");
-        }
+    pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
+        self.inner.get_ref().local_addr()
+    }
+
+    pub fn peer_addr(&self) -> Result<SocketAddr, io::Error> {
+        self.inner.get_ref().peer_addr()
+    }
+
+    fn do_close(&mut self) {
+        let _ = self.inner.get_ref().shutdown(Shutdown::Both);
+    }
+
+    pub fn close(mut self) {
+        self.do_close();
+    }
+}
+
+impl<F: Framing> Sink for ConnectionTx<F> {
+    type SinkItem = F::Send;
+    type SinkError = F::Error;
+
+    fn start_send(&mut self, item: Self::SinkItem) -> Result<AsyncSink<Self::SinkItem>, F::Error> {
+        self.inner.start_send(item)
+    }
+
+    fn poll_complete(&mut self) -> Result<Async<()>, Self::SinkError> {
+        self.inner.poll_complete()
     }
 }
 
 #[derive(Debug)]
-pub struct Connection<F: Framing> {
-    queue: mpsc::Sender<Option<F::Send>>,
-    /// TODO rename to rx_stream
-    stream: FramedRead<TcpStreamRecv, F::Codec>,
+pub struct ConnectionRx<F: Framing> {
+    inner: FramedRead<TcpStreamRecv, F::Codec>,
 }
 
+impl<F: Framing> ConnectionRx<F> {
+    pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
+        self.inner.get_ref().local_addr()
+    }
+
+    pub fn peer_addr(&self) -> Result<SocketAddr, io::Error> {
+        self.inner.get_ref().peer_addr()
+    }
+
+    fn do_close(&mut self) {
+        let _ = self.inner.get_ref().shutdown(Shutdown::Both);
+    }
+
+    pub fn close(mut self) {
+        self.do_close();
+    }
+}
+
+impl<F: Framing> Drop for ConnectionRx<F> {
+    fn drop(&mut self) {
+        self.do_close();
+    }
+}
+
+impl<F: Framing> Stream for ConnectionRx<F> {
+    type Item = F::Receive;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Result<Async<Option<F::Receive>>, F::Error> {
+        self.inner.poll()
+    }
+}
+
+#[derive(Debug)]
+pub struct Connection<F: Framing>(pub ConnectionRx<F>, pub ConnectionTx<F>);
+
 impl<F: Framing> Connection<F> {
-    /// Establishes builds all parts of the connection for a specified TCP stream
-    /// It can be used by the server after successful bind or by client
     fn new(stream: TcpStream) -> Self {
-        let (queue_tx, queue_rx) = mpsc::channel(BUFFER_SIZE);
-
-        // Regarding stream splitting, see comment in Client::connect()
-        // and utils::tcp_split()
-
         let (stream_tx, stream_rx) = tcp_split(stream);
         let codec_tx = FramedWrite::new(stream_tx, F::Codec::default());
         let codec_rx = FramedRead::new(stream_rx, F::Codec::default());
 
-        let tx = ConnectionTx::<F> {
-            queue: queue_rx,
-            sink: codec_tx,
-        };
+        let conn_rx = ConnectionRx { inner: codec_rx };
+        let conn_tx = ConnectionTx::<F> { inner: codec_tx };
 
-        tokio::spawn_async(tx.run());
-
-        Connection {
-            queue: queue_tx,
-            stream: codec_rx,
-        }
+        Self(conn_rx, conn_tx)
     }
 
+    /// Connects to a remote address `addr` and creates two halves
+    /// which perfom full message serialization / desrialization
     pub async fn connect(addr: &SocketAddr) -> Result<Self, F::Error> {
-        let conn = await!(TcpStream::connect(addr).compat())?;
-
-        Ok(Self::new(conn))
+        let stream = await!(TcpStream::connect(addr).compat())?;
+        Ok(Connection::new(stream))
     }
 
     pub async fn send<M, E>(&mut self, message: M) -> Result<(), F::Error>
@@ -291,35 +330,20 @@ impl<F: Framing> Connection<F> {
         M: TryInto<F::Send, Error = E>,
     {
         let message = message.try_into()?;
-
-        // Enqueue the message
-        await!(self.queue.send_async(Some(message))).expect("Cannot send request");
+        await!(self.1.send_async(message))?;
         Ok(())
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.stream.get_ref().local_addr()
+        self.0.local_addr()
     }
 
     pub fn peer_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.stream.get_ref().peer_addr()
+        self.0.peer_addr()
     }
 
-    fn do_close(&mut self) {
-        self.queue
-            .try_send(None)
-            .map_err(|_| ())
-            .expect("Cannot send close notification");
-    }
-
-    pub fn close(mut self) {
-        self.do_close();
-    }
-}
-
-impl<F: Framing> Drop for Connection<F> {
-    fn drop(&mut self) {
-        self.do_close();
+    pub fn split(self) -> (ConnectionRx<F>, ConnectionTx<F>) {
+        (self.0, self.1)
     }
 }
 
@@ -328,9 +352,24 @@ impl<F: Framing> Stream for Connection<F> {
     type Error = F::Error;
 
     fn poll(&mut self) -> Result<Async<Option<F::Receive>>, F::Error> {
-        self.stream.poll()
+        self.0.poll()
     }
 }
+
+// TODO: not implementing Sink for Connection because it adds
+// a conflicting send() method, confusing user code. (But this could be sovled)
+// impl<F: Framing> Sink for Connection<F> {
+//     type SinkItem = F::Send;
+//     type SinkError = F::Error;
+
+//     fn start_send(&mut self, item: Self::SinkItem) -> Result<AsyncSink<Self::SinkItem>, F::Error> {
+//         self.1.start_send(item)
+//     }
+
+//     fn poll_complete(&mut self) -> Result<Async<()>, Self::SinkError> {
+//         self.1.poll_complete()
+//     }
+// }
 
 #[derive(Debug)]
 pub struct Server<F: Framing> {
@@ -353,7 +392,7 @@ impl<F: Framing> Stream for Server<F> {
     type Error = F::Error;
 
     /// An incoming TCP connection is converted into a new stratum connection with associated receiving codec
-    fn poll(&mut self) -> Result<Async<Option<Connection<F>>>, F::Error> {
+    fn poll(&mut self) -> Result<Async<Option<Self::Item>>, F::Error> {
         self.tcp
             .poll()
             .map(|async_res| async_res.map(|stream_opt| stream_opt.map(Connection::new)))
