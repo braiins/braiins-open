@@ -32,8 +32,14 @@ macro_rules! handler_method {
 /// TODO document why anything implementing the Handler must be static
 pub trait V2Handler: 'static {
     handler_method!(visit_setup_mining_connection, SetupMiningConnection);
-    handler_method!(visit_setup_mining_connection_success, SetupMiningConnectionSuccess);
-    handler_method!(visit_setup_mining_connection_error, SetupMiningConnectionError);
+    handler_method!(
+        visit_setup_mining_connection_success,
+        SetupMiningConnectionSuccess
+    );
+    handler_method!(
+        visit_setup_mining_connection_error,
+        SetupMiningConnectionError
+    );
     handler_method!(visit_open_channel, OpenChannel);
     handler_method!(visit_open_channel_success, OpenChannelSuccess);
     handler_method!(visit_open_channel_error, OpenChannelError);

@@ -15,3 +15,15 @@ pub struct DeviceInfo {
 /// Custom type for serializing the sha256 values
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Uint256Bytes(pub [u8; 32]);
+
+impl AsRef<[u8; 32]> for Uint256Bytes {
+    fn as_ref(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl AsMut<[u8; 32]> for Uint256Bytes {
+    fn as_mut(&mut self) -> &mut [u8; 32] {
+        &mut self.0
+    }
+}
