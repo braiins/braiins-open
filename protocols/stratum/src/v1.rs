@@ -37,6 +37,13 @@ pub trait V1Handler: 'static {
     }
 
     fn visit_subscribe(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Subscribe) {}
+
+    fn visit_subscribe_result(
+        &mut self,
+        _msg: &Message<V1Protocol>,
+        _payload: &messages::SubscribeResult,
+    ) {
+    }
 }
 
 pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {

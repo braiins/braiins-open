@@ -1,7 +1,7 @@
 use crate::v1::framing::*;
 use crate::v1::messages::*;
 use crate::v1::{ExtraNonce1, V1Handler, V1Protocol};
-use serde_json::Value;
+use serde_json::{to_value, Value};
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
@@ -23,23 +23,24 @@ pub fn build_subscribe_rpc_request() -> Request {
         // TODO reuse build_subscribe() + try_from
         payload: RequestPayload {
             method: Method::Subscribe,
-            params: vec![
+            params: to_value(vec![
                 MINER_SW_SIGNATURE.into(),
                 Value::Null,
                 POOL_URL.into(),
                 format!("{}", POOL_PORT).into(),
-            ],
+            ])
+            .unwrap(),
         },
     }
 }
 
 pub fn build_subscribe() -> Subscribe {
-    Subscribe {
-        agent_signature: Some(MINER_SW_SIGNATURE.into()),
-        extra_nonce1: None,
-        url: Some(POOL_URL.into()),
-        port: Some(format!("{}", POOL_PORT)),
-    }
+    Subscribe(
+        Some(MINER_SW_SIGNATURE.into()), // agent_signature
+        None,                            // extra_nonce1
+        Some(POOL_URL.into()),           // url
+        Some(format!("{}", POOL_PORT)),  // port
+    )
 }
 
 /// Random broken request

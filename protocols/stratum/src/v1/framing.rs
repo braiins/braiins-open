@@ -48,7 +48,7 @@ pub struct RequestPayload {
     /// Protocol method to be 'called'
     pub method: Method,
     /// Vector of method parameters
-    pub params: Vec<Value>,
+    pub params: Value,
 }
 
 /// Generic stratum request
@@ -61,45 +61,6 @@ pub struct Request {
     /// serialization/deserialization
     #[serde(flatten)]
     pub payload: RequestPayload,
-}
-
-impl Request {
-    /// TODO possibly unused, to be removed
-    pub fn to_json_string(&self) -> serde_json::error::Result<String> {
-        serde_json::to_string(self)
-    }
-    // TODO: to be removed as we now have full serialization/deserialization support of method parameters via serde
-    /// Converts a JSON Value parameter at a specified index `idx` to a value converted by `f`
-    /// If there is no such index or the value is null, None is returned. Failure in parsing
-    /// (e.g. we request &str and the actual value was an integer, an error of `error_kind` is
-    /// returned
-    pub fn param_to_value<'a, F, T>(
-        &'a self,
-        idx: usize,
-        f: F,
-        error_kind: ErrorKind,
-    ) -> Result<Option<T>>
-    where
-        F: Fn(&'a serde_json::Value) -> Result<Option<T>>,
-    {
-        // parameter can only exist if the index is valid
-        let value = if (self.payload.params.len() > idx) && (!self.payload.params[idx].is_null()) {
-            Some(f(&self.payload.params[idx])?.ok_or(error_kind)?)
-        } else {
-            None
-        };
-        Ok(value)
-    }
-
-    /// Helper JSON Value parameter converter for the most frequent case of extracting
-    /// an optional string
-    pub fn param_to_string(&self, idx: usize, error_kind: ErrorKind) -> Result<Option<String>> {
-        self.param_to_value(
-            idx,
-            |v| Ok(serde_json::Value::as_str(&v).map(String::from)),
-            error_kind,
-        )
-    }
 }
 
 /// New type that represents stratum result that can be further parsed based on the actual
