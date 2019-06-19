@@ -58,13 +58,15 @@ fn test_v2server() {
                 msg.accept(&mut test_utils::v2::TestIdentityHandler);
 
                 // test response frame
-                await!(conn.send(test_utils::v2::build_setup_mining_connection_success()));
+                await!(conn.send(test_utils::v2::build_setup_mining_connection_success()))
+                    .expect("Could not send message");
             });
 
             // Testing client
             let mut connection = await!(Connection::<V2Framing>::connect(&addr))
                 .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
-            await!(connection.send(test_utils::v2::build_setup_mining_connection()));
+            await!(connection.send(test_utils::v2::build_setup_mining_connection()))
+                .expect("Could not send message");
 
             let response = await!(connection.next()).unwrap().unwrap();
             response.accept(&mut test_utils::v2::TestIdentityHandler);
@@ -137,7 +139,7 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
 
                 // test response frame
                 let response = RpcResponse(test_utils::v1::build_subscribe_ok_rpc_response());
-                await!(conn.send(response));
+                await!(conn.send(response)).expect("Could not send response");
             }
         }
     }
@@ -158,7 +160,7 @@ fn test_v1server() {
                 .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
 
             let request = RpcRequest(test_utils::v1::build_subscribe_rpc_request());
-            await!(connection.send(request));
+            await!(connection.send(request)).expect("Could not send request");
 
             let response = await!(connection.next()).unwrap().unwrap();
             response.accept(&mut test_utils::v1::TestIdentityHandler);
@@ -184,7 +186,8 @@ fn test_v2server_full() {
                 let mut conn = await!(Connection::<V2Framing>::connect(&sock_addr_v2))?;
 
                 // Initialize server connection
-                await!(conn.send(test_utils::v2::build_setup_mining_connection()));
+                await!(conn.send(test_utils::v2::build_setup_mining_connection()))
+                    .expect("Could not send message");
 
                 // let response = await!(conn.next()).unwrap().unwrap();
                 // response.accept(&test_utils::v2::TestIdentityHandler);
