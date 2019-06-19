@@ -1,3 +1,4 @@
+use crate::test_utils::common::MINER_SW_SIGNATURE;
 use crate::v2::messages::*;
 use crate::v2::{V2Handler, V2Protocol};
 use std::fmt::Debug;
@@ -58,5 +59,32 @@ pub fn build_setup_mining_connection_success() -> SetupMiningConnectionSuccess {
         used_protocol_version: 0,
         max_extranonce_size: 4,
         pub_key: vec![0xde, 0xad, 0xbe, 0xef],
+    }
+}
+
+pub fn build_open_channel() -> OpenChannel {
+    OpenChannel {
+        req_id: 10,
+        user: USER_CREDENTIALS.to_string(),
+        extended: false,
+        device: DeviceInfo {
+            vendor: "Braiins".to_string(),
+            hw_rev: "1".to_string(),
+            fw_ver: MINER_SW_SIGNATURE.to_string(),
+            dev_id: "xyz".to_string(),
+        },
+        nominal_hashrate: 1e9,
+        // Maximum bitcoin target is 0xffff << 208 (= difficulty 1 share)
+        max_target_nbits: 0x1d00ffff,
+        aggregated_device_count: 1,
+    }
+}
+
+pub fn build_open_channel_success() -> OpenChannelSuccess {
+    OpenChannelSuccess {
+        req_id: 10,
+        channel_id: 0,
+        // don't provide device ID as the sample OpenChannel already provides one
+        dev_id: None,
     }
 }

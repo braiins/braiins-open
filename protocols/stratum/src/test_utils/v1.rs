@@ -1,19 +1,18 @@
-use crate::v1::framing::*;
-use crate::v1::messages::*;
-use crate::v1::{ExtraNonce1, V1Handler, V1Protocol};
 use serde_json::{to_value, Value};
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
+use super::common::*;
+use crate::v1::framing::*;
+use crate::v1::messages::*;
+use crate::v1::{ExtraNonce1, V1Handler, V1Protocol};
+
 /// Testing subscribe request in a dense form without any spaces
 pub const MINING_SUBSCRIBE_REQ_JSON: &str = concat!(
     r#"{"id":1,"method":"mining.subscribe","#,
-    r#""params":["Braiins OS",null,"stratum.slushpool.com","3333"]}"#
+    r#""params":["Braiins OS 2019-06-05",null,"stratum.slushpool.com","3333"]}"#
 );
 
-const MINER_SW_SIGNATURE: &str = "Braiins OS";
-const POOL_URL: &str = "stratum.slushpool.com";
-const POOL_PORT: usize = 3333;
 const EXTRA_NONCE_1: &str = "01650f001f25ea";
 const EXTRA_NONCE_2_SIZE: usize = 4;
 

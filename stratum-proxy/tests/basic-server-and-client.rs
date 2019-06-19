@@ -189,8 +189,10 @@ async fn test_v2_client(server_addr: String) {
 fn test_v2server_full() {
     runtime::run(
         async {
-            let addr_v1 = format!("{}:{}", ADDR, PORT_V1);
-            runtime::spawn(v1server_task(addr_v1.parse().unwrap()).compat_fix());
+            // This resolves to dbg.stratum.slushpool.com
+            let addr_v1 = format!("{}:{}", "52.212.249.159", 3333);
+            //            let addr_v1 = format!("{}:{}", ADDR, PORT_V1);
+            //            runtime::spawn(v1server_task(addr_v1.parse().unwrap()).compat_fix());
 
             let addr_v2 = format!("{}:{}", ADDR, PORT_V2_FULL);
             let (v2server_task, mut v2server_quit) = server::run(addr_v2.clone(), addr_v1);
@@ -200,7 +202,7 @@ fn test_v2server_full() {
 
             // Signal the server to shut down
             let _ = v2server_quit.try_send(());
-            // TODO kill v1 server
+            // TODO kill v1 test server
         }
             .compat_fix(),
     );

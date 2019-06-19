@@ -16,6 +16,7 @@ pub struct DeviceInfo {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Uint256Bytes(pub [u8; 32]);
 
+// TODO review whether Deref might be suitable
 impl AsRef<[u8; 32]> for Uint256Bytes {
     fn as_ref(&self) -> &[u8; 32] {
         &self.0

@@ -83,6 +83,7 @@ impl ConnTranslation {
 }
 
 async fn handle_connection(mut conn_v2: Connection<V2Framing>, stratum_addr: SocketAddr) {
+    info!(LOGGER, "Opening connection to V1: {:?}", stratum_addr);
     let conn_v1 = match await!(Connection::connect(&stratum_addr)) {
         Ok(conn) => conn,
         Err(e) => {
@@ -90,7 +91,7 @@ async fn handle_connection(mut conn_v2: Connection<V2Framing>, stratum_addr: Soc
             return;
         }
     };
-
+    info!(LOGGER, "V1 connection setup");
     let translation = ConnTranslation::new(conn_v2, conn_v1);
     await!(translation.run())
 }
