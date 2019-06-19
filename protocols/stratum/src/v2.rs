@@ -18,22 +18,31 @@ impl ProtocolBase for V2Protocol {
     type Handler = V2Handler;
 }
 
+macro_rules! handler_method {
+    ($name:ident, $ty:ident) => (
+        fn $name(
+            &mut self,
+            _msg: &Message<V2Protocol>,
+            _payload: &messages::$ty,
+        ) {}
+    )
+}
+
 /// Specifies all messages to be visited
 /// TODO document why anything implementing the Handler must be static
 pub trait V2Handler: 'static {
-    fn visit_setup_mining_connection(
-        &mut self,
-        _msg: &Message<V2Protocol>,
-        _payload: &messages::SetupMiningConnection,
-    ) {
-    }
-
-    fn visit_setup_mining_connection_success(
-        &mut self,
-        _msg: &Message<V2Protocol>,
-        _payload: &messages::SetupMiningConnectionSuccess,
-    ) {
-    }
+    handler_method!(visit_setup_mining_connection, SetupMiningConnection);
+    handler_method!(visit_setup_mining_connection_success, SetupMiningConnectionSuccess);
+    handler_method!(visit_setup_mining_connection_error, SetupMiningConnectionError);
+    handler_method!(visit_open_channel, OpenChannel);
+    handler_method!(visit_open_channel_success, OpenChannelSuccess);
+    handler_method!(visit_open_channel_error, OpenChannelError);
+    handler_method!(visit_submit_shares, SubmitShares);
+    handler_method!(visit_submit_shares_success, SubmitSharesSuccess);
+    handler_method!(visit_submit_shares_error, SubmitSharesError);
+    handler_method!(visit_new_mining_job, NewMiningJob);
+    handler_method!(visit_set_new_prevhash, SetNewPrevhash);
+    handler_method!(visit_set_target, SetTarget);
 }
 
 /// TODO should/could this be part of the framing trait or protocol trait or none of these

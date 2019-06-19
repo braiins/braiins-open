@@ -35,7 +35,7 @@ fn serialize_with_header<M: Serialize>(message: M, msg_type: MessageType) -> wir
     wire::Frame::new(cursor.into_inner().into_boxed_slice())
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SetupMiningConnection {
     pub protocol_version: u16,
     pub connection_url: String,
@@ -109,12 +109,12 @@ impl wire::Payload<super::V2Protocol> for SetupMiningConnectionSuccess {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SetupMiningConnectionError {
     pub code: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct OpenChannel {
     pub req_id: u32,
     pub user: String,
@@ -125,7 +125,7 @@ pub struct OpenChannel {
     pub aggregated_device_count: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct OpenChannelSuccess {
     pub req_id: u32,
     pub channel_id: u32,
@@ -133,7 +133,7 @@ pub struct OpenChannelSuccess {
     pub dev_id: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct OpenChannelError {
     pub req_id: u32,
     pub code: String,
@@ -144,7 +144,7 @@ struct UpdateChannelError;
 
 struct CloseChannel;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SubmitShares {
     pub channel_id: u32,
     pub seq_num: u32,
@@ -155,7 +155,7 @@ pub struct SubmitShares {
     pub version: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SubmitSharesSuccess {
     pub channel_id: u32,
     pub last_seq_num: u32,
@@ -163,24 +163,25 @@ pub struct SubmitSharesSuccess {
     pub new_shares_count: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SubmitSharesError {
     pub channel_id: u32,
     pub seq_num: u32,
     pub code: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NewMiningJob {
     pub channel_id: u32,
     pub job_id: u32,
     pub block_height: u32,
     pub merkle_root: Uint256Bytes,
+    pub version: u32,
 }
 
 struct NewExtendedMiningJob;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SetNewPrevhash {
     pub block_height: u32,
     pub prev_hash: Uint256Bytes,
@@ -195,7 +196,7 @@ struct SetCustomMiningJob;
 struct SetCustomMiningJobSuccess;
 struct Reconnect;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SetTarget {
     pub channel_id: u32,
     pub max_target: Uint256Bytes,
