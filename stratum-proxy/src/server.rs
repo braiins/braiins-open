@@ -10,54 +10,60 @@ use tokio::r#await;
 use wire::{tokio, Framing};
 
 use stratum;
+use stratum::v1;
 use stratum::v1::framing::codec::V1Framing;
-use stratum::v1::V1Handler;
+use stratum::v1::{V1Handler, V1Protocol};
+use stratum::v2;
 use stratum::v2::framing::codec::V2Framing;
 use stratum::v2::framing::MessageType;
-use stratum::v2::V2Handler;
+use stratum::v2::{V2Handler, V2Protocol};
 use stratum::LOGGER;
 
 use wire::utils::CompatFix;
+use wire::Message;
 use wire::{Connection, Payload, Server, TxFrame};
 
 use crate::error::*;
+use crate::translation::V2ToV1Translation;
 
-use stratum::test_utils;
-
+/// Represents a single protocol translation session (one V2 client talking to one V1 server)
 #[derive(Debug)]
-struct ProxyV2Handler;
-
-impl V2Handler for ProxyV2Handler {
-    // TODO
+struct ConnTranslation {
+    /// Actual protocol translator
+    translation: V2ToV1Translation,
+    /// Upstream connection
+    v1_conn: Connection<V1Framing>,
+    // TODO to be removed as the translator may send out items directly via a particular connection
+    // (when treated as a sink)
+    /// Frames from the translator to be sent out via V1 connection
+    v1_translation_rx: mpsc::Receiver<TxFrame>,
+    /// Downstream connection
+    v2_conn: Connection<V2Framing>,
+    /// Frames from the translator to be sent out via V1 connection
+    v2_translation_rx: mpsc::Receiver<TxFrame>,
 }
 
-#[derive(Debug)]
-struct Translation {
-    conn_v2: Connection<V2Framing>,
-    conn_v1: Connection<V1Framing>,
-    handler_v2: ProxyV2Handler,
-    handler_v1: ProxyV1Handler,
-}
+impl ConnTranslation {
+    const MAX_TRANSLATION_CHANNEL_SIZE: usize = 10;
 
-#[derive(Debug)]
-struct ProxyV1Handler;
+    fn new(v2_conn: Connection<V2Framing>, v1_conn: Connection<V1Framing>) -> Self {
+        let (v1_translation_tx, mut v1_translation_rx) =
+            mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
+        let (v2_translation_tx, mut v2_translation_rx) =
+            mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
+        let mut translation = V2ToV1Translation::new(v1_translation_tx, v2_translation_tx);
 
-impl V1Handler for ProxyV1Handler {
-    // TODO
-}
-
-impl Translation {
-    fn new(conn_v2: Connection<V2Framing>, conn_v1: Connection<V1Framing>) -> Self {
         Self {
-            conn_v2,
-            conn_v1,
-            handler_v2: ProxyV2Handler,
-            handler_v1: ProxyV1Handler,
+            translation,
+            v1_conn,
+            v1_translation_rx,
+            v2_conn,
+            v2_translation_rx,
         }
     }
 
     async fn run(mut self) {
-        while let Some(msg) = await!(self.conn_v2.next()) {
+        while let Some(msg) = await!(self.v2_conn.next()) {
             let msg = match msg {
                 Ok(msg) => msg,
                 Err(e) => {
@@ -65,14 +71,13 @@ impl Translation {
                     break;
                 }
             };
-
-            msg.accept(&self.handler_v2);
+            msg.accept(&mut self.translation);
         }
 
         info!(
             LOGGER,
             "Terminating connection from: {:?}",
-            self.conn_v2.peer_addr()
+            self.v2_conn.peer_addr()
         )
     }
 }
@@ -86,7 +91,7 @@ async fn handle_connection(mut conn_v2: Connection<V2Framing>, stratum_addr: Soc
         }
     };
 
-    let translation = Translation::new(conn_v2, conn_v1);
+    let translation = ConnTranslation::new(conn_v2, conn_v1);
     await!(translation.run())
 }
 
@@ -121,6 +126,7 @@ pub fn run(
                     _ => None,
                 }
             )) {
+                // TODO handle connection errors
                 let conn = conn.expect("Stratum error");
                 info!(LOGGER, "Received a connection from: {:?}", conn.peer_addr());
                 //ok_or(ErrorKind::General("V2 service terminated".into()));

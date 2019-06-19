@@ -140,7 +140,7 @@ mod test {
     #[test]
     fn test_deserialize_request_message() {
         let msg = deserialize_message(MINING_SUBSCRIBE_REQ_JSON).expect("Deserialization failed");
-        msg.accept(&TestIdentityHandler);
+        msg.accept(&mut TestIdentityHandler);
         // TODO also perform serialization and check the output matches (missing port...)
     }
 
@@ -148,7 +148,7 @@ mod test {
     fn test_deserialize_response_message() {
         let msg =
             deserialize_message(MINING_SUBSCRIBE_OK_RESULT_JSON).expect("Deserialization failed");
-        msg.accept(&TestIdentityHandler);
+        msg.accept(&mut TestIdentityHandler);
         // TODO also perform serialization and check the output matches
     }
 

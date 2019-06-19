@@ -10,7 +10,7 @@ use std::io::{Cursor, Write};
 use wire;
 
 #[cfg(test)]
-pub mod test;
+mod test;
 
 /// Serializes the specified message into a frame
 /// TODO maybe this should return an error, too
@@ -35,7 +35,7 @@ fn serialize_with_header<M: Serialize>(message: M, msg_type: MessageType) -> wir
     wire::Frame::new(cursor.into_inner().into_boxed_slice())
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct SetupMiningConnection {
     pub protocol_version: u16,
     pub connection_url: String,
@@ -110,12 +110,12 @@ impl wire::Payload<super::V2Protocol> for SetupMiningConnectionSuccess {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct SetupMiningConnectionError {
+pub struct SetupMiningConnectionError {
     pub code: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct OpenChannel {
+pub struct OpenChannel {
     pub req_id: u32,
     pub user: String,
     pub extended: bool,
@@ -126,7 +126,7 @@ struct OpenChannel {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct OpenChannelSuccess {
+pub struct OpenChannelSuccess {
     pub req_id: u32,
     pub channel_id: u32,
     /// Optional device ID provided by the upstream if none was sent as part of DeviceInfo
@@ -134,7 +134,7 @@ struct OpenChannelSuccess {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct OpenChannelError {
+pub struct OpenChannelError {
     pub req_id: u32,
     pub code: String,
 }
@@ -145,7 +145,7 @@ struct UpdateChannelError;
 struct CloseChannel;
 
 #[derive(Serialize, Deserialize, Debug)]
-struct SubmitShares {
+pub struct SubmitShares {
     pub channel_id: u32,
     pub seq_num: u32,
     pub job_id: u32,
@@ -156,7 +156,7 @@ struct SubmitShares {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct SubmitSharesSuccess {
+pub struct SubmitSharesSuccess {
     pub channel_id: u32,
     pub last_seq_num: u32,
     pub new_submits_accepted_count: u32,
@@ -164,14 +164,14 @@ struct SubmitSharesSuccess {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct SubmitSharesError {
+pub struct SubmitSharesError {
     pub channel_id: u32,
     pub seq_num: u32,
     pub code: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct NewMiningJob {
+pub struct NewMiningJob {
     pub channel_id: u32,
     pub job_id: u32,
     pub block_height: u32,
@@ -181,7 +181,7 @@ struct NewMiningJob {
 struct NewExtendedMiningJob;
 
 #[derive(Serialize, Deserialize, Debug)]
-struct SetNewPrevhash {
+pub struct SetNewPrevhash {
     pub block_height: u32,
     pub prev_hash: Uint256Bytes,
     pub min_ntime: u32,
@@ -196,7 +196,7 @@ struct SetCustomMiningJobSuccess;
 struct Reconnect;
 
 #[derive(Serialize, Deserialize, Debug)]
-struct SetTarget {
+pub struct SetTarget {
     pub channel_id: u32,
     pub max_target: Uint256Bytes,
 }

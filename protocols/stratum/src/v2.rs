@@ -90,6 +90,6 @@ pub mod test {
         serialized_msg.extend_from_slice(SETUP_MINING_CONNECTION_SERIALIZED.as_bytes());
 
         let msg = deserialize_message(&serialized_msg).expect("Deserialization failed");
-        msg.accept(&TestIdentityHandler);
+        msg.accept(&mut TestIdentityHandler);
     }
 }

@@ -95,6 +95,7 @@ impl wire::Payload<V1Protocol> for Subscribe {
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Subscription(pub String, pub String);
 
+// TODO to be removed
 impl Subscription {
     pub fn new_json_value_from_str(name: &str, id: &str) -> Result<serde_json::Value> {
         serde_json::to_value(Self(name.to_string(), id.to_string()))
