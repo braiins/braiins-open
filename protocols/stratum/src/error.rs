@@ -2,6 +2,7 @@
 
 use failure::{Backtrace, Context, Fail};
 use std;
+use std::convert::Infallible;
 use std::fmt::{self, Display};
 use std::io;
 
@@ -34,6 +35,12 @@ pub enum ErrorKind {
     /// Stratum version 2 error
     #[fail(display = "V2 error: {}", _0)]
     V2(super::v2::error::ErrorKind),
+
+    // This is used for infallible conversions,
+    // the value will not actually be created
+    #[doc(hidden)]
+    #[fail(display = "Infallible")]
+    Infallible,
 }
 
 /// Implement Fail trait instead of use Derive to get more control over custom type.
@@ -131,6 +138,12 @@ impl From<serde_json::error::Error> for Error {
         Self {
             inner: e.context(ErrorKind::Serde(msg)),
         }
+    }
+}
+
+impl From<Infallible> for Error {
+    fn from(_: Infallible) -> Self {
+        ErrorKind::Infallible.into()
     }
 }
 

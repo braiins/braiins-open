@@ -19,7 +19,7 @@ impl ProtocolBase for V2Protocol {
 }
 
 macro_rules! handler_method {
-    ($name:ident, $ty:ident) => (
+    ($ty:ident, $name:ident) => (
         fn $name(
             &mut self,
             _msg: &Message<V2Protocol>,
@@ -31,24 +31,26 @@ macro_rules! handler_method {
 /// Specifies all messages to be visited
 /// TODO document why anything implementing the Handler must be static
 pub trait V2Handler: 'static {
-    handler_method!(visit_setup_mining_connection, SetupMiningConnection);
+    handler_method!(SetupMiningConnection, visit_setup_mining_connection);
     handler_method!(
-        visit_setup_mining_connection_success,
-        SetupMiningConnectionSuccess
+        SetupMiningConnectionSuccess,
+        visit_setup_mining_connection_success
     );
     handler_method!(
-        visit_setup_mining_connection_error,
-        SetupMiningConnectionError
+        SetupMiningConnectionError,
+        visit_setup_mining_connection_error
     );
-    handler_method!(visit_open_channel, OpenChannel);
-    handler_method!(visit_open_channel_success, OpenChannelSuccess);
-    handler_method!(visit_open_channel_error, OpenChannelError);
-    handler_method!(visit_submit_shares, SubmitShares);
-    handler_method!(visit_submit_shares_success, SubmitSharesSuccess);
-    handler_method!(visit_submit_shares_error, SubmitSharesError);
-    handler_method!(visit_new_mining_job, NewMiningJob);
-    handler_method!(visit_set_new_prevhash, SetNewPrevhash);
-    handler_method!(visit_set_target, SetTarget);
+    handler_method!(OpenChannel, visit_open_channel);
+    handler_method!(OpenChannelSuccess, visit_open_channel_success);
+    handler_method!(OpenChannelError, visit_open_channel_error);
+    handler_method!(UpdateChannel, visit_update_channel);
+    handler_method!(UpdateChannelError, visit_update_channel_error);
+    handler_method!(SubmitShares, visit_submit_shares);
+    handler_method!(SubmitSharesSuccess, visit_submit_shares_success);
+    handler_method!(SubmitSharesError, visit_submit_shares_error);
+    handler_method!(NewMiningJob, visit_new_mining_job);
+    handler_method!(SetNewPrevhash, visit_set_new_prevhash);
+    handler_method!(SetTarget, visit_set_target);
 }
 
 /// TODO should/could this be part of the framing trait or protocol trait or none of these

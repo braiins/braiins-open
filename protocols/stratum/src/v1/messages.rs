@@ -14,30 +14,6 @@ use crate::v1::framing::Method;
 #[cfg(test)]
 pub mod test;
 
-/// Compounds all data required for mining subscription
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Subscribe(
-    pub Option<String>,
-    pub Option<ExtraNonce1>,
-    pub Option<String>,
-    pub Option<String>,
-);
-
-impl Subscribe {
-    pub fn agent_signature(&self) -> Option<&String> {
-        self.0.as_ref()
-    }
-    pub fn extra_nonce1(&self) -> Option<&ExtraNonce1> {
-        self.1.as_ref()
-    }
-    pub fn url(&self) -> Option<&String> {
-        self.2.as_ref()
-    }
-    pub fn port(&self) -> Option<&String> {
-        self.3.as_ref()
-    }
-}
-
 macro_rules! impl_conversion_request {
     ($request:ty, $method:path, $handler_fn:ident) => {
         impl TryFrom<$request> for framing::RequestPayload {
@@ -111,6 +87,30 @@ macro_rules! impl_conversion_response {
             }
         }
     };
+}
+
+/// Compounds all data required for mining subscription
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Subscribe(
+    pub Option<String>,
+    pub Option<ExtraNonce1>,
+    pub Option<String>,
+    pub Option<String>,
+);
+
+impl Subscribe {
+    pub fn agent_signature(&self) -> Option<&String> {
+        self.0.as_ref()
+    }
+    pub fn extra_nonce1(&self) -> Option<&ExtraNonce1> {
+        self.1.as_ref()
+    }
+    pub fn url(&self) -> Option<&String> {
+        self.2.as_ref()
+    }
+    pub fn port(&self) -> Option<&String> {
+        self.3.as_ref()
+    }
 }
 
 // Subscribe::try_from()

@@ -9,12 +9,13 @@ use std::convert::TryFrom;
 use std::io::{Cursor, Write};
 use wire;
 
+use crate::error::{Error, Result};
+
 #[cfg(test)]
 mod test;
 
 /// Serializes the specified message into a frame
-/// TODO maybe this should return an error, too
-fn serialize_with_header<M: Serialize>(message: M, msg_type: MessageType) -> wire::TxFrame {
+fn serialize_with_header<M: Serialize>(message: M, msg_type: MessageType) -> Result<wire::TxFrame> {
     // FIXME: temporary JSON serialization
 
     let buffer = Vec::with_capacity(128); // This is what serde does
@@ -24,15 +25,46 @@ fn serialize_with_header<M: Serialize>(message: M, msg_type: MessageType) -> wir
     // otherwise the JSON would have to be shifted in memory
     let mut cursor = Cursor::new(buffer);
     cursor.set_position(Header::SIZE as u64);
-    serde_json::to_writer(&mut cursor, &message).expect("Error serializing JSON value"); // This shouldn't actually fail
+    serde_json::to_writer(&mut cursor, &message)?; // This shouldn't actually fail
 
     let payload_len = cursor.position() as usize - Header::SIZE;
     let header = Header::new(msg_type, payload_len);
     cursor.set_position(0);
-    // TODO this may also fail...
-    cursor.write(&header.pack()).expect("Writing header failed");
+    cursor.write(&header.pack())?;
 
-    wire::Frame::new(cursor.into_inner().into_boxed_slice())
+    Ok(wire::Frame::new(cursor.into_inner().into_boxed_slice()))
+}
+
+macro_rules! impl_conversion {
+    ($message:ident, /*$msg_type:path,*/ $handler_fn:ident) => {
+        impl TryFrom<$message> for wire::TxFrame {
+            type Error = Error;
+
+            fn try_from(m: $message) -> Result<wire::TxFrame> {
+                serialize_with_header(&m, MessageType::$message)
+            }
+        }
+
+        // TODO: the from type should be RxFrame (?)
+        impl TryFrom<&[u8]> for $message {
+            type Error = Error;
+
+            fn try_from(msg: &[u8]) -> Result<Self> {
+                serde_json::from_slice(msg).map_err(Into::into)
+            }
+        }
+
+        //  specific protocol implementation
+        impl wire::Payload<super::V2Protocol> for $message {
+            fn accept(
+                &self,
+                msg: &wire::Message<super::V2Protocol>,
+                handler: &mut <super::V2Protocol as wire::ProtocolBase>::Handler,
+            ) {
+                handler.$handler_fn(msg, self);
+            }
+        }
+    };
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
@@ -43,70 +75,11 @@ pub struct SetupMiningConnection {
     pub required_extranonce_size: u16,
 }
 
-/// TODO this code is to be generated
-impl From<SetupMiningConnection> for wire::TxFrame {
-    fn from(m: SetupMiningConnection) -> wire::TxFrame {
-        serialize_with_header(&m, MessageType::SetupMiningConnection)
-    }
-}
-
-/// TODO: the from type should be RxFrame
-impl TryFrom<&[u8]> for SetupMiningConnection {
-    type Error = crate::error::Error;
-
-    fn try_from(msg: &[u8]) -> Result<Self, Self::Error> {
-        serde_json::from_slice(msg).map_err(Into::into)
-    }
-}
-
-//  specific protocol implementation
-impl wire::Payload<super::V2Protocol> for SetupMiningConnection {
-    fn accept(
-        &self,
-        msg: &wire::Message<super::V2Protocol>,
-        handler: &mut <super::V2Protocol as wire::ProtocolBase>::Handler,
-    ) {
-        handler.visit_setup_mining_connection(msg, self);
-    }
-}
-
-// specific protocol implementation
-//impl wire::Payload<P> for SetupMiningConnection {
-//    fn accept(&self, msg: &wire::Message<P>, handler: &<P as wire::Protocol>::Handler) {
-//        unimplemented!()
-//    }
-//}
-
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct SetupMiningConnectionSuccess {
     pub used_protocol_version: u16,
     pub max_extranonce_size: u16,
     pub pub_key: Vec<u8>,
-}
-
-impl From<SetupMiningConnectionSuccess> for wire::TxFrame {
-    fn from(m: SetupMiningConnectionSuccess) -> wire::TxFrame {
-        serialize_with_header(&m, MessageType::SetupMiningConnectionSuccess)
-    }
-}
-
-impl TryFrom<&[u8]> for SetupMiningConnectionSuccess {
-    type Error = crate::error::Error;
-
-    fn try_from(msg: &[u8]) -> Result<Self, Self::Error> {
-        serde_json::from_slice(msg).map_err(Into::into)
-    }
-}
-
-//  specific protocol implementation
-impl wire::Payload<super::V2Protocol> for SetupMiningConnectionSuccess {
-    fn accept(
-        &self,
-        msg: &wire::Message<super::V2Protocol>,
-        handler: &mut <super::V2Protocol as wire::ProtocolBase>::Handler,
-    ) {
-        handler.visit_setup_mining_connection_success(msg, self);
-    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -139,8 +112,11 @@ pub struct OpenChannelError {
     pub code: String,
 }
 
-struct UpdateChannel;
-struct UpdateChannelError;
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UpdateChannel;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UpdateChannelError;
 
 struct CloseChannel;
 
@@ -203,3 +179,24 @@ pub struct SetTarget {
 }
 
 struct SetGroupChannel;
+
+impl_conversion!(SetupMiningConnection, visit_setup_mining_connection);
+impl_conversion!(
+    SetupMiningConnectionSuccess,
+    visit_setup_mining_connection_success
+);
+impl_conversion!(
+    SetupMiningConnectionError,
+    visit_setup_mining_connection_error
+);
+impl_conversion!(OpenChannel, visit_open_channel);
+impl_conversion!(OpenChannelSuccess, visit_open_channel_success);
+impl_conversion!(OpenChannelError, visit_open_channel_error);
+impl_conversion!(UpdateChannel, visit_update_channel);
+impl_conversion!(UpdateChannelError, visit_update_channel_error);
+// impl_conversion!(SubmitShares, visit_submit_shares);
+// impl_conversion!(SubmitSharesSuccess, visit_submit_shares_success);
+// impl_conversion!(SubmitSharesError, visit_submit_shares_error);
+// impl_conversion!(NewMiningJob, visit_new_mining_job);
+// impl_conversion!(SetNewPrevhash, visit_set_new_prevhash);
+// impl_conversion!(SetTarget, visit_set_target);

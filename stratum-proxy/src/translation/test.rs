@@ -19,7 +19,10 @@ fn test_setup_mining_connection_translate() {
             let mut translation = V2ToV1Translation::new(v1_tx, v2_tx);
 
             // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait)
-            let frame: wire::TxFrame = test_utils::v2::build_setup_mining_connection().into();
+            let frame: wire::TxFrame = test_utils::v2::build_setup_mining_connection()
+                .try_into()
+                .expect("Could not serialize message");
+
             let msg = v2::deserialize_message(&frame).expect("Deserialization failed");
             msg.accept(&mut translation);
 

@@ -1,4 +1,6 @@
 use futures::channel::mpsc;
+use std::convert::TryInto;
+use std::fmt;
 
 use stratum;
 use stratum::v1;
@@ -42,13 +44,13 @@ impl V2ToV1Translation {
         }
     }
 
-    fn v2_send<T>(&mut self, msg: T)
+    fn v2_send<T, E>(&mut self, msg: T)
     where
-        T: Into<TxFrame>,
+        E: fmt::Debug,
+        T: TryInto<TxFrame, Error = E>,
     {
-        self.v2_tx
-            .try_send(msg.into())
-            .expect("Cannot send message")
+        let msg = msg.try_into().expect("Could not serialize message");
+        self.v2_tx.try_send(msg).expect("Cannot send message")
     }
 }
 

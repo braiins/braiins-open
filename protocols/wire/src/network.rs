@@ -281,14 +281,16 @@ impl<F: Framing> Connection<F> {
         Ok(Self::new(conn))
     }
 
-    pub async fn send<M>(&mut self, message: M)
+    pub async fn send<M, E>(&mut self, message: M) -> Result<(), F::Error>
     where
-        M: Into<F::Send>,
+        F::Error: From<E>,
+        M: TryInto<F::Send, Error = E>,
     {
-        let message = message.into();
+        let message = message.try_into()?;
 
         // Enqueue the message
         await!(self.queue.send_async(Some(message))).expect("Cannot send request");
+        Ok(())
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
