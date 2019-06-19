@@ -136,11 +136,7 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
                 msg.accept(&mut test_utils::v1::TestIdentityHandler);
 
                 // test response frame
-                let response: TxFrame =
-                    RpcResponse(test_utils::v1::build_subscribe_ok_rpc_response())
-                        .try_into()
-                        .expect("Cannot serialize response");
-
+                let response = RpcResponse(test_utils::v1::build_subscribe_ok_rpc_response());
                 await!(conn.send(response));
             }
         }
@@ -160,9 +156,8 @@ fn test_v1server() {
             // Testing client
             let mut connection = await!(Connection::<V1Framing>::connect(&addr))
                 .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
-            let request: TxFrame = RpcRequest(test_utils::v1::build_subscribe_rpc_request())
-                .try_into()
-                .expect("Cannot serialize request frame");
+
+            let request = RpcRequest(test_utils::v1::build_subscribe_rpc_request());
             await!(connection.send(request));
 
             let response = await!(connection.next()).unwrap().unwrap();
