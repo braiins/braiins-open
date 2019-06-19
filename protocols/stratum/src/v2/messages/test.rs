@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use super::*;
 use crate::test_utils::v2::*;
 use crate::v2::framing;
@@ -18,7 +20,10 @@ fn test_deserialize_setup_connection() {
 
 #[test]
 fn test_serialize_setup_connection() {
-    let frame: wire::TxFrame = build_setup_mining_connection().into();
+    let frame: wire::TxFrame = build_setup_mining_connection()
+        .try_into()
+        .expect("Could not serialize message");
+
     // The message has ben serialized completely, let's skip the header for now
     assert_eq!(
         SETUP_MINING_CONNECTION_SERIALIZED.as_bytes(),
