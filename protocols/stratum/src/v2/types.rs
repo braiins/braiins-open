@@ -28,3 +28,9 @@ impl AsMut<[u8; 32]> for Uint256Bytes {
         &mut self.0
     }
 }
+
+impl Into<uint::U256> for Uint256Bytes {
+    fn into(self) -> uint::U256 {
+        uint::U256::from_big_endian(&self.0)
+    }
+}
