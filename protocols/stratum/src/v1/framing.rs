@@ -32,10 +32,14 @@ pub enum Method {
     Subscribe,
     #[serde(rename = "mining.authorize")]
     Authorize,
+    #[serde(rename = "mining.set_difficulty")]
+    SetDifficulty,
     #[serde(rename = "mining.configure")]
     Configure,
     #[serde(rename = "mining.submit")]
     Submit,
+    #[serde(rename = "mining.notify")]
+    Notify,
     /// Catch all variant
     #[serde(other)]
     Unknown,
@@ -149,6 +153,18 @@ impl Frame {
     }
 }
 
+impl From<Request> for Frame {
+    fn from(req: Request) -> Self {
+        Frame::RpcRequest(req)
+    }
+}
+
+impl From<Response> for Frame {
+    fn from(resp: Response) -> Self {
+        Frame::RpcResponse(resp)
+    }
+}
+
 impl TryInto<wire::TxFrame> for Frame {
     type Error = crate::error::Error;
 
@@ -244,7 +260,7 @@ mod test {
 
     #[test]
     fn test_serialize_request() {
-        let request = Frame::RpcRequest(build_subscribe_rpc_request());
+        let request = build_subscribe_request_frame();
         let serialized_frame: TxFrame = request
             .try_into()
             .expect("Failed to serialize JSON request");
@@ -259,7 +275,7 @@ mod test {
 
     #[test]
     fn test_deserialize_ok_response() {
-        let expected_response = Frame::RpcResponse(build_subscribe_ok_rpc_response());
+        let expected_response = build_subscribe_ok_response_frame();
         let deserialized_response = Frame::try_from(MINING_SUBSCRIBE_OK_RESULT_JSON.as_bytes())
             .expect("Cannot deserialize JSON request");
 
@@ -271,7 +287,7 @@ mod test {
 
     #[test]
     fn test_serialize_ok_response() {
-        let response = Frame::RpcResponse(build_subscribe_ok_rpc_response());
+        let response = build_subscribe_ok_response_frame();
         let serialized_frame: TxFrame = response.try_into().expect("Failed to serialize");
         let serialized_frame =
             std::str::from_utf8(&serialized_frame).expect("Failed to convert to UTF-8");
@@ -284,7 +300,7 @@ mod test {
 
     #[test]
     fn test_deserialize_err_response() {
-        let expected_response = Frame::RpcResponse(build_stratum_err_rpc_response());
+        let expected_response = Frame::RpcResponse(build_stratum_err_response_frame());
         let deserialized_response = Frame::try_from(STRATUM_ERROR_JSON.as_bytes())
             .expect("Cannot deserialize JSON Response");
 
@@ -296,7 +312,7 @@ mod test {
 
     #[test]
     fn test_serialize_err_response() {
-        let response = Frame::RpcResponse(build_stratum_err_rpc_response());
+        let response = Frame::RpcResponse(build_stratum_err_response_frame());
         let serialized_frame: TxFrame = response.try_into().expect("Failed to serialize");
         let serialized_frame =
             std::str::from_utf8(&serialized_frame).expect("Failed to convert to UTF-8");

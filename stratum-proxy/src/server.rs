@@ -27,7 +27,6 @@ use crate::error::*;
 use crate::translation::V2ToV1Translation;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
-#[derive(Debug)]
 struct ConnTranslation {
     /// Actual protocol translator
     translation: V2ToV1Translation,

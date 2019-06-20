@@ -6,4 +6,7 @@ use failure::Fail;
 pub enum ErrorKind {
     #[fail(display = "Unknown message error: {}", _0)]
     UnknownMessage(String),
+
+    #[fail(display = "Channel not operational: {}", _0)]
+    ChannelNotOperational(String),
 }

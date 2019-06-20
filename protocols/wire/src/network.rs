@@ -21,15 +21,15 @@ const BUFFER_SIZE: usize = 1024 * 1024;
 
 /// A wrapper over atomic u32 that outputs IDs in a thread-safe way
 #[derive(Default, Debug)]
-struct MessageId(atomic::AtomicU32);
+pub struct MessageId(atomic::AtomicU32);
 
 impl MessageId {
-    fn new() -> MessageId {
+    pub fn new() -> MessageId {
         Self::default()
     }
 
     /// Get a new ID, increment internal state
-    fn next(&self) -> u32 {
+    pub fn next(&self) -> u32 {
         self.0.fetch_add(1, atomic::Ordering::SeqCst)
         // FIXME: The atomic addition wraps around
     }

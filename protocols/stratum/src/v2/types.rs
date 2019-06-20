@@ -4,7 +4,7 @@ use serde;
 use serde::{Deserialize, Serialize};
 
 /// Device specific information - all parts are optional and could be empty strings
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DeviceInfo {
     pub vendor: String,
     pub hw_rev: String,
@@ -13,7 +13,7 @@ pub struct DeviceInfo {
 }
 
 /// Custom type for serializing the sha256 values
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct Uint256Bytes(pub [u8; 32]);
 
 // TODO review whether Deref might be suitable

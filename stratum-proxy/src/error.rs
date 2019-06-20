@@ -21,10 +21,6 @@ pub enum ErrorKind {
     /// Input/Output error.
     #[fail(display = "I/O error: {}", _0)]
     Io(String),
-    // TODO remove
-    // Stratum error
-    //    #[fail(display = "Stratum error: {}", _0)]
-    //    Stratum(super::v1::error::ErrorKind),
 }
 
 /// Implement Fail trait instead of use Derive to get more control over custom type.

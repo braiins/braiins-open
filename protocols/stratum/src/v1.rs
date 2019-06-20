@@ -4,12 +4,14 @@ pub mod messages;
 
 use crate::error::Result;
 use crate::v1::error::ErrorKind;
+use crate::LOGGER;
 
 use crate::v1::framing::Frame;
 use crate::v1::framing::Method;
 
 use failure::ResultExt;
 use serde::{Deserialize, Serialize};
+use slog::trace;
 use std::convert::TryFrom;
 use std::str::FromStr;
 use wire::{Message, Payload, ProtocolBase};
@@ -28,7 +30,7 @@ pub trait V1Handler: 'static {
         _payload: &framing::StratumResult,
     ) {
     }
-    /// Handles the response part of the response
+    /// Handles the error part of the response
     fn visit_stratum_error(
         &mut self,
         _msg: &Message<V1Protocol>,
@@ -36,25 +38,56 @@ pub trait V1Handler: 'static {
     ) {
     }
 
-    fn visit_subscribe(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Subscribe) {}
-
-    fn visit_subscribe_result(
+    fn visit_mining_configure(
         &mut self,
         _msg: &Message<V1Protocol>,
-        _payload: &messages::SubscribeResult,
+        _payload: &messages::Subscribe,
     ) {
     }
+
+    fn visit_subscribe(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Subscribe) {}
+
+    fn visit_authorize(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Authorize) {}
+
+    fn visit_set_difficulty(
+        &mut self,
+        _msg: &Message<V1Protocol>,
+        _payload: &messages::SetDifficulty,
+    ) {
+    }
+
+    fn visit_notify(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Notify) {}
 }
 
+/// TODO: deserialization should be done from &[u8] so that it is consistent with V2
 pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
     let deserialized = framing::Frame::from_str(src)?;
 
+    trace!(
+        LOGGER,
+        "V1: Deserialized V1 message payload: {:?}",
+        deserialized
+    );
     let (id, payload) = match deserialized {
         Frame::RpcRequest(request) => match request.payload.method {
             Method::Subscribe => (
                 request.id,
                 Ok(Box::new(messages::Subscribe::try_from(request)?)
                     as Box<dyn Payload<V1Protocol>>),
+            ),
+            Method::Authorize => (
+                request.id,
+                Ok(Box::new(messages::Authorize::try_from(request)?)
+                    as Box<dyn Payload<V1Protocol>>),
+            ),
+            Method::SetDifficulty => (
+                request.id,
+                Ok(Box::new(messages::SetDifficulty::try_from(request)?)
+                    as Box<dyn Payload<V1Protocol>>),
+            ),
+            Method::Notify => (
+                request.id,
+                Ok(Box::new(messages::Notify::try_from(request)?) as Box<dyn Payload<V1Protocol>>),
             ),
             _ => (
                 None,
@@ -79,6 +112,7 @@ pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
             (Some(response.id), msg)
         }
     };
+    trace!(LOGGER, "V1: Deserialized message ID {:?}", id);
     // convert the payload into message
     Ok(payload.map(|p| Message::new(id, p))?)
 }
@@ -86,14 +120,19 @@ pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
 /// Extranonce 1 introduced as new type to provide shared conversions to/from string
 /// TODO: find out correct byte order for extra nonce 1
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(into = "String", from = "String")]
-pub struct ExtraNonce1(Vec<u8>);
+pub struct ExtraNonce1(pub HexBytes);
 
-impl TryFrom<&str> for ExtraNonce1 {
+/// Helper type that allows simple serialization and deserialization of byte vectors
+/// that are represented as hex strings in JSON
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(into = "String", from = "String")]
+pub struct HexBytes(Vec<u8>);
+
+impl TryFrom<&str> for HexBytes {
     type Error = crate::error::Error;
 
     fn try_from(value: &str) -> Result<Self> {
-        Ok(ExtraNonce1(
+        Ok(HexBytes(
             hex::decode(value).context("Parsing extranonce 1 failed")?,
         ))
     }
@@ -102,14 +141,14 @@ impl TryFrom<&str> for ExtraNonce1 {
 /// TODO: this is not the cleanest way as any deserialization error is essentially consumed and
 /// manifested as empty vector. However, it is very comfortable to use this trait implementation
 /// in Extranonce1 serde support
-impl From<String> for ExtraNonce1 {
+impl From<String> for HexBytes {
     fn from(value: String) -> Self {
-        ExtraNonce1::try_from(value.as_str()).unwrap_or(ExtraNonce1(vec![]))
+        HexBytes::try_from(value.as_str()).unwrap_or(HexBytes(vec![]))
     }
 }
 
 /// Helper Serializer
-impl Into<String> for ExtraNonce1 {
+impl Into<String> for HexBytes {
     fn into(self) -> String {
         hex::encode(self.0)
     }
@@ -120,25 +159,42 @@ mod test {
     use super::*;
     use crate::test_utils::v1::*;
 
+    /// Test traits that will be used by serded for HexBytes when converting from/to string
+    #[test]
+    fn test_hex_bytes() {
+        let hex_bytes = HexBytes(vec![0xde, 0xad, 0xbe, 0xef, 0x11, 0x22, 0x33]);
+        let hex_bytes_str = "deadbeef112233";
+
+        let checked_hex_bytes_str: String = hex_bytes.clone().into();
+        assert_eq!(
+            hex_bytes_str, checked_hex_bytes_str,
+            "Mismatched hex bytes strings",
+        );
+
+        let checked_hex_bytes = HexBytes::try_from(hex_bytes_str).expect("");
+
+        assert_eq!(hex_bytes, checked_hex_bytes, "Mismatched hex bytes values",)
+    }
+
     #[test]
     fn test_extra_nonce1() {
-        let expected_enonce1 = ExtraNonce1(vec![0xde, 0xad, 0xbe, 0xef, 0x11, 0x22, 0x33]);
-        let expected_enonce1_str = "332211efbeadde";
+        let expected_enonce1 =
+            ExtraNonce1(HexBytes(vec![0xde, 0xad, 0xbe, 0xef, 0x11, 0x22, 0x33]));
+        let expected_enonce1_str = r#""deadbeef112233""#;
 
-        let checked_enonce1_str: String = expected_enonce1.clone().into();
+        let checked_enonce1_str: String =
+            serde_json::to_string(&expected_enonce1).expect("Serialization failed");
         assert_eq!(
             expected_enonce1_str, checked_enonce1_str,
             "Mismatched extranonce 1 strings",
         );
 
-        let checked_enonce1 = ExtraNonce1::try_from(expected_enonce1_str);
+        let checked_enonce1 =
+            serde_json::from_str(expected_enonce1_str).expect("Deserialization failed");
 
-        assert!(checked_enonce1.is_ok());
         assert_eq!(
-            expected_enonce1,
-            checked_enonce1.unwrap(),
-            "Mismatched extranonce 1 \
-             values",
+            expected_enonce1, checked_enonce1,
+            "Mismatched extranonce 1 values",
         )
     }
 

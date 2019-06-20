@@ -2,14 +2,16 @@
 pub mod error;
 pub mod framing;
 pub mod messages;
-mod types;
+pub mod types;
 
 use crate::error::Result;
 
 use crate::v2::framing::MessageType;
+use crate::LOGGER;
 
 use failure::ResultExt;
 use packed_struct::PackedStructSlice;
+use slog::trace;
 use std::convert::TryFrom;
 use wire::{Message, Payload, ProtocolBase};
 
@@ -66,23 +68,64 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<V2Protocol>> {
         src.len(),
         "Malformed message"
     );
+    trace!(LOGGER, "V2: deserialized header: {:?}", header);
     let msg_bytes = &src[framing::Header::SIZE..];
 
     // Build message based on its type specified in the header
-    let payload = match header.msg_type {
-        MessageType::SetupMiningConnection => Ok(Box::new(
-            messages::SetupMiningConnection::try_from(msg_bytes)?,
-        ) as Box<dyn Payload<V2Protocol>>),
-        MessageType::SetupMiningConnectionSuccess => Ok(Box::new(
-            messages::SetupMiningConnectionSuccess::try_from(msg_bytes)?,
-        ) as Box<dyn Payload<V2Protocol>>),
-        _ => Err(error::ErrorKind::UnknownMessage(
-            format!("Unexpected payload type {:?}", header).into(),
-        )
-        .into()),
+    let (id, payload) = match header.msg_type {
+        MessageType::SetupMiningConnection => (
+            None,
+            Ok(
+                Box::new(messages::SetupMiningConnection::try_from(msg_bytes)?)
+                    as Box<dyn Payload<V2Protocol>>,
+            ),
+        ),
+        MessageType::SetupMiningConnectionSuccess => (
+            None,
+            Ok(
+                Box::new(messages::SetupMiningConnectionSuccess::try_from(msg_bytes)?)
+                    as Box<dyn Payload<V2Protocol>>,
+            ),
+        ),
+        MessageType::SetupMiningConnectionError => (
+            None,
+            Ok(
+                Box::new(messages::SetupMiningConnectionError::try_from(msg_bytes)?)
+                    as Box<dyn Payload<V2Protocol>>,
+            ),
+        ),
+        MessageType::OpenChannel => {
+            let channel = messages::OpenChannel::try_from(msg_bytes)?;
+            (
+                Some(channel.req_id),
+                Ok(Box::new(channel) as Box<dyn Payload<V2Protocol>>),
+            )
+        }
+        MessageType::OpenChannelSuccess => {
+            let channel_success = messages::OpenChannelSuccess::try_from(msg_bytes)?;
+            (
+                Some(channel_success.req_id),
+                Ok(Box::new(channel_success) as Box<dyn Payload<V2Protocol>>),
+            )
+        }
+        MessageType::OpenChannelError => {
+            let channel_error = messages::OpenChannelSuccess::try_from(msg_bytes)?;
+            (
+                Some(channel_error.req_id),
+                Ok(Box::new(channel_error) as Box<dyn Payload<V2Protocol>>),
+            )
+        }
+        _ => (
+            None,
+            Err(error::ErrorKind::UnknownMessage(
+                format!("Unexpected payload type, full header: {:?}", header).into(),
+            )
+            .into()),
+        ),
     };
+    trace!(LOGGER, "V2: message ID: {:?}", id);
     // TODO: message ID handling is not implemented
-    payload.map(|p| Message::new(None, p))
+    payload.map(|p| Message::new(id, p))
 }
 
 #[cfg(test)]

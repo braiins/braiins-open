@@ -6,23 +6,30 @@ use crate::v1::framing;
 
 #[test]
 fn test_build_subscribe_from_rpc_request() {
-    let subscribe_req = build_subscribe_rpc_request();
-    let expected_subscribe = build_subscribe();
-    let subscribe = Subscribe::try_from(subscribe_req).expect("Conversion failed");
+    if let framing::Frame::RpcRequest(subscribe_req) = build_subscribe_request_frame() {
+        let expected_subscribe = build_subscribe();
+        let subscribe = Subscribe::try_from(subscribe_req).expect("Conversion failed");
 
-    assert_eq!(expected_subscribe, subscribe, "Subscribe request mismatch");
+        assert_eq!(expected_subscribe, subscribe, "Subscribe request mismatch");
+    } else {
+        assert!(false, "Request expected");
+    }
 }
 
 #[test]
-fn test_build_subscribe_good_result_from_rpc_response() {
-    let subscribe_resp = build_subscribe_ok_rpc_response();
-    let expected_subscribe_result = build_subscribe_ok_result();
-    let subscribe_result = SubscribeResult::try_from(subscribe_resp).expect("Conversion failed");
+fn test_build_subscribe_good_result_from_response_frame() {
+    if let framing::Frame::RpcResponse(subscribe_resp) = build_subscribe_ok_response_frame() {
+        let expected_subscribe_result = build_subscribe_ok_result();
+        let subscribe_result =
+            SubscribeResult::try_from(subscribe_resp).expect("Conversion failed");
 
-    assert_eq!(
-        expected_subscribe_result, subscribe_result,
-        "Subscribe result mismatch"
-    );
+        assert_eq!(
+            expected_subscribe_result, subscribe_result,
+            "Subscribe result mismatch"
+        );
+    } else {
+        assert!(false, "Response expected, the test needs to be fixed")
+    }
 }
 
 #[test]

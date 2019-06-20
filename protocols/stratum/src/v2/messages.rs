@@ -87,7 +87,7 @@ pub struct SetupMiningConnectionError {
     pub code: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenChannel {
     pub req_id: u32,
     pub user: String,
@@ -98,12 +98,18 @@ pub struct OpenChannel {
     pub aggregated_device_count: u32,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenChannelSuccess {
     pub req_id: u32,
     pub channel_id: u32,
     /// Optional device ID provided by the upstream if none was sent as part of DeviceInfo
     pub dev_id: Option<String>,
+    /// Initial target for mining
+    pub init_target: Uint256Bytes,
+    /// See SetGroupChannel for details
+    pub group_channel_id: u32,
+    // TODO specify signature type
+    // pub signature:???
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

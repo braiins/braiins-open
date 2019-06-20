@@ -1,7 +1,12 @@
-use crate::test_utils::common::MINER_SW_SIGNATURE;
-use crate::v2::messages::*;
-use crate::v2::{V2Handler, V2Protocol};
+use slog::trace;
 use std::fmt::Debug;
+use uint;
+
+use crate::test_utils::common::*;
+use crate::v2::messages::*;
+use crate::v2::types::*;
+use crate::v2::{V2Handler, V2Protocol};
+use crate::LOGGER;
 
 /// Message payload visitor that compares the payload of the visited message (e.g. after
 /// deserialization test) with the payload built.
@@ -17,7 +22,12 @@ impl TestIdentityHandler {
     {
         // Build expected payload for verifying correct deserialization
         let expected_payload = build();
-        println!("Message ID {:?} {:?}", msg.id, payload);
+        trace!(
+            LOGGER,
+            "V2 TestIdentityHandler: Message ID {:?} {:?}",
+            msg.id,
+            payload
+        );
         assert_eq!(expected_payload, *payload, "Message payloads don't match");
     }
 }
@@ -38,26 +48,36 @@ impl V2Handler for TestIdentityHandler {
     ) {
         self.visit_and_check(msg, payload, build_setup_mining_connection_success);
     }
+    fn visit_open_channel(&mut self, msg: &wire::Message<V2Protocol>, payload: &OpenChannel) {
+        self.visit_and_check(msg, payload, build_open_channel);
+    }
+    fn visit_open_channel_success(
+        &mut self,
+        msg: &wire::Message<V2Protocol>,
+        payload: &OpenChannelSuccess,
+    ) {
+        self.visit_and_check(msg, payload, build_open_channel_success);
+    }
 }
 
 pub const SETUP_MINING_CONNECTION_SERIALIZED: &str =
-    r#"{"protocol_version":0,"connection_url":"test.pool","required_extranonce_size":4}"#;
+    r#"{"protocol_version":0,"connection_url":"stratum.slushpool.com","required_extranonce_size":0}"#;
 
 pub fn build_setup_mining_connection() -> SetupMiningConnection {
     SetupMiningConnection {
         protocol_version: 0,
-        connection_url: "test.pool".into(),
-        required_extranonce_size: 4,
+        connection_url: POOL_URL.into(),
+        required_extranonce_size: 0,
     }
 }
 
 pub const SETUP_MINING_CONNECTION_SUCCESS_SERIALIZED: &str =
-    r#"{"protocol_version":0,"connection_url":"test.pool","required_extranonce_size":4}"#;
+    r#"{"protocol_version":0,"connection_url":"stratum.slushpool.com","required_extranonce_size":0}"#;
 
 pub fn build_setup_mining_connection_success() -> SetupMiningConnectionSuccess {
     SetupMiningConnectionSuccess {
         used_protocol_version: 0,
-        max_extranonce_size: 4,
+        max_extranonce_size: 0,
         pub_key: vec![0xde, 0xad, 0xbe, 0xef],
     }
 }
@@ -81,10 +101,21 @@ pub fn build_open_channel() -> OpenChannel {
 }
 
 pub fn build_open_channel_success() -> OpenChannelSuccess {
+    let init_target_be = uint::U256::from_big_endian(&[
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x7f, 0xff, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ]);
+    let mut init_target_le = [0u8; 32];
+    init_target_be.to_little_endian(&mut init_target_le);
+
     OpenChannelSuccess {
         req_id: 10,
         channel_id: 0,
         // don't provide device ID as the sample OpenChannel already provides one
         dev_id: None,
+        // Represents difficulty 512
+        init_target: Uint256Bytes(init_target_le),
+        group_channel_id: 0,
     }
 }

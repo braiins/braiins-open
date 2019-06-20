@@ -1,30 +1,36 @@
-use serde_json::{to_value, Value};
-use std::convert::TryFrom;
+use serde::Serialize;
+use slog::trace;
+use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 
 use super::common::*;
 use crate::v1::framing::*;
 use crate::v1::messages::*;
-use crate::v1::{ExtraNonce1, V1Handler, V1Protocol};
+use crate::v1::{ExtraNonce1, HexBytes, V1Handler, V1Protocol};
+use crate::LOGGER;
 
 /// Testing subscribe request in a dense form without any spaces
 pub const MINING_SUBSCRIBE_REQ_JSON: &str = concat!(
-    r#"{"id":1,"method":"mining.subscribe","#,
-    r#""params":["Braiins OS 2019-06-05",null,"stratum.slushpool.com","3333"]}"#
+    r#"{"id":0,"method":"mining.subscribe","#,
+    r#""params":["Braiins OS 2019-06-05",null,"stratum.slushpool.com",null]}"#
 );
 
 const EXTRA_NONCE_1: &str = "01650f001f25ea";
 const EXTRA_NONCE_2_SIZE: usize = 4;
 
-pub fn build_subscribe_rpc_request() -> Request {
-    Request {
-        id: Some(1),
-        // TODO reuse build_subscribe() + try_from
-        payload: RequestPayload {
-            method: Method::Subscribe,
-            params: to_value(build_subscribe()).unwrap(),
-        },
-    }
+fn build_request_message<T>(id: Option<u32>, payload: T) -> Frame
+where
+    T: TryInto<RequestPayload> + std::fmt::Debug,
+    <T as std::convert::TryInto<RequestPayload>>::Error: std::fmt::Debug,
+{
+    Frame::RpcRequest(Request {
+        id,
+        payload: payload.try_into().expect("Cannot serialize request"),
+    })
+}
+
+pub fn build_subscribe_request_frame() -> Frame {
+    build_request_message(Some(0), build_subscribe())
 }
 
 pub fn build_subscribe() -> Subscribe {
@@ -32,7 +38,7 @@ pub fn build_subscribe() -> Subscribe {
         Some(MINER_SW_SIGNATURE.into()), // agent_signature
         None,                            // extra_nonce1
         Some(POOL_URL.into()),           // url
-        Some(format!("{}", POOL_PORT)),  // port
+        None,                            // port
     )
 }
 
@@ -45,21 +51,33 @@ pub const MINING_BROKEN_REQ_JSON: &str = concat!(
 /// Subscribe success response in a dense form without any spaces
 /// TODO: find out how to fill in extra nonce 1 and extra nonce 2 size from predefined constants
 pub const MINING_SUBSCRIBE_OK_RESULT_JSON: &str = concat!(
-    r#"{"id":1,"result":[[["mining.set_difficulty","1"],"#,
+    r#"{"id":0,"result":[[["mining.set_difficulty","1"],"#,
     r#"["mining.notify","1"]],"01650f001f25ea",4],"error":null}"#
 );
 
-pub fn build_subscribe_ok_rpc_response() -> Response {
-    Response {
-        id: 1,
+fn build_result_response_message<T: Serialize>(id: u32, result: T) -> Frame {
+    Frame::RpcResponse(Response {
+        id,
         payload: ResponsePayload {
             result: Some(
-                StratumResult::new_from(build_subscribe_ok_result())
-                    .expect("Cannot build test subscribe response"),
+                StratumResult::new_from(result).expect("Cannot build test response message"),
             ),
             error: None,
         },
-    }
+    })
+}
+
+/// Special case for simple 'OK' response
+fn build_ok_response_message(id: u32) -> Frame {
+    build_result_response_message(id, BooleanResult(true))
+}
+
+pub fn build_subscribe_ok_response_frame() -> Frame {
+    build_result_response_message(0, build_subscribe_ok_result())
+}
+
+pub fn build_authorize_ok_response_message() -> Frame {
+    build_ok_response_message(1)
 }
 
 pub fn build_subscribe_ok_result() -> SubscribeResult {
@@ -68,7 +86,7 @@ pub fn build_subscribe_ok_result() -> SubscribeResult {
             Subscription("mining.set_difficulty".to_string(), "1".to_string()),
             Subscription("mining.notify".to_string(), "1".to_string()),
         ],
-        ExtraNonce1::try_from(EXTRA_NONCE_1).expect("Cannot parse extra nonce 1"),
+        ExtraNonce1(HexBytes::try_from(EXTRA_NONCE_1).expect("Cannot parse extra nonce 1")),
         EXTRA_NONCE_2_SIZE,
     )
 }
@@ -85,7 +103,7 @@ pub fn build_stratum_error() -> StratumError {
     StratumError(20, "Other/Unknown".into(), None)
 }
 
-pub fn build_stratum_err_rpc_response() -> Response {
+pub fn build_stratum_err_response_frame() -> Response {
     Response {
         id: 1,
         payload: ResponsePayload {
@@ -95,11 +113,50 @@ pub fn build_stratum_err_rpc_response() -> Response {
     }
 }
 
+pub const MINING_SET_DIFFICULTY_JSON: &str =
+    r#"{"id":null,"method":"mining.set_difficulty","params":[8192]}"#;
+
+pub fn build_set_difficulty_request_message() -> Frame {
+    build_request_message(None, build_set_difficulty())
+}
+
+pub fn build_set_difficulty() -> SetDifficulty {
+    SetDifficulty(512f32)
+}
+
+pub const MINING_NOTIFY_JSON: &str = concat!(
+r#"{"#,
+r#"id": null, "method": "mining.notify","#,
+r#""params": ["bf", "4d16b6f85af6e2198f44ae2a6de67f78487ae5611b77c6c0440b921e00000000","#,
+r#""01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff20020862062f503253482f04b8864e5008","#,
+r#""072f736c7573682f000000000100f2052a010000001976a914d23fcdf86f7e756a64a7a9688ef9903327048ed988ac00000000","#,
+r#"["4322158778c4f7f149b691134ab5eeed0437fc1754faa7b53deb32861b3e5a77","#,
+r#""1680bad9bfb093f905bde05debe410a557e94a2bf8af3820c0dde29608009438","#,
+r#""5a7f2aefb756fee2bcb94824ac98d71d3c3de2093dfba4e9288e35af786ab3d5","#,
+r#""0d5facd3c63d1c14c97d732c3ebd6d7009f6f18f8142188de5baa78f1bc72b91"],"#,
+r#"20000000","1725fd03","5d0ea025", false]"#,
+r#"}"#,
+);
+
+pub const MINING_AUTHORIZE_JSON: &str =
+    r#"{"id":1,"method":"mining.authorize","params":["braiins.worker0","password"]}"#;
+
+pub fn build_authorize_request_message() -> Frame {
+    build_request_message(Some(1), build_authorize())
+}
+
+pub fn build_authorize() -> Authorize {
+    Authorize(USER_CREDENTIALS.to_string(), "".to_string())
+}
+
+pub const MINING_AUTHORIZE_OK: &str = r#"{"id": 1,"error":null,"result":true}"#;
+
 /// Message payload visitor that compares the payload of the visited message (e.g. after
 /// deserialization test) with the payload built.
 /// This handler should be used in tests to verify that serialization and deserialization yield the
 /// same results
 pub struct TestIdentityHandler;
+//pub struct TestIdentityHandler(fn()->Strat);
 
 impl TestIdentityHandler {
     fn visit_and_check<P, F>(&mut self, msg: &wire::Message<V1Protocol>, payload: &P, build: F)
@@ -109,20 +166,33 @@ impl TestIdentityHandler {
     {
         // Build expected payload for verifying correct deserialization
         let expected_payload = build();
-        println!("XXXXMessage ID {:?} {:x?}", msg.id, payload);
+        trace!(
+            LOGGER,
+            "V1 TestIdentityHandler: Message ID {:?} {:?}",
+            msg.id,
+            payload
+        );
         assert_eq!(expected_payload, *payload, "Message payloads don't match");
     }
 }
 
 impl V1Handler for TestIdentityHandler {
-    fn visit_subscribe(&mut self, msg: &wire::Message<V1Protocol>, payload: &Subscribe) {
-        self.visit_and_check(msg, payload, build_subscribe);
-    }
-
     fn visit_stratum_result(&mut self, msg: &wire::Message<V1Protocol>, payload: &StratumResult) {
         self.visit_and_check(msg, payload, || {
             StratumResult::new_from(build_subscribe_ok_result())
                 .expect("Cannot convert to stratum result")
         });
+    }
+
+    fn visit_subscribe(&mut self, msg: &wire::Message<V1Protocol>, payload: &Subscribe) {
+        self.visit_and_check(msg, payload, build_subscribe);
+    }
+
+    fn visit_authorize(&mut self, msg: &wire::Message<V1Protocol>, payload: &Authorize) {
+        self.visit_and_check(msg, payload, build_authorize);
+    }
+
+    fn visit_set_difficulty(&mut self, msg: &wire::Message<V1Protocol>, payload: &SetDifficulty) {
+        self.visit_and_check(msg, payload, build_set_difficulty);
     }
 }
