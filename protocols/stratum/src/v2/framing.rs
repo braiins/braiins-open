@@ -41,6 +41,12 @@ pub enum MessageType {
     OpenChannelError = 0x05,
     UpdateChannel = 0x06,
     UpdateChannelError = 0x07,
+    NewMiningJob = 0x08,
+    SetTarget = 0x09,
+    SetNewPrevHash = 0x0a,
+    SubmitShares = 0x0b,
+    SubmitSharesSuccess = 0x0c,
+    SubmitSharesError = 0x0d,
 }
 
 #[cfg(test)]

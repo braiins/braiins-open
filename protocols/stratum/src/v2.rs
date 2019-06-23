@@ -51,7 +51,7 @@ pub trait V2Handler: 'static {
     handler_method!(SubmitSharesSuccess, visit_submit_shares_success);
     handler_method!(SubmitSharesError, visit_submit_shares_error);
     handler_method!(NewMiningJob, visit_new_mining_job);
-    handler_method!(SetNewPrevhash, visit_set_new_prevhash);
+    handler_method!(SetNewPrevHash, visit_set_new_prev_hash);
     handler_method!(SetTarget, visit_set_target);
 }
 

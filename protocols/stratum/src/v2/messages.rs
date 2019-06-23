@@ -164,7 +164,7 @@ pub struct NewMiningJob {
 struct NewExtendedMiningJob;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SetNewPrevhash {
+pub struct SetNewPrevHash {
     pub block_height: u32,
     pub prev_hash: Uint256Bytes,
     pub min_ntime: u32,
@@ -200,9 +200,9 @@ impl_conversion!(OpenChannelSuccess, visit_open_channel_success);
 impl_conversion!(OpenChannelError, visit_open_channel_error);
 impl_conversion!(UpdateChannel, visit_update_channel);
 impl_conversion!(UpdateChannelError, visit_update_channel_error);
-// impl_conversion!(SubmitShares, visit_submit_shares);
-// impl_conversion!(SubmitSharesSuccess, visit_submit_shares_success);
-// impl_conversion!(SubmitSharesError, visit_submit_shares_error);
-// impl_conversion!(NewMiningJob, visit_new_mining_job);
-// impl_conversion!(SetNewPrevhash, visit_set_new_prevhash);
-// impl_conversion!(SetTarget, visit_set_target);
+impl_conversion!(SubmitShares, visit_submit_shares);
+impl_conversion!(SubmitSharesSuccess, visit_submit_shares_success);
+impl_conversion!(SubmitSharesError, visit_submit_shares_error);
+impl_conversion!(NewMiningJob, visit_new_mining_job);
+impl_conversion!(SetNewPrevHash, visit_set_new_prev_hash);
+impl_conversion!(SetTarget, visit_set_target);
