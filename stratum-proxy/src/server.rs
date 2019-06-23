@@ -62,24 +62,47 @@ impl ConnTranslation {
     }
 
     async fn run(mut self) {
-        // TODO:
-        // let mut v1_translation_rx = self.v1_translation_rx;
-        // let mut v1_conn = self.v1_conn;
-        // let v1_send_task = async move { while let Some(msg) = await!(v1_translation_rx.next()) {} };
+        let mut v1_translation_rx = self.v1_translation_rx;
+        let mut v2_translation_rx = self.v2_translation_rx;
+        let (mut v1_conn_rx, mut v1_conn_tx) = self.v1_conn.split();
+        let (mut v2_conn_rx, mut v2_conn_tx) = self.v2_conn.split();
 
-        let (mut v2_conn_rx, v2_conn_tx) = self.v2_conn.split();
+        // V1 message send out loop
+        let v1_send_task = async move {
+            while let Some(msg) = await!(v1_translation_rx.next()) {
+                await!(v1_conn_tx.send_async(msg));
+            }
+        };
+        tokio::spawn(v1_send_task.compat_fix());
 
-        // TODO: v2 send task
+        // V2 message send out loop
+        let v2_send_task = async move {
+            while let Some(msg) = await!(v2_translation_rx.next()) {
+                await!(v2_conn_tx.send_async(msg));
+            }
+        };
+        tokio::spawn(v2_send_task.compat_fix());
 
-        while let Some(msg) = await!(v2_conn_rx.next()) {
-            let msg = match msg {
-                Ok(msg) => msg,
-                Err(e) => {
-                    error!(LOGGER, "Connection failed: {}", e);
+        loop {
+            let v1_or_v2 = await!(future::select(v1_conn_rx.next(), v2_conn_rx.next()));
+            match v1_or_v2 {
+                // Ok path
+                Either::Left((Some(Ok(v1_msg)), _)) => v1_msg.accept(&mut self.translation),
+                Either::Right((Some(Ok(v2_msg)), _)) => v2_msg.accept(&mut self.translation),
+
+                // Connection close
+                Either::Left((None, _)) | Either::Right((None, _)) => break,
+
+                // Connection error
+                Either::Left((Some(Err(err)), _)) => {
+                    error!(LOGGER, "V1 connection failed: {}", err);
                     break;
-                }
-            };
-            msg.accept(&mut self.translation);
+                },
+                Either::Right((Some(Err(err)), _)) => {
+                    error!(LOGGER, "V2 connection failed: {}", err);
+                    break;
+                },
+            }
         }
 
         info!(
