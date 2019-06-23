@@ -10,7 +10,7 @@ use super::framing;
 use super::{ExtraNonce1, V1Handler, V1Protocol};
 use crate::error::{Error, Result};
 use crate::v1::framing::Method;
-use crate::v1::HexBytes;
+use crate::v1::{HexBytes, HexU32Le};
 
 #[cfg(test)]
 pub mod test;
@@ -200,7 +200,7 @@ impl_conversion_request!(SetDifficulty, Method::SetDifficulty, visit_set_difficu
 pub struct JobId(HexBytes);
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct PrevHash(HexBytes);
+pub struct PrevHash(HexU32Le);
 
 /// Leading part of the coinbase transaction
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -216,15 +216,15 @@ pub struct MerkleBranch(Vec<HexBytes>);
 
 /// Version field of Bitcoin block header
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Version(HexBytes);
+pub struct Version(HexU32Le);
 
 /// Network difficulty target
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Bits(HexBytes);
+pub struct Bits(HexU32Le);
 
 /// Network time
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Time(HexBytes);
+pub struct Time(HexU32Le);
 
 /// New mining job notification
 /// TODO generate the field accessors
@@ -246,8 +246,8 @@ impl Notify {
         &((self.0).0).0
     }
 
-    pub fn prev_hash(&self) -> &[u8] {
-        &((self.1).0).0
+    pub fn prev_hash(&self) -> u32 {
+        ((self.1).0).0
     }
 
     pub fn coin_base_1(&self) -> &[u8] {
@@ -258,16 +258,16 @@ impl Notify {
         &((self.3).0).0
     }
 
-    pub fn version(&self) -> &[u8] {
-        &((self.5).0).0
+    pub fn version(&self) -> u32 {
+        ((self.5).0).0
     }
 
-    pub fn bits(&self) -> &[u8] {
-        &((self.6).0).0
+    pub fn bits(&self) -> u32 {
+        ((self.6).0).0
     }
 
-    pub fn time(&self) -> &[u8] {
-        &((self.7).0).0
+    pub fn time(&self) -> u32 {
+        ((self.7).0).0
     }
 
     pub fn clean_jobs(&self) -> bool {

@@ -9,6 +9,7 @@ use crate::LOGGER;
 use crate::v1::framing::Frame;
 use crate::v1::framing::Method;
 
+use bitcoin_hashes::hex::{FromHex, ToHex};
 use failure::ResultExt;
 use serde::{Deserialize, Serialize};
 use slog::trace;
@@ -151,6 +152,37 @@ impl From<String> for HexBytes {
 impl Into<String> for HexBytes {
     fn into(self) -> String {
         hex::encode(self.0)
+    }
+}
+
+/// Little-endian hex encoded u32
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(into = "String", from = "String")]
+pub struct HexU32Le(u32);
+
+impl TryFrom<&str> for HexU32Le {
+    type Error = crate::error::Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        let parsed_bytes: [u8; 4] = FromHex::from_hex(value).context("parse u32 hex value")?;
+        Ok(HexU32Le(u32::from_le_bytes(parsed_bytes)))
+    }
+}
+
+/// TODO: this is not the cleanest way as any deserialization error is essentially consumed and
+/// manifested as empty vector. However, it is very comfortable to use this trait implementation
+/// in Extranonce1 serde support
+impl From<String> for HexU32Le {
+    fn from(value: String) -> Self {
+        HexU32Le::try_from(value.as_str()).unwrap_or(HexU32Le(0))
+    }
+}
+
+/// Helper Serializer
+impl Into<String> for HexU32Le {
+    fn into(self) -> String {
+        self.0.to_le_bytes().to_hex()
+        //hex::encode(self.0)
     }
 }
 
