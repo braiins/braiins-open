@@ -50,6 +50,8 @@ pub struct V2ToV1Translation {
     v2_target: Option<uint::U256>,
     /// Unique job ID generator
     v2_job_id: MessageId,
+    /// Translates V2 job ID to V1 job ID
+    v2_to_v1_job_map: JobMap,
 
     /// TODO: Temporary local blockheight. We will extract the value from coinbase part 1.
     block_height: MessageId,
@@ -88,6 +90,9 @@ type V1StratumErrorHandler = fn(
 /// Custom mapping of V1 request id onto result/error handlers
 type V1ReqMap = HashMap<u32, (V1StratumResultHandler, V1StratumErrorHandler)>;
 
+/// Maps V2 job ID to V1 job ID so that we can submit mining results upstream to V1 server
+type JobMap = HashMap<u32, v1::messages::JobId>;
+
 //type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &wire::Message<V2Protocol>, &v1::framing::StratumResult)>;
 
 impl V2ToV1Translation {
@@ -123,6 +128,7 @@ impl V2ToV1Translation {
             v2_tx,
             v2_req_id: MessageId::new(),
             v2_job_id: MessageId::new(),
+            v2_to_v1_job_map: JobMap::default(),
             block_height: MessageId::new(),
         }
     }
@@ -385,6 +391,12 @@ impl V2ToV1Translation {
             .into())
         }
     }
+
+    /// TODO temporary workaround that provides locally tracked block height (from start of the
+    /// mining session. This is yet to be implemented
+    fn extract_block_height_from_notify(&self, payload: &v1::messages::Notify) -> u32 {
+        self.block_height.get()
+    }
 }
 
 impl v1::V1Handler for V2ToV1Translation {
@@ -438,19 +450,38 @@ impl v1::V1Handler for V2ToV1Translation {
     }
 
     /// Composes a new mining job and sends it downstream
-    /// TODO: Only 1 channel is supported, there is no blockheight extraction present
-    fn visit_notify(&mut self, _msg: &Message<v1::V1Protocol>, payload: &v1::messages::Notify) {
+    /// TODO: Only 1 channel is supported
+    fn visit_notify(&mut self, msg: &Message<v1::V1Protocol>, payload: &v1::messages::Notify) {
         self.calculate_merkle_root(payload)
             .and_then(|merkle_root| {
-                let job = v2::messages::NewMiningJob {
+                let v2_job = v2::messages::NewMiningJob {
                     channel_id: Self::CHANNEL_ID,
                     job_id: self.v2_job_id.next(),
-                    block_height: 0,
+                    block_height: self.extract_block_height_from_notify(payload),
                     merkle_root: Uint256Bytes(merkle_root.into_inner()),
                     version: payload.version(),
                 };
-                // TODO implement accounting job ID pairing + retain parts of the original notify required for submission
-                Self::submit_message(&mut self.v2_tx, job);
+                trace!(
+                    LOGGER,
+                    "Registering V2 job ID {:x?} -> V1 job ID {:x?} (details: {:x?})",
+                    v2_job.job_id,
+                    payload.job_id(),
+                    payload,
+                );
+                if self
+                    .v2_to_v1_job_map
+                    .insert(
+                        v2_job.job_id,
+                        v1::messages::JobId::from_slice(payload.job_id()),
+                    )
+                    .is_some()
+                {
+                    error!(LOGGER, "BUG: V2 id {} already exists...", v2_job.job_id);
+                    // TODO add graceful handling of this bug (shutdown?)
+                    panic!("V2 id already exists");
+                }
+
+                Self::submit_message(&mut self.v2_tx, v2_job);
 
                 Ok(())
             })
