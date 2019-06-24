@@ -95,7 +95,7 @@ macro_rules! impl_conversion_response {
 }
 
 /// Compounds all data required for mining subscription
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Subscribe(
     pub Option<String>,
     pub Option<ExtraNonce1>,
@@ -130,13 +130,13 @@ impl Subscribe {
 impl_conversion_request!(Subscribe, Method::Subscribe, visit_subscribe);
 
 /// Custom subscriptions
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Subscription(pub String, pub String);
 
 /// Subscription response
 /// TODO: Do we need to track any subscription ID's or anyhow validate those fields?
 /// see StratumError for reasons why this structure doesn't have named fields
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SubscribeResult(pub Vec<Subscription>, pub ExtraNonce1, pub usize);
 
 impl SubscribeResult {
@@ -157,7 +157,7 @@ impl SubscribeResult {
 impl_conversion_response!(SubscribeResult);
 
 /// A boolean result
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct BooleanResult(pub bool);
 
 impl_conversion_response!(BooleanResult);
@@ -165,7 +165,7 @@ impl_conversion_response!(BooleanResult);
 /// Subscription response
 /// TODO: Do we need to track any subscription ID's or anyhow validate those fields?
 /// see StratumError for reasons why this structure doesn't have named fields
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Authorize(pub String, pub String);
 
 impl Authorize {
@@ -211,32 +211,32 @@ impl JobId {
 pub struct PrevHash(HexBytes);
 
 /// Leading part of the coinbase transaction
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct CoinBase1(HexBytes);
 
 /// Trailing part of the coinbase transaction
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct CoinBase2(HexBytes);
 
 /// Merkle branch of transaction hashes leading to coinbase
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct MerkleBranch(Vec<HexBytes>);
 
 /// Version field of Bitcoin block header
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Version(HexU32Le);
 
 /// Network difficulty target
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Bits(HexU32Le);
 
 /// Network time
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Time(HexU32Le);
 
 /// New mining job notification
 /// TODO generate the field accessors
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Notify(
     JobId,
     PrevHash,

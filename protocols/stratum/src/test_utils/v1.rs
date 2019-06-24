@@ -125,6 +125,8 @@ pub fn build_set_difficulty() -> SetDifficulty {
     SetDifficulty([512f32])
 }
 
+pub const MINING_NOTIFY_JOB_ID: [u8; 1] = [0xbf; 1];
+
 pub const MINING_NOTIFY_JSON: &str = concat!(
 r#"{"#,
 r#""id":null,"method":"mining.notify","#,
@@ -182,13 +184,24 @@ pub struct TestIdentityHandler;
 //pub struct TestIdentityHandler(fn()->Strat);
 
 impl TestIdentityHandler {
-    fn visit_and_check<P, F>(&mut self, msg: &wire::Message<V1Protocol>, payload: &P, build: F)
-    where
+    /// Performs 2 checks:
+    /// - if the provided message payload matches the one expected by the test (provided by
+    /// `build_payload` function
+    /// - whether the `full_message` after serialization matches the expected `json_message` JSON
+    /// representation
+    fn visit_and_check<P, F>(
+        &mut self,
+        msg: &wire::Message<V1Protocol>,
+        payload: &P,
+        build_payload: F,
+        full_message: Frame,
+        json_message: &str,
+    ) where
         P: Debug + PartialEq,
         F: FnOnce() -> P,
     {
         // Build expected payload for verifying correct deserialization
-        let expected_payload = build();
+        let expected_payload = build_payload();
         trace!(
             LOGGER,
             "V1 TestIdentityHandler: Message ID {:?} {:?}",
@@ -196,26 +209,74 @@ impl TestIdentityHandler {
             payload
         );
         assert_eq!(expected_payload, *payload, "Message payloads don't match");
+
+        let serialized_message: wire::TxFrame = full_message.try_into().expect("Cannot serialize");
+        assert_eq!(
+            json_message,
+            std::str::from_utf8(&serialized_message)
+                .expect("Can't convert serialized message to str"),
+            "Serialized messages don't match"
+        );
+    }
+
+    fn visit_and_check_request<P, F>(
+        &mut self,
+        msg: &wire::Message<V1Protocol>,
+        payload: &P,
+        build_payload: F,
+        json_message: &str,
+    ) where
+        P: Debug + PartialEq + Clone + TryInto<RequestPayload>,
+        <P as std::convert::TryInto<RequestPayload>>::Error: std::fmt::Debug,
+        F: FnOnce() -> P,
+    {
+        self.visit_and_check(
+            msg,
+            payload,
+            build_payload,
+            build_request_message(msg.id, payload.clone()),
+            json_message,
+        );
     }
 }
 
 impl V1Handler for TestIdentityHandler {
     fn visit_stratum_result(&mut self, msg: &wire::Message<V1Protocol>, payload: &StratumResult) {
-        self.visit_and_check(msg, payload, || {
-            StratumResult::new_from(build_subscribe_ok_result())
-                .expect("Cannot convert to stratum result")
-        });
+        let full_message =
+            build_result_response_message(msg.id.expect("Message ID missing"), payload);
+
+        self.visit_and_check(
+            msg,
+            payload,
+            || {
+                StratumResult::new_from(build_subscribe_ok_result())
+                    .expect("Cannot convert to stratum result")
+            },
+            build_result_response_message(msg.id.expect("Message ID missing"), payload),
+            MINING_SUBSCRIBE_OK_RESULT_JSON,
+        );
     }
 
     fn visit_subscribe(&mut self, msg: &wire::Message<V1Protocol>, payload: &Subscribe) {
-        self.visit_and_check(msg, payload, build_subscribe);
+        // we have to clone the payload to create a locally owned copy as build_request_message
+        // requires transfer of ownership
+        self.visit_and_check_request(msg, payload, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
     }
 
     fn visit_authorize(&mut self, msg: &wire::Message<V1Protocol>, payload: &Authorize) {
-        self.visit_and_check(msg, payload, build_authorize);
+        self.visit_and_check_request(msg, payload, build_authorize, MINING_AUTHORIZE_JSON);
     }
 
     fn visit_set_difficulty(&mut self, msg: &wire::Message<V1Protocol>, payload: &SetDifficulty) {
-        self.visit_and_check(msg, payload, build_set_difficulty);
+        self.visit_and_check_request(
+            msg,
+            payload,
+            build_set_difficulty,
+            MINING_SET_DIFFICULTY_JSON,
+        );
+    }
+
+    fn visit_notify(&mut self, msg: &wire::Message<V1Protocol>, payload: &Notify) {
+        self.visit_and_check_request(msg, payload, build_mining_notify, MINING_NOTIFY_JSON);
     }
 }
