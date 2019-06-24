@@ -19,7 +19,6 @@ use std::str::FromStr;
 
 use super::{V1Handler, V1Protocol};
 use crate::error::Result;
-use crate::test_utils::v1::*;
 use crate::v1::error::ErrorKind;
 use wire;
 
@@ -237,11 +236,22 @@ impl FromStr for Frame {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test_utils::v1::*;
     use wire::TxFrame;
 
     #[test]
-    fn test_deserialize_request() {
-        let _deserialized = Frame::try_from(MINING_SUBSCRIBE_REQ_JSON.as_bytes()).unwrap();
+    fn test_deserialize_serialize_request() {
+        for req in V1_TEST_REQUESTS.iter() {
+            let deserialized = Frame::try_from(req.as_bytes()).unwrap();
+            let serialized: TxFrame = deserialized
+                .try_into()
+                .expect("Serialization to TxFrame failed");
+            assert_eq!(
+                *req,
+                std::str::from_utf8(&serialized).expect("Can't convert serialized request to str"),
+                "Frames don't match"
+            );
+        }
     }
 
     #[test]

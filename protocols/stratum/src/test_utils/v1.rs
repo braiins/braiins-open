@@ -280,3 +280,13 @@ impl V1Handler for TestIdentityHandler {
         self.visit_and_check_request(msg, payload, build_mining_notify, MINING_NOTIFY_JSON);
     }
 }
+
+/// A complete list of all requests in this module for massive testing
+/// TODO Is it possible to use inventory crate to collect these?
+pub const V1_TEST_REQUESTS: &[&str] = &[
+    MINING_SUBSCRIBE_REQ_JSON,
+    MINING_NOTIFY_JSON,
+    MINING_AUTHORIZE_JSON,
+    MINING_SUBSCRIBE_REQ_JSON,
+    MINING_SET_DIFFICULTY_JSON,
+];

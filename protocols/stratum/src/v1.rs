@@ -247,10 +247,11 @@ mod test {
     /// This test demonstrates an actual implementation of protocol handler (aka visitor to a set of
     /// desired messsages
     #[test]
-    fn test_deserialize_request_message() {
-        let msg = deserialize_message(MINING_SUBSCRIBE_REQ_JSON).expect("Deserialization failed");
-        msg.accept(&mut TestIdentityHandler);
-        // TODO also perform serialization and check the output matches (missing port...)
+    fn test_deserialize_serialize_request_message() {
+        for req in V1_TEST_REQUESTS.iter() {
+            let msg = deserialize_message(req).expect("Deserialization failed");
+            msg.accept(&mut TestIdentityHandler);
+        }
     }
 
     #[test]
