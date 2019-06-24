@@ -120,7 +120,7 @@ fn test_setup_mining_connection_translate() {
                 &mut translation,
                 test_utils::v1::build_set_difficulty_request_message(),
             );
-            // Now we should have a succesfully open channel
+            // Now we should have a successfully open channel
             await!(v2_verify_generated_response_message(&mut v2_rx));
 
             v1_simulate_incoming_message(

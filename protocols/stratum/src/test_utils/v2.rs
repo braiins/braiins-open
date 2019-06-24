@@ -50,9 +50,11 @@ impl V2Handler for TestIdentityHandler {
     ) {
         self.visit_and_check(msg, payload, build_setup_mining_connection_success);
     }
+
     fn visit_open_channel(&mut self, msg: &wire::Message<V2Protocol>, payload: &OpenChannel) {
         self.visit_and_check(msg, payload, build_open_channel);
     }
+
     fn visit_open_channel_success(
         &mut self,
         msg: &wire::Message<V2Protocol>,

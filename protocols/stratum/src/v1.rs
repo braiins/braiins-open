@@ -120,6 +120,7 @@ pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
 
 /// Extranonce 1 introduced as new type to provide shared conversions to/from string
 /// TODO: find out correct byte order for extra nonce 1
+/// TODO: implement deref trait consolidate use of extra nonce 1
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ExtraNonce1(pub HexBytes);
 
