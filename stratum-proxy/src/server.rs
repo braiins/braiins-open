@@ -147,26 +147,41 @@ pub fn run(
         "Stratum proxy service starting @ {} -> {}", listen_addr, stratum_addr
     );
 
-    let (quit_tx, mut quit_rx) = mpsc::channel(1);
+    let (quit_tx, quit_rx) = mpsc::channel(1);
+    let mut quit_rx = Some(quit_rx);
 
-    let server_task =
-        async move {
-            // Select over the incoming connections stream and the quit channel
-            while let Some(conn) = await!(future::select(server.next(), quit_rx.next()).map(
-                |either| match either {
-                    Either::Left((Some(conn), _)) => Some(conn),
-                    _ => None,
+    let server_task = async move {
+        // Select over the incoming connections stream and the quit channel
+        // In case quit_rx is closed (by quit_tx being dropped),
+        // we drop quit_rx as well and switch to only awaiting the socket.
+        loop {
+            let conn = if let Some(quit_rx_next) = quit_rx.as_mut().map(|rx| rx.next()) {
+                match await!(future::select(server.next(), quit_rx_next)) {
+                    Either::Left((Some(conn), _)) => conn,
+                    Either::Right((None, _)) => {
+                        // The quit_rx channel has been closed / quit_tx dropped,
+                        // and so we can't poll the quit_rx any more (otherwise it panics)
+                        quit_rx = None;
+                        continue;
+                    }
+                    _ => break, // Quit notification on quit_rx or socket closed
                 }
-            )) {
-                // TODO handle connection errors
-                let conn = conn.expect("Stratum error");
-                info!(LOGGER, "Received a connection from: {:?}", conn.peer_addr());
-                //ok_or(ErrorKind::General("V2 service terminated".into()));
-                tokio::spawn(handle_connection(conn, stratum_addr).compat_fix());
-            }
+            } else {
+                match await!(server.next()) {
+                    Some(conn) => conn,
+                    None => break, // Socket closed
+                }
+            };
 
-            info!(LOGGER, "Stratum proxy service terminated");
-        };
+            // TODO handle connection errors
+            let conn = conn.expect("Stratum error");
+            info!(LOGGER, "Received a connection from: {:?}", conn.peer_addr());
+            //ok_or(ErrorKind::General("V2 service terminated".into()));
+            tokio::spawn(handle_connection(conn, stratum_addr).compat_fix());
+        }
+
+        info!(LOGGER, "Stratum proxy service terminated");
+    };
 
     (server_task, quit_tx)
 }
