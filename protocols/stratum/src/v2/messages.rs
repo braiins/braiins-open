@@ -112,7 +112,7 @@ pub struct OpenChannelSuccess {
     // pub signature:???
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenChannelError {
     pub req_id: u32,
     pub code: String,
@@ -126,7 +126,7 @@ pub struct UpdateChannelError;
 
 struct CloseChannel;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitShares {
     pub channel_id: u32,
     pub seq_num: u32,
@@ -137,7 +137,7 @@ pub struct SubmitShares {
     pub version: u32,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitSharesSuccess {
     pub channel_id: u32,
     pub last_seq_num: u32,
@@ -145,7 +145,7 @@ pub struct SubmitSharesSuccess {
     pub new_shares_count: u32,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitSharesError {
     pub channel_id: u32,
     pub seq_num: u32,
@@ -163,7 +163,7 @@ pub struct NewMiningJob {
 
 struct NewExtendedMiningJob;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetNewPrevHash {
     pub block_height: u32,
     pub prev_hash: Uint256Bytes,
@@ -178,7 +178,7 @@ struct SetCustomMiningJob;
 struct SetCustomMiningJobSuccess;
 struct Reconnect;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetTarget {
     pub channel_id: u32,
     pub max_target: Uint256Bytes,
