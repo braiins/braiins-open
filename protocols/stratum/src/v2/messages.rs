@@ -152,7 +152,7 @@ pub struct SubmitSharesError {
     pub code: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct NewMiningJob {
     pub channel_id: u32,
     pub job_id: u32,

@@ -129,6 +129,19 @@ pub struct ExtraNonce1(pub HexBytes);
 #[serde(into = "String", from = "String")]
 pub struct HexBytes(Vec<u8>);
 
+impl HexBytes {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+/// Referencing the internal part of hex bytes
+impl AsRef<Vec<u8>> for HexBytes {
+    fn as_ref(&self) -> &Vec<u8> {
+        &self.0
+    }
+}
+
 impl TryFrom<&str> for HexBytes {
     type Error = crate::error::Error;
 

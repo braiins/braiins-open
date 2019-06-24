@@ -33,6 +33,10 @@ impl MessageId {
         self.0.fetch_add(1, atomic::Ordering::SeqCst)
         // FIXME: The atomic addition wraps around
     }
+
+    pub fn get(&self) -> u32 {
+        self.0.load(atomic::Ordering::SeqCst)
+    }
 }
 
 /// Provides mapping of request ID to a response channel that will be used for

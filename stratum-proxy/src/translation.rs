@@ -1,4 +1,4 @@
-use bitcoin_hashes::sha256::Hash;
+use bitcoin_hashes::{sha256, sha256d, Hash, HashEngine};
 use futures::channel::mpsc;
 use slog::{error, info, trace, warn};
 use std::collections::HashMap;
@@ -6,12 +6,13 @@ use std::convert::From;
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt;
+use std::mem::size_of;
 use stratum;
 use stratum::v1;
 use stratum::v2;
 use stratum::LOGGER;
-use uint;
 
+use bytes::BytesMut;
 use stratum::v2::types::Uint256Bytes;
 use wire::{Message, MessageId, TxFrame};
 
@@ -46,6 +47,11 @@ pub struct V2ToV1Translation {
     /// Target difficulty derived from mining.set_difficulty message
     /// The channel opening is not complete until the target is determined
     v2_target: Option<uint::U256>,
+    /// Unique job ID generator
+    v2_job_id: MessageId,
+
+    /// TODO: Temporary local blockheight. We will extract the value from coinbase part 1.
+    block_height: MessageId,
 }
 
 /// States of the Translation setup
@@ -87,6 +93,9 @@ impl V2ToV1Translation {
     const PROTOCOL_VERSION: usize = 0;
     /// No support for the extended protocol yet, therefore, no extranonce advertised
     const MAX_EXTRANONCE_SIZE: usize = 0;
+    /// Currently, no support for multiple channels in the proxy
+    const CHANNEL_ID: u32 = 0;
+
     /// U256 in little endian
     /// TODO: consolidate into common part/generalize
     /// TODO: DIFF1 const target is broken, the last U64 word gets actually initialized to 0xffffffff, not sure why
@@ -112,6 +121,8 @@ impl V2ToV1Translation {
             v1_authorized: false,
             v2_tx,
             v2_req_id: MessageId::new(),
+            v2_job_id: MessageId::new(),
+            block_height: MessageId::new(),
         }
     }
 
@@ -317,6 +328,62 @@ impl V2ToV1Translation {
         info!(LOGGER, "Received stratum error: {:?}", payload);
         unimplemented!();
     }
+
+    /// Iterates the merkle branches and calculates block merkle root using the extra nonce 1.
+    /// Extra nonce 2 encodes the channel ID.
+    /// TODO review, whether a Result has to be returned as missing enonce1 would be considered a bug
+    fn calculate_merkle_root(
+        &mut self,
+        payload: &v1::messages::Notify,
+    ) -> super::error::Result<sha256d::Hash> {
+        // TODO get rid of extra nonce 1 cloning
+        if let Some(v1_extra_nonce1) = self.v1_extra_nonce1.clone() {
+            // Build coin base transaction,
+            let mut coin_base: BytesMut = BytesMut::with_capacity(
+                payload.coin_base_1().len()
+                    + (v1_extra_nonce1.0).len()
+                    + self.v1_extra_nonce2_size
+                    + payload.coin_base_2().len(),
+            );
+            coin_base.extend_from_slice(payload.coin_base_1());
+            coin_base.extend_from_slice(v1_extra_nonce1.0.as_ref().as_slice());
+            coin_base.extend_from_slice(&u32::to_le_bytes(Self::CHANNEL_ID));
+            if self.v1_extra_nonce2_size > size_of::<u32>() {
+                let padding = self.v1_extra_nonce2_size - 4;
+                coin_base.extend_from_slice(&vec![0; padding]);
+            }
+            coin_base.extend_from_slice(payload.coin_base_2());
+
+            let mut engine = sha256d::Hash::engine();
+            engine.input(&coin_base);
+
+            let cb_tx_hash = sha256d::Hash::from_engine(engine);
+            trace!(
+                LOGGER,
+                "Coinbase TX hash: {:x?} {:x?}",
+                cb_tx_hash,
+                coin_base
+            );
+
+            let merkle_root =
+                payload
+                    .merkle_branch()
+                    .iter()
+                    .fold(cb_tx_hash, |curr_merkle_root, tx_hash| {
+                        let mut engine = sha256d::Hash::engine();
+                        engine.input(&curr_merkle_root.into_inner());
+                        engine.input(tx_hash.as_ref().as_slice());
+                        sha256d::Hash::from_engine(engine)
+                    });
+            trace!(LOGGER, "Merkle root calculated: {:x?}", merkle_root);
+            Ok(merkle_root)
+        } else {
+            Err(super::error::ErrorKind::General(
+                "Extra nonce 1 missing, cannot calculate merkle root".into(),
+            )
+            .into())
+        }
+    }
 }
 
 impl v1::V1Handler for V2ToV1Translation {
@@ -354,10 +421,6 @@ impl v1::V1Handler for V2ToV1Translation {
             .ok();
     }
 
-    fn visit_notify(&mut self, _msg: &Message<v1::V1Protocol>, payload: &v1::messages::Notify) {
-        unimplemented!();
-    }
-
     fn visit_set_difficulty(
         &mut self,
         _msg: &Message<v1::V1Protocol>,
@@ -371,6 +434,27 @@ impl v1::V1Handler for V2ToV1Translation {
                 // Consume the error as there is no way to return anything from the visitor for now.
                 .ok();
         }
+    }
+
+    /// Composes a new mining job and sends it downstream
+    /// TODO: Only 1 channel is supported, there is no blockheight extraction present
+    fn visit_notify(&mut self, _msg: &Message<v1::V1Protocol>, payload: &v1::messages::Notify) {
+        self.calculate_merkle_root(payload)
+            .and_then(|merkle_root| {
+                let job = v2::messages::NewMiningJob {
+                    channel_id: Self::CHANNEL_ID,
+                    job_id: self.v2_job_id.next(),
+                    block_height: 0,
+                    merkle_root: Uint256Bytes(merkle_root.into_inner()),
+                    version: payload.version(),
+                };
+                // TODO implement accounting job ID pairing + retain parts of the original notify required for submission
+                Self::submit_message(&mut self.v2_tx, job);
+
+                Ok(())
+            })
+            // Consume the result as we cannot perform any action
+            .ok();
     }
 }
 

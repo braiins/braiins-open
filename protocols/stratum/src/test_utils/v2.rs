@@ -1,8 +1,10 @@
+use bitcoin_hashes::{hex::FromHex, sha256d, Hash};
 use slog::trace;
 use std::fmt::Debug;
 use uint;
 
 use crate::test_utils::common::*;
+use crate::test_utils::v1::MINING_NOTIFY_MERKLE_ROOT;
 use crate::v2::messages::*;
 use crate::v2::types::*;
 use crate::v2::{V2Handler, V2Protocol};
@@ -57,6 +59,10 @@ impl V2Handler for TestIdentityHandler {
         payload: &OpenChannelSuccess,
     ) {
         self.visit_and_check(msg, payload, build_open_channel_success);
+    }
+
+    fn visit_new_mining_job(&mut self, msg: &wire::Message<V2Protocol>, payload: &NewMiningJob) {
+        self.visit_and_check(msg, payload, build_new_mining_job);
     }
 }
 
@@ -117,5 +123,20 @@ pub fn build_open_channel_success() -> OpenChannelSuccess {
         // Represents difficulty 512
         init_target: Uint256Bytes(init_target_le),
         group_channel_id: 0,
+    }
+}
+
+/// TODO: see test_utils::v1::MINING_NOTIFY_JSON that defines a stratum v1 job.
+/// The merkle root below has been calculated by the integration test and cannot be trusted...
+/// We need a V1 mining job with verified merkle root that is to be copied
+pub fn build_new_mining_job() -> NewMiningJob {
+    let expected_merkle_root =
+        sha256d::Hash::from_hex(MINING_NOTIFY_MERKLE_ROOT).expect("from_hex");
+    NewMiningJob {
+        channel_id: 0,
+        job_id: 0,
+        block_height: 0,
+        merkle_root: Uint256Bytes(expected_merkle_root.into_inner()),
+        version: 0x00000020,
     }
 }

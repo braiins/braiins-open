@@ -115,6 +115,10 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<V2Protocol>> {
                 Ok(Box::new(channel_error) as Box<dyn Payload<V2Protocol>>),
             )
         }
+        MessageType::NewMiningJob => {
+            let job = messages::NewMiningJob::try_from(msg_bytes)?;
+            (None, Ok(Box::new(job) as Box<dyn Payload<V2Protocol>>))
+        }
         _ => (
             None,
             Err(error::ErrorKind::UnknownMessage(

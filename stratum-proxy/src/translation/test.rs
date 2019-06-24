@@ -123,11 +123,11 @@ fn test_setup_mining_connection_translate() {
             // Now we should have a succesfully open channel
             await!(v2_verify_generated_response_message(&mut v2_rx));
 
-            //            v1_simulate_incoming_message(a
-            //                &mut translation,
-            //                test_utils::v1::build_mining_notify_request_message(),
-            //            );
-            //            await!(v2_verify_generated_response_message(&mut v2_rx));
+            v1_simulate_incoming_message(
+                &mut translation,
+                test_utils::v1::build_mining_notify_request_message(),
+            );
+            await!(v2_verify_generated_response_message(&mut v2_rx));
         }
             .compat_fix(),
     );

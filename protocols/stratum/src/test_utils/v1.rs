@@ -2,6 +2,7 @@ use serde::Serialize;
 use slog::trace;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
+use std::str::FromStr;
 
 use super::common::*;
 use crate::v1::framing::*;
@@ -126,7 +127,7 @@ pub fn build_set_difficulty() -> SetDifficulty {
 
 pub const MINING_NOTIFY_JSON: &str = concat!(
 r#"{"#,
-r#"id": null, "method": "mining.notify","#,
+r#""id": null, "method": "mining.notify","#,
 r#""params": ["bf", "4d16b6f85af6e2198f44ae2a6de67f78487ae5611b77c6c0440b921e00000000","#,
 r#""01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff20020862062f503253482f04b8864e5008","#,
 r#""072f736c7573682f000000000100f2052a010000001976a914d23fcdf86f7e756a64a7a9688ef9903327048ed988ac00000000","#,
@@ -134,9 +135,31 @@ r#"["4322158778c4f7f149b691134ab5eeed0437fc1754faa7b53deb32861b3e5a77","#,
 r#""1680bad9bfb093f905bde05debe410a557e94a2bf8af3820c0dde29608009438","#,
 r#""5a7f2aefb756fee2bcb94824ac98d71d3c3de2093dfba4e9288e35af786ab3d5","#,
 r#""0d5facd3c63d1c14c97d732c3ebd6d7009f6f18f8142188de5baa78f1bc72b91"],"#,
-r#"20000000","1725fd03","5d0ea025", false]"#,
+r#""20000000","1725fd03","5d0ea025", false]"#,
 r#"}"#,
 );
+
+/// This is merkle root for the job specified via MINING_NOTIFY_JSON
+/// TODO: verify that this merkle root is correct assuming extra nonce 1 = 0, extra nonce 2 size = 4,
+/// and extra nonce 2 =0
+pub const MINING_NOTIFY_MERKLE_ROOT: &str =
+    "a4eedd0736c8e5d316bbd77f683ce932e96f4cc8ac54159bdc8575903f0013f3";
+
+pub fn build_mining_notify_request_message() -> Frame {
+    build_request_message(None, build_mining_notify())
+}
+
+fn build_mining_notify() -> Notify {
+    let deserialized = Frame::from_str(MINING_NOTIFY_JSON).expect("Cannot parse mining job");
+
+    let notify = if let Frame::RpcRequest(req) = deserialized {
+        Notify::try_from(req).expect("Cannot build mining notify message")
+    } else {
+        panic!("Wrong notification message");
+    };
+
+    notify
+}
 
 pub const MINING_AUTHORIZE_JSON: &str =
     r#"{"id":1,"method":"mining.authorize","params":["braiins.worker0","password"]}"#;

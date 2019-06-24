@@ -258,6 +258,10 @@ impl Notify {
         &((self.3).0).0
     }
 
+    pub fn merkle_branch(&self) -> &Vec<HexBytes> {
+        &(self.4).0
+    }
+
     pub fn version(&self) -> u32 {
         ((self.5).0).0
     }
