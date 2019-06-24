@@ -288,3 +288,48 @@ impl Notify {
 }
 
 impl_conversion_request!(Notify, Method::Notify, visit_notify);
+
+/// Combined username and worker
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct UserName(String);
+
+/// Extra nonce 2, note the underlying serialization type
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct ExtraNonce2(HexBytes);
+
+/// Nonce for the block
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct Nonce(HexU32Le);
+
+/// New mining job notification
+/// TODO generate the field accessors
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct Submit(UserName, JobId, ExtraNonce2, Time, Nonce, Version);
+
+impl Submit {
+    pub fn user_name(&self) -> &String {
+        &(self.0).0
+    }
+
+    pub fn job_id(&self) -> &[u8] {
+        &((self.1).0).0
+    }
+
+    pub fn extra_nonce_2(&self) -> &[u8] {
+        &((self.2).0).0
+    }
+
+    pub fn time(&self) -> u32 {
+        ((self.3).0).0
+    }
+
+    pub fn nonce(&self) -> u32 {
+        ((self.4).0).0
+    }
+
+    pub fn version(&self) -> u32 {
+        ((self.5).0).0
+    }
+}
+
+impl_conversion_request!(Submit, Method::Submit, visit_submit);

@@ -58,6 +58,8 @@ pub trait V1Handler: 'static {
     }
 
     fn visit_notify(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Notify) {}
+
+    fn visit_submit(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Submit) {}
 }
 
 /// TODO: deserialization should be done from &[u8] so that it is consistent with V2
