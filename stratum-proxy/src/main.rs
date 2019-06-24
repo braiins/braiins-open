@@ -3,7 +3,10 @@
 
 #![feature(await_macro, async_await)]
 
+use std::cell::RefCell;
+
 use clap::{self, Arg};
+use ctrlc;
 use futures::future::FutureExt;
 use slog::{error, info, trace};
 use tokio::net::TcpListener;
@@ -43,6 +46,15 @@ fn main() {
     let v2_addr = args.value_of("listen").unwrap();
     let v1_addr = args.value_of("remote").unwrap();
 
-    let (server_task, _) = server::run(v2_addr.to_string(), v1_addr.to_string());
+    let (server_task, quit) = server::run(v2_addr.to_string(), v1_addr.to_string());
+    let quit = RefCell::new(quit);
+
+    ctrlc::set_handler(move || {
+        // Received SIGINT, tell the server taks to shut down:
+        quit.try_borrow_mut().map(|mut quit| quit.try_send(()));
+    });
+
     tokio::run(server_task.compat_fix());
+
+    // FIXME: flush logs
 }
