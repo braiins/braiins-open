@@ -181,12 +181,14 @@ impl Authorize {
 impl_conversion_request!(Authorize, Method::Authorize, visit_authorize);
 
 /// Difficulty value set by the upstream stratum server
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct SetDifficulty(pub f32);
+/// Note, that we explicitly enforce 1 one element array so that serde doesn't flatten the
+/// 'params' JSON array to a single value, eliminating the array completely.
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct SetDifficulty(pub [f32; 1]);
 
 impl SetDifficulty {
     pub fn value(&self) -> f32 {
-        self.0
+        self.0[0]
     }
 }
 
@@ -196,11 +198,17 @@ impl_conversion_request!(SetDifficulty, Method::SetDifficulty, visit_set_difficu
 //
 //let dur = serde_json::from_str(j).map(|Helper(dur)| dur)?;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct JobId(HexBytes);
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct PrevHash(HexU32Le);
+impl JobId {
+    pub fn from_slice(job_id: &[u8]) -> Self {
+        Self(HexBytes(Vec::from(job_id)))
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct PrevHash(HexBytes);
 
 /// Leading part of the coinbase transaction
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -246,8 +254,8 @@ impl Notify {
         &((self.0).0).0
     }
 
-    pub fn prev_hash(&self) -> u32 {
-        ((self.1).0).0
+    pub fn prev_hash(&self) -> &[u8] {
+        &((self.1).0).0
     }
 
     pub fn coin_base_1(&self) -> &[u8] {

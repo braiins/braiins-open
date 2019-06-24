@@ -115,14 +115,14 @@ pub fn build_stratum_err_response_frame() -> Response {
 }
 
 pub const MINING_SET_DIFFICULTY_JSON: &str =
-    r#"{"id":null,"method":"mining.set_difficulty","params":[8192]}"#;
+    r#"{"id":null,"method":"mining.set_difficulty","params":[512.0]}"#;
 
 pub fn build_set_difficulty_request_message() -> Frame {
     build_request_message(None, build_set_difficulty())
 }
 
 pub fn build_set_difficulty() -> SetDifficulty {
-    SetDifficulty(512f32)
+    SetDifficulty([512f32])
 }
 
 pub const MINING_NOTIFY_JSON: &str = concat!(
