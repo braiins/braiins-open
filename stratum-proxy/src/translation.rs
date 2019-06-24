@@ -1,4 +1,5 @@
 use bitcoin_hashes::{sha256, sha256d, Hash, HashEngine};
+use bytes::BytesMut;
 use futures::channel::mpsc;
 use slog::{error, info, trace, warn};
 use std::collections::HashMap;
@@ -7,13 +8,13 @@ use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt;
 use std::mem::size_of;
+
 use stratum;
 use stratum::v1;
 use stratum::v2;
+use stratum::v2::types::Uint256Bytes;
 use stratum::LOGGER;
 
-use bytes::BytesMut;
-use stratum::v2::types::Uint256Bytes;
 use wire::{Message, MessageId, TxFrame};
 
 #[cfg(test)]

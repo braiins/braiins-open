@@ -97,11 +97,11 @@ impl ConnTranslation {
                 Either::Left((Some(Err(err)), _)) => {
                     error!(LOGGER, "V1 connection failed: {}", err);
                     break;
-                },
+                }
                 Either::Right((Some(Err(err)), _)) => {
                     error!(LOGGER, "V2 connection failed: {}", err);
                     break;
-                },
+                }
             }
         }
 
