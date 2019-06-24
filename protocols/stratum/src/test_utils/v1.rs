@@ -127,15 +127,15 @@ pub fn build_set_difficulty() -> SetDifficulty {
 
 pub const MINING_NOTIFY_JSON: &str = concat!(
 r#"{"#,
-r#""id": null, "method": "mining.notify","#,
-r#""params": ["bf", "4d16b6f85af6e2198f44ae2a6de67f78487ae5611b77c6c0440b921e00000000","#,
+r#""id":null,"method":"mining.notify","#,
+r#""params":["bf","4d16b6f85af6e2198f44ae2a6de67f78487ae5611b77c6c0440b921e00000000","#,
 r#""01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff20020862062f503253482f04b8864e5008","#,
 r#""072f736c7573682f000000000100f2052a010000001976a914d23fcdf86f7e756a64a7a9688ef9903327048ed988ac00000000","#,
 r#"["4322158778c4f7f149b691134ab5eeed0437fc1754faa7b53deb32861b3e5a77","#,
 r#""1680bad9bfb093f905bde05debe410a557e94a2bf8af3820c0dde29608009438","#,
 r#""5a7f2aefb756fee2bcb94824ac98d71d3c3de2093dfba4e9288e35af786ab3d5","#,
 r#""0d5facd3c63d1c14c97d732c3ebd6d7009f6f18f8142188de5baa78f1bc72b91"],"#,
-r#""20000000","1725fd03","5d0ea025", false]"#,
+r#""20000000","1725fd03","5d0ea025",false]"#,
 r#"}"#,
 );
 
@@ -162,7 +162,7 @@ fn build_mining_notify() -> Notify {
 }
 
 pub const MINING_AUTHORIZE_JSON: &str =
-    r#"{"id":1,"method":"mining.authorize","params":["braiins.worker0","password"]}"#;
+    r#"{"id":1,"method":"mining.authorize","params":["braiins.worker0",""]}"#;
 
 pub fn build_authorize_request_message() -> Frame {
     build_request_message(Some(1), build_authorize())
