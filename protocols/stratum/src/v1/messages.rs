@@ -249,6 +249,7 @@ pub struct Notify(
     bool,
 );
 
+// TODO consider making the attributes return new type references, it would be less prone to typos
 impl Notify {
     pub fn job_id(&self) -> &[u8] {
         &((self.0).0).0

@@ -80,8 +80,8 @@ async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<TxFrame
     msg.accept(&mut test_utils::v1::TestIdentityHandler);
 }
 
-/// The test simulates incoming connection to the translation and verifies the the messages emitted
-/// corresponding V1 or V2 messages
+/// This test simulates incoming connection to the translation and verifies that the translation
+/// emits corresponding V1 or V2 messages
 /// TODO we need a way to detect that translation is not responding and the entire test should fail
 #[test]
 fn test_setup_mining_connection_translate() {

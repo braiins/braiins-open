@@ -268,6 +268,8 @@ mod test {
         }
     }
 
+    /// TODO maybe remove this test as it is effectively covered by
+    /// test_deserialize_serialize_request()
     #[test]
     fn test_serialize_request() {
         let request = build_subscribe_request_frame();
