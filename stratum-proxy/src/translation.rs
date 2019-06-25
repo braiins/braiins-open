@@ -91,10 +91,18 @@ type V1StratumErrorHandler = fn(
 /// Custom mapping of V1 request id onto result/error handlers
 type V1ReqMap = HashMap<u32, (V1StratumResultHandler, V1StratumErrorHandler)>;
 
+/// Helper template stored in V2->V1 job map
+struct V1SubmitTemplate {
+    job_id: v1::messages::JobId,
+    time: u32,
+    version: u32,
+}
+
 /// Maps V2 job ID to V1 job ID so that we can submit mining results upstream to V1 server
-type JobMap = HashMap<u32, v1::messages::JobId>;
+type JobMap = HashMap<u32, V1SubmitTemplate>;
 
 //type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &wire::Message<V2Protocol>, &v1::framing::StratumResult)>;
+
 
 impl V2ToV1Translation {
     const PROTOCOL_VERSION: usize = 0;
@@ -562,7 +570,8 @@ impl v1::V1Handler for V2ToV1Translation {
                     .v2_to_v1_job_map
                     .insert(
                         v2_job.job_id,
-                        v1::messages::JobId::from_slice(payload.job_id()),
+                        V1SubmitTemplate{job_id: v1::messages::JobId::from_slice(payload.job_id()),
+                            time: payload.time(), version: payload.version()},
                     )
                     .is_some()
                 {
