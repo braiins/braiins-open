@@ -53,7 +53,7 @@ pub const MINING_BROKEN_REQ_JSON: &str = concat!(
 /// TODO: find out how to fill in extra nonce 1 and extra nonce 2 size from predefined constants
 pub const MINING_SUBSCRIBE_OK_RESULT_JSON: &str = concat!(
     r#"{"id":0,"#,
-    r#""result":[[["mining.set_difficulty","1"],["mining.notify","1"]],"6c6f010000000c",4],"#,
+    r#""result":[[["mining.set_difficulty","4"],["mining.notify","1"]],"6c6f010000000c",4],"#,
     r#""error":null}"#
 );
 
@@ -120,14 +120,14 @@ pub fn build_stratum_err_response_frame() -> Response {
 }
 
 pub const MINING_SET_DIFFICULTY_JSON: &str =
-    r#"{"id":null,"method":"mining.set_difficulty","params":[512.0]}"#;
+    r#"{"id":null,"method":"mining.set_difficulty","params":[4]}"#;
 
 pub fn build_set_difficulty_request_message() -> Frame {
     build_request_message(None, build_set_difficulty())
 }
 
 pub fn build_set_difficulty() -> SetDifficulty {
-    SetDifficulty([512f32])
+    SetDifficulty([4f32])
 }
 
 pub const MINING_NOTIFY_JOB_ID: [u8; 1] = [0xbf; 1];
