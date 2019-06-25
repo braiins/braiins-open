@@ -1,5 +1,6 @@
 use bitcoin_hashes::{sha256, sha256d, Hash, HashEngine};
 use bytes::BytesMut;
+use failure::ResultExt;
 use futures::channel::mpsc;
 use slog::{error, info, trace, warn};
 use std::collections::HashMap;
@@ -397,6 +398,36 @@ impl V2ToV1Translation {
     fn extract_block_height_from_notify(&self, payload: &v1::messages::Notify) -> u32 {
         self.block_height.get()
     }
+
+    /// Builds SetNewPrevHash for the specified v1 Notify `payload`
+    ///
+    /// TODO: how to and if at all shall we determine the ntime offset? The proxy, unless
+    /// it has access to the bitcoin network, cannot determine precisly determine the median
+    /// ntime. Using sys_time may not be suitable:
+    /// max_ntime_offset = min(min_ntime + 7200, sys_time + 7200)- min_ntime =
+    ///                  = 7200 - min(0, sys_time - min_ntime)
+    ///
+    /// To be safe, we won't go for 7200, and suggest something like 1/4 of the calculated
+    /// interval
+    fn build_set_new_prev_hash(
+        &self,
+        payload: &v1::messages::Notify,
+    ) -> crate::error::Result<v2::messages::SetNewPrevHash> {
+        let max_ntime_offset = (7200 - 0/*min(0, sys_time - payload.time())*/) / 4;
+        // TODO review how this can be prevented from failing. If this fails, it should result in
+        // panic as it marks a software bug
+        let prev_hash =
+            sha256d::Hash::from_slice(payload.prev_hash()).context("Build SetNewPrevHash")?;
+        let prev_hash = Uint256Bytes(prev_hash.into_inner());
+
+        Ok(v2::messages::SetNewPrevHash {
+            block_height: self.extract_block_height_from_notify(payload),
+            prev_hash,
+            min_ntime: payload.time(),
+            max_ntime_offset,
+            nbits: payload.bits(),
+        })
+    }
 }
 
 impl v1::V1Handler for V2ToV1Translation {
@@ -461,6 +492,20 @@ impl v1::V1Handler for V2ToV1Translation {
                     merkle_root: Uint256Bytes(merkle_root.into_inner()),
                     version: payload.version(),
                 };
+
+                // Make sure we generate new prev hash. Empty JobMap means this is the first
+                // mining.notify message and we also
+                // have to issue NewPrevHash. In addition to that, we also check the clean
+                // jobs flag that indicates a must for new prev hash, too.
+                let maybe_set_new_prev_hash =
+                    if self.v2_to_v1_job_map.is_empty() || payload.clean_jobs() {
+                        self.v2_to_v1_job_map.clear();
+                        // Any error means immediate termination
+                        // TODO write a unit test for such scenario, too
+                        Some(self.build_set_new_prev_hash(payload)?)
+                    } else {
+                        None
+                    };
                 trace!(
                     LOGGER,
                     "Registering V2 job ID {:x?} -> V1 job ID {:x?} (details: {:x?})",
@@ -483,6 +528,10 @@ impl v1::V1Handler for V2ToV1Translation {
 
                 Self::submit_message(&mut self.v2_tx, v2_job);
 
+                maybe_set_new_prev_hash.and_then(|set_new_prev_hash| {
+                    Self::submit_message(&mut self.v2_tx, set_new_prev_hash);
+                    Some(())
+                });
                 Ok(())
             })
             // Consume the result as we cannot perform any action

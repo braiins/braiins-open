@@ -66,6 +66,15 @@ impl V2Handler for TestIdentityHandler {
     fn visit_new_mining_job(&mut self, msg: &wire::Message<V2Protocol>, payload: &NewMiningJob) {
         self.visit_and_check(msg, payload, build_new_mining_job);
     }
+
+    fn visit_set_new_prev_hash(
+        &mut self,
+        msg: &wire::Message<V2Protocol>,
+        payload: &SetNewPrevHash,
+    ) {
+        self.visit_and_check(msg, payload, build_set_new_prev_hash);
+    }
+
 }
 
 pub const SETUP_MINING_CONNECTION_SERIALIZED: &str =
@@ -140,5 +149,23 @@ pub fn build_new_mining_job() -> NewMiningJob {
         block_height: 0,
         merkle_root: Uint256Bytes(expected_merkle_root.into_inner()),
         version: 0x00000020,
+    }
+}
+
+pub fn build_set_new_prev_hash() -> SetNewPrevHash {
+    // Extract the prevhash and other information from V1 message to prevent any duplication
+    let v1_req = v1::build_mining_notify();
+    let prev_hash = sha256d::Hash::from_slice(v1_req.prev_hash()).expect("Cannot build Prev Hash");
+
+    SetNewPrevHash {
+        block_height: 0,
+        prev_hash: Uint256Bytes(prev_hash.into_inner()),
+        min_ntime: v1_req.time(),
+        // TODO: this needs to be reviewed and system time should be deterministically involved,
+        // too?
+        max_ntime_offset: 1800,
+        nbits: v1_req.bits(),
+    }
+}
     }
 }

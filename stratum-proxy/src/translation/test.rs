@@ -127,6 +127,9 @@ fn test_setup_mining_connection_translate() {
                 &mut translation,
                 test_utils::v1::build_mining_notify_request_message(),
             );
+            // Expect NewMiningJob
+            await!(v2_verify_generated_response_message(&mut v2_rx));
+            // Expect SetNewPrevHash
             await!(v2_verify_generated_response_message(&mut v2_rx));
             // Ensure that the V1 job has been registered
             assert_eq!(
