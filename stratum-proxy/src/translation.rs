@@ -739,30 +739,28 @@ impl v2::V2Handler for V2ToV1Translation {
             .map(|tmpl| tmpl.clone());
         // TODO validate the job (recalculate the hash and compare the target)
         // Submit upstream V1 job based on the found job ID in the map
-        let v1_submit_status = v1_submit_template.map(|v1_submit_template| {
-            let submit = v1::messages::Submit::new(
-                v2_channel_details.user.clone(),
-                v1_submit_template.job_id.clone(),
-                Self::channel_to_extra_nonce2_bytes(Self::CHANNEL_ID, v1_extra_nonce2_size)
-                    .as_ref(),
-                v1_submit_template.time + payload.ntime_offset as u32,
-                payload.nonce,
-                // ensure the version bits in the template follow BIP320
-                (v1_submit_template.version & !stratum::BIP320_N_VERSION_MASK)
-                    | (payload.version & stratum::BIP320_N_VERSION_MASK),
-            );
-            // Convert the method into a message + provide handling methods
-            let v1_submit_message = self.v1_method_into_message(
-                submit,
-                Self::handle_submit_result,
-                Self::handle_submit_error,
-            );
-            Self::submit_message(&mut self.v1_tx, v1_submit_message);
-            ()
-        });
-
-        if let Err(e) = v1_submit_status {
-            self.reject_shares(payload, format!("{}", e));
+        match v1_submit_template {
+            Ok(v1_submit_template) => {
+                let submit = v1::messages::Submit::new(
+                    v2_channel_details.user.clone(),
+                    v1_submit_template.job_id.clone(),
+                    Self::channel_to_extra_nonce2_bytes(Self::CHANNEL_ID, v1_extra_nonce2_size)
+                        .as_ref(),
+                    v1_submit_template.time + payload.ntime_offset as u32,
+                    payload.nonce,
+                    // ensure the version bits in the template follow BIP320
+                    (v1_submit_template.version & !stratum::BIP320_N_VERSION_MASK)
+                        | (payload.version & stratum::BIP320_N_VERSION_MASK),
+                );
+                // Convert the method into a message + provide handling methods
+                let v1_submit_message = self.v1_method_into_message(
+                    submit,
+                    Self::handle_submit_result,
+                    Self::handle_submit_error,
+                );
+                Self::submit_message(&mut self.v1_tx, v1_submit_message);
+            }
+            Err(e) => self.reject_shares(payload, format!("{}", e)),
         }
     }
 }
