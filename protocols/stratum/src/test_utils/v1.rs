@@ -164,8 +164,9 @@ pub fn build_mining_notify() -> Notify {
 }
 
 pub const MINING_SUBMIT_JSON: &str = concat!(
-    r#"{"id":1,"method":"mining.submit","params":["braiins.worker0","#,
-    r#""bf","00000000","5d0ea025","efbeadde","20000000"]}"#
+    r#"{"id":1,"method":"mining.submit","#,
+    r#""params": ["user_1.pminer", "11de9", "01000000", "5d10bc0a", "7bc34304"]"#,
+    r#"}"#
 );
 
 pub fn build_mining_submit_request_message() -> Frame {
