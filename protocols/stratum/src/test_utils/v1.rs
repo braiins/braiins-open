@@ -52,8 +52,9 @@ pub const MINING_BROKEN_REQ_JSON: &str = concat!(
 /// Subscribe success response in a dense form without any spaces
 /// TODO: find out how to fill in extra nonce 1 and extra nonce 2 size from predefined constants
 pub const MINING_SUBSCRIBE_OK_RESULT_JSON: &str = concat!(
-    r#"{"id":0,"result":[[["mining.set_difficulty","1"],"#,
-    r#"["mining.notify","1"]],"01650f001f25ea",4],"error":null}"#
+    r#"{"id":0,"#,
+    r#""result":[[["mining.set_difficulty","1"],["mining.notify","1"]],"6c6f010000000c",4],"#,
+    r#""error":null}"#
 );
 
 fn build_result_response_message<T: Serialize>(id: u32, result: T) -> Frame {
@@ -134,14 +135,7 @@ pub const MINING_NOTIFY_JOB_ID: [u8; 1] = [0xbf; 1];
 pub const MINING_NOTIFY_JSON: &str = concat!(
 r#"{"#,
 r#""id":null,"method":"mining.notify","#,
-r#""params":["bf","4d16b6f85af6e2198f44ae2a6de67f78487ae5611b77c6c0440b921e00000000","#,
-r#""01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff20020862062f503253482f04b8864e5008","#,
-r#""072f736c7573682f000000000100f2052a010000001976a914d23fcdf86f7e756a64a7a9688ef9903327048ed988ac00000000","#,
-r#"["4322158778c4f7f149b691134ab5eeed0437fc1754faa7b53deb32861b3e5a77","#,
-r#""1680bad9bfb093f905bde05debe410a557e94a2bf8af3820c0dde29608009438","#,
-r#""5a7f2aefb756fee2bcb94824ac98d71d3c3de2093dfba4e9288e35af786ab3d5","#,
-r#""0d5facd3c63d1c14c97d732c3ebd6d7009f6f18f8142188de5baa78f1bc72b91"],"#,
-r#""20000000","1725fd03","5d0ea025",false]"#,
+r#""params":["11de9","13f46cc7bf03a16697170dbb9d15680b7e75fcf10846037f171d7f6b00000000","01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff44026d0cfabe6d6dc22da09055dabfce93b90fec9c53cbec5ace52248db605efe1d2f2c1bfc8f1260100000000000000","e91d012f736c7573682f000000000200f2052a010000001976a914505b9f58045298b98a7af6333445098ac700ac3088ac0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf900000000",[],"20000000","1d00ffff","5d10bc0a",false],"#,
 r#"}"#,
 );
 
