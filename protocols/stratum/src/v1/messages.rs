@@ -308,6 +308,24 @@ pub struct Nonce(HexU32Le);
 pub struct Submit(UserName, JobId, ExtraNonce2, Time, Nonce, Version);
 
 impl Submit {
+    pub fn new(
+        user_name: String,
+        job_id: JobId,
+        extra_nonce2: &[u8],
+        time: u32,
+        nonce: u32,
+        version: u32,
+    ) -> Self {
+        Self(
+            UserName(user_name),
+            job_id,
+            ExtraNonce2(HexBytes(extra_nonce2.into())),
+            Time(HexU32Le(time)),
+            Nonce(HexU32Le(nonce)),
+            Version(HexU32Le(version)),
+        )
+    }
+
     pub fn user_name(&self) -> &String {
         &(self.0).0
     }

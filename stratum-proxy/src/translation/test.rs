@@ -138,6 +138,17 @@ fn test_setup_mining_connection_translate() {
                 "New Mining Job ID not registered! {}",
                 10
             );
+            // Send SubmitShares
+            v2_simulate_incoming_message(&mut translation, test_utils::v2::build_submit_shares());
+            // Expect mining.submit to be generated
+            await!(v1_verify_generated_response_message(&mut v1_rx));
+            // Simulate mining.submit response (true)
+            v1_simulate_incoming_message(
+                &mut translation,
+                test_utils::v1::build_mining_submit_ok_response_message(),
+            );
+            // Expect SubmitSharesSuccess to be generated
+            await!(v2_verify_generated_response_message(&mut v2_rx));
         }
             .compat_fix(),
     );

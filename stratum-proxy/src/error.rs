@@ -18,6 +18,10 @@ pub enum ErrorKind {
     #[fail(display = "General error: {}", _0)]
     General(String),
 
+    /// General error used for more specific .
+    #[fail(display = "Bitcoin Hashes error: {}", _0)]
+    BitcoinHashes(String),
+
     /// Input/Output error.
     #[fail(display = "I/O error: {}", _0)]
     Io(String),
@@ -72,6 +76,15 @@ impl From<std::str::Utf8Error> for Error {
         let msg = e.to_string();
         Self {
             inner: e.context(ErrorKind::General(msg)),
+        }
+    }
+}
+
+impl From<bitcoin_hashes::error::Error> for Error {
+    fn from(e: bitcoin_hashes::error::Error) -> Self {
+        let msg = e.to_string();
+        Self {
+            inner: e.context(ErrorKind::BitcoinHashes(msg)),
         }
     }
 }

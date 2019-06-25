@@ -328,6 +328,22 @@ impl V2ToV1Translation {
         }
     }
 
+    fn handle_submit_result(
+        &mut self,
+        msg: &wire::Message<v1::V1Protocol>,
+        payload: &v1::framing::StratumResult,
+    ) -> stratum::error::Result<()> {
+        unimplemented!();
+    }
+
+    fn handle_submit_error(
+        &mut self,
+        msg: &wire::Message<v1::V1Protocol>,
+        payload: &v1::framing::StratumError,
+    ) -> stratum::error::Result<()> {
+        unimplemented!();
+    }
+
     fn handle_any_stratum_error(
         &mut self,
         msg: &wire::Message<v1::V1Protocol>,
@@ -343,7 +359,7 @@ impl V2ToV1Translation {
     fn calculate_merkle_root(
         &mut self,
         payload: &v1::messages::Notify,
-    ) -> super::error::Result<sha256d::Hash> {
+    ) -> crate::error::Result<sha256d::Hash> {
         // TODO get rid of extra nonce 1 cloning
         if let Some(v1_extra_nonce1) = self.v1_extra_nonce1.clone() {
             // Build coin base transaction,
@@ -354,12 +370,10 @@ impl V2ToV1Translation {
                     + payload.coin_base_2().len(),
             );
             coin_base.extend_from_slice(payload.coin_base_1());
-            coin_base.extend_from_slice(v1_extra_nonce1.0.as_ref().as_slice());
-            coin_base.extend_from_slice(&u32::to_le_bytes(Self::CHANNEL_ID));
-            if self.v1_extra_nonce2_size > size_of::<u32>() {
-                let padding = self.v1_extra_nonce2_size - 4;
-                coin_base.extend_from_slice(&vec![0; padding]);
-            }
+            coin_base.extend_from_slice(
+                self.channel_to_extra_nonce2_bytes(Self::CHANNEL_ID)
+                    .as_ref(),
+            );
             coin_base.extend_from_slice(payload.coin_base_2());
 
             let mut engine = sha256d::Hash::engine();
@@ -427,6 +441,34 @@ impl V2ToV1Translation {
             max_ntime_offset,
             nbits: payload.bits(),
         })
+    }
+
+    /// Converts specified `channel_id` into extra nonce 2
+    /// TODO review the implementation 'how to efficiently render a u32 into a byte array'
+    #[inline]
+    fn channel_to_extra_nonce2_bytes(&mut self, channel_id: u32) -> BytesMut {
+        let mut extra_nonce2: BytesMut = BytesMut::with_capacity(self.v1_extra_nonce2_size);
+
+        extra_nonce2.extend_from_slice(&u32::to_le_bytes(channel_id));
+
+        if self.v1_extra_nonce2_size > size_of::<u32>() {
+            let padding = self.v1_extra_nonce2_size - size_of::<u32>();
+            extra_nonce2.extend_from_slice(&vec![0; padding]);
+        }
+        extra_nonce2
+    }
+
+    /// Generates log trace entry and reject shares error reply to the client
+    fn reject_shares(&mut self, payload: &v2::messages::SubmitShares, err_msg: String) {
+        trace!(LOGGER, "Unrecognized channel ID: {}", payload.channel_id);
+        Self::submit_message(
+            &mut self.v2_tx,
+            v2::messages::SubmitSharesError {
+                channel_id: payload.channel_id,
+                seq_num: payload.seq_num,
+                code: err_msg,
+            },
+        );
     }
 }
 
@@ -637,11 +679,70 @@ impl v2::V2Handler for V2ToV1Translation {
         });
     }
 
+    /// The flow of share processing is as follows:
+    ///
+    /// - find corresponding job
+    /// - verify the share that it meets the target
+    /// - emit V1 Submit message
+    ///
+    /// If any of the above points fail, reply with SubmitShareError + reasoning
     fn visit_submit_shares(
         &mut self,
         _msg: &Message<v2::V2Protocol>,
         payload: &v2::messages::SubmitShares,
     ) {
-        unimplemented!();
+        // Report invalid channel ID
+        if payload.channel_id != Self::CHANNEL_ID {
+            self.reject_shares(
+                payload,
+                format!("Unrecognized channel ID {}", payload.channel_id),
+            );
+            return;
+        }
+
+        // Check job ID validity
+        let v1_job_id = self
+            .v2_to_v1_job_map
+            .get(&payload.job_id)
+            // convert missing job ID (None) into an error
+            .ok_or(crate::error::ErrorKind::General(format!(
+                "V2 Job ID not present {} in registry",
+                payload.job_id
+            )))
+            .map(|j| j.clone())
+            .map_err(|e| self.reject_shares(payload, format!("{}", e)));
+
+        // Channel details must be filled by now, anything else is a bug, unfortunately, due to
+        // the 'expect' we have to clone them. TODO review this code
+        let v2_channel_details = &self
+            .v2_channel_details
+            .clone()
+            .expect("Missing channel details");
+
+        // TODO validate the job (recalculate the hash and compare the target)
+
+        // Submit upstream V1 job based on the found job ID in the map
+        let v1_submit_status = v1_job_id.map(|v1_job_id| {
+            let submit = v1::messages::Submit::new(
+                v2_channel_details.user.clone(),
+                v1_job_id.clone(),
+                self.channel_to_extra_nonce2_bytes(Self::CHANNEL_ID)
+                    .as_ref(),
+                // TODO: extend the context, that is being stored as part of v1 job, with ntime
+                /*v1_job_ntime*/
+                0u32 + payload.ntime_offset as u32,
+                payload.nonce,
+                payload.version,
+            );
+            // Convert the method into a message + provide handling methods
+            let v1_submit_message = self.v1_method_into_message(
+                submit,
+                Self::handle_submit_result,
+                Self::handle_submit_error,
+            );
+            Self::submit_message(&mut self.v1_tx, v1_submit_message);
+            ()
+        });
+
     }
 }

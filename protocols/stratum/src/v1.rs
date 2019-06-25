@@ -78,6 +78,10 @@ pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
                 Ok(Box::new(messages::Subscribe::try_from(request)?)
                     as Box<dyn Payload<V1Protocol>>),
             ),
+            Method::Submit => (
+                request.id,
+                Ok(Box::new(messages::Submit::try_from(request)?) as Box<dyn Payload<V1Protocol>>),
+            ),
             Method::Authorize => (
                 request.id,
                 Ok(Box::new(messages::Authorize::try_from(request)?)

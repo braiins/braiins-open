@@ -75,6 +75,9 @@ impl V2Handler for TestIdentityHandler {
         self.visit_and_check(msg, payload, build_set_new_prev_hash);
     }
 
+    fn visit_submit_shares(&mut self, msg: &wire::Message<V2Protocol>, payload: &SubmitShares) {
+        self.visit_and_check(msg, payload, build_submit_shares);
+    }
 }
 
 pub const SETUP_MINING_CONNECTION_SERIALIZED: &str =
@@ -148,7 +151,7 @@ pub fn build_new_mining_job() -> NewMiningJob {
         job_id: 0,
         block_height: 0,
         merkle_root: Uint256Bytes(expected_merkle_root.into_inner()),
-        version: 0x00000020,
+        version: MINING_WORK_VERSION,
     }
 }
 
@@ -167,5 +170,17 @@ pub fn build_set_new_prev_hash() -> SetNewPrevHash {
         nbits: v1_req.bits(),
     }
 }
+
+pub fn build_submit_shares() -> SubmitShares {
+    // Use the mining job to provide sensible information for the share submit
+    let mining_job = build_new_mining_job();
+
+    SubmitShares {
+        channel_id: mining_job.channel_id,
+        seq_num: 0,
+        job_id: mining_job.job_id,
+        nonce: MINING_WORK_NONCE,
+        ntime_offset: 0,
+        version: MINING_WORK_VERSION,
     }
 }

@@ -119,6 +119,14 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<V2Protocol>> {
             let job = messages::NewMiningJob::try_from(msg_bytes)?;
             (None, Ok(Box::new(job) as Box<dyn Payload<V2Protocol>>))
         }
+        MessageType::SetNewPrevHash => {
+            let job = messages::SetNewPrevHash::try_from(msg_bytes)?;
+            (None, Ok(Box::new(job) as Box<dyn Payload<V2Protocol>>))
+        }
+        MessageType::SubmitShares => {
+            let job = messages::SubmitShares::try_from(msg_bytes)?;
+            (None, Ok(Box::new(job) as Box<dyn Payload<V2Protocol>>))
+        }
         _ => (
             None,
             Err(error::ErrorKind::UnknownMessage(

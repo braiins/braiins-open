@@ -81,6 +81,10 @@ pub fn build_authorize_ok_response_message() -> Frame {
     build_ok_response_message(1)
 }
 
+pub fn build_mining_submit_ok_response_message() -> Frame {
+    build_ok_response_message(2)
+}
+
 pub fn build_subscribe_ok_result() -> SubscribeResult {
     SubscribeResult(
         vec![
@@ -151,7 +155,7 @@ pub fn build_mining_notify_request_message() -> Frame {
     build_request_message(None, build_mining_notify())
 }
 
-fn build_mining_notify() -> Notify {
+pub fn build_mining_notify() -> Notify {
     let deserialized = Frame::from_str(MINING_NOTIFY_JSON).expect("Cannot parse mining job");
 
     let notify = if let Frame::RpcRequest(req) = deserialized {
@@ -161,6 +165,27 @@ fn build_mining_notify() -> Notify {
     };
 
     notify
+}
+
+pub const MINING_SUBMIT_JSON: &str = concat!(
+    r#"{"id":1,"method":"mining.submit","params":["braiins.worker0","#,
+    r#""bf","00000000","5d0ea025","efbeadde","20000000"]}"#
+);
+
+pub fn build_mining_submit_request_message() -> Frame {
+    build_request_message(None, build_mining_submit())
+}
+
+pub fn build_mining_submit() -> Submit {
+    let deserialized = Frame::from_str(MINING_SUBMIT_JSON).expect("Cannot parse mining job");
+
+    let submit = if let Frame::RpcRequest(req) = deserialized {
+        Submit::try_from(req).expect("Cannot build mining submit message")
+    } else {
+        panic!("Wrong notification message");
+    };
+
+    submit
 }
 
 pub const MINING_AUTHORIZE_JSON: &str =
@@ -279,6 +304,10 @@ impl V1Handler for TestIdentityHandler {
     fn visit_notify(&mut self, msg: &wire::Message<V1Protocol>, payload: &Notify) {
         self.visit_and_check_request(msg, payload, build_mining_notify, MINING_NOTIFY_JSON);
     }
+
+    fn visit_submit(&mut self, msg: &wire::Message<V1Protocol>, payload: &Submit) {
+        self.visit_and_check_request(msg, payload, build_mining_submit, MINING_SUBMIT_JSON);
+    }
 }
 
 /// A complete list of all requests in this module for massive testing
@@ -289,4 +318,5 @@ pub const V1_TEST_REQUESTS: &[&str] = &[
     MINING_AUTHORIZE_JSON,
     MINING_SUBSCRIBE_REQ_JSON,
     MINING_SET_DIFFICULTY_JSON,
+    MINING_SUBMIT_JSON,
 ];
