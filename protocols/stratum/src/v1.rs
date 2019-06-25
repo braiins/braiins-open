@@ -154,7 +154,7 @@ impl TryFrom<&str> for HexBytes {
 
     fn try_from(value: &str) -> Result<Self> {
         Ok(HexBytes(
-            hex::decode(value).context("Parsing extranonce 1 failed")?,
+            hex::decode(value).context("Parsing hex bytes failed")?,
         ))
     }
 }

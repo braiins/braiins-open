@@ -483,7 +483,7 @@ impl v1::V1Handler for V2ToV1Translation {
     ) {
         trace!(
             LOGGER,
-            "Visiting stratum result: {:?}, message {:?}",
+            "Visiting stratum result: {:?}, messsage {:?}",
             payload,
             msg.id
         );
@@ -502,7 +502,7 @@ impl v1::V1Handler for V2ToV1Translation {
             })
             // run the result through the result handler
             .and_then(|handler| handler.0(self, msg, payload))
-            .map_err(|e| trace!(LOGGER, "Stratum result error: {}", e))
+            .map_err(|e| trace!(LOGGER, "visit_stratum_result: {}", e))
             // Consume the error as there is no way to return anything from the visitor for now.
             .ok();
     }
@@ -516,7 +516,7 @@ impl v1::V1Handler for V2ToV1Translation {
         self.v2_target = Some(Self::DIFF1_TARGET / diff);
         if self.v1_authorized && self.v1_extra_nonce1.is_some() {
             self.finalize_open_channel()
-                .map_err(|e| trace!(LOGGER, "SetDifficulty: {}", e))
+                .map_err(|e| trace!(LOGGER, "visit_set_difficulty: {}", e))
                 // Consume the error as there is no way to return anything from the visitor for now.
                 .ok();
         }
@@ -555,6 +555,8 @@ impl v1::V1Handler for V2ToV1Translation {
                     payload.job_id(),
                     payload,
                 );
+                // TODO extract this duplicate code, turn the map into a new type with this
+                // custom policy (attempt to insert with the same key is a bug)
                 if self
                     .v2_to_v1_job_map
                     .insert(
@@ -576,6 +578,7 @@ impl v1::V1Handler for V2ToV1Translation {
                 });
                 Ok(())
             })
+            .map_err(|e| trace!(LOGGER, "visit_notify: {}", e))
             // Consume the result as we cannot perform any action
             .ok();
     }
@@ -675,6 +678,7 @@ impl v2::V2Handler for V2ToV1Translation {
                 Self::handle_authorize_or_subscribe_error,
             );
             Self::submit_message(&mut self.v1_tx, v1_authorize_message);
+            // TODO cleanup
             Some(())
         });
     }

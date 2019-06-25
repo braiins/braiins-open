@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use uint;
 
 use crate::test_utils::common::*;
-use crate::test_utils::v1::MINING_NOTIFY_MERKLE_ROOT;
+use crate::test_utils::v1;
 use crate::v2::messages::*;
 use crate::v2::types::*;
 use crate::v2::{V2Handler, V2Protocol};
@@ -145,7 +145,7 @@ pub fn build_open_channel_success() -> OpenChannelSuccess {
 /// We need a V1 mining job with verified merkle root that is to be copied
 pub fn build_new_mining_job() -> NewMiningJob {
     let expected_merkle_root =
-        sha256d::Hash::from_hex(MINING_NOTIFY_MERKLE_ROOT).expect("from_hex");
+        sha256d::Hash::from_hex(v1::MINING_NOTIFY_MERKLE_ROOT).expect("from_hex");
     NewMiningJob {
         channel_id: 0,
         job_id: 0,

@@ -133,7 +133,9 @@ fn test_setup_mining_connection_translate() {
             await!(v2_verify_generated_response_message(&mut v2_rx));
             // Ensure that the V1 job has been registered
             assert_eq!(
-                Some(&v1::messages::JobId::from_slice(&test_utils::v1::MINING_NOTIFY_JOB_ID)),
+                Some(&v1::messages::JobId::from_slice(
+                    &test_utils::v1::MINING_NOTIFY_JOB_ID
+                )),
                 translation.v2_to_v1_job_map.get(&0),
                 "New Mining Job ID not registered! {}",
                 10
