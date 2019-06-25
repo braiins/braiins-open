@@ -370,6 +370,7 @@ impl V2ToV1Translation {
                     + payload.coin_base_2().len(),
             );
             coin_base.extend_from_slice(payload.coin_base_1());
+            coin_base.extend_from_slice(v1_extra_nonce1.0.as_ref());
             coin_base.extend_from_slice(
                 self.channel_to_extra_nonce2_bytes(Self::CHANNEL_ID)
                     .as_ref(),
@@ -747,6 +748,5 @@ impl v2::V2Handler for V2ToV1Translation {
             Self::submit_message(&mut self.v1_tx, v1_submit_message);
             ()
         });
-
     }
 }
