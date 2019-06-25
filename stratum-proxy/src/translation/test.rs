@@ -134,15 +134,19 @@ fn test_setup_mining_connection_translate() {
             // Ensure that the V1 job has been registered
             let submit_template = V1SubmitTemplate {
                 job_id: v1::messages::JobId::from_slice(&test_utils::v1::MINING_NOTIFY_JOB_ID),
-                time: test_utils::v1::MINING_WORK_NTIME,
+                time: test_utils::v1::MINING_NOTIFY_NTIME,
                 version: test_utils::common::MINING_WORK_VERSION,
             };
 
+            let registered_submit_template = translation.v2_to_v1_job_map.get(&0).expect(
+                "No mining job with V2 ID 0",
+            );
             assert_eq!(
-                Some(submit_template),
-                translation.v2_to_v1_job_map.get(&0),
+                submit_template,
+                registered_submit_template.clone(),
                 "New Mining Job ID not registered!"
             );
+
             // Send SubmitShares
             v2_simulate_incoming_message(&mut translation, test_utils::v2::build_submit_shares());
             // Expect mining.submit to be generated

@@ -92,6 +92,7 @@ type V1StratumErrorHandler = fn(
 type V1ReqMap = HashMap<u32, (V1StratumResultHandler, V1StratumErrorHandler)>;
 
 /// Helper template stored in V2->V1 job map
+#[derive(Clone, PartialEq, Debug)]
 struct V1SubmitTemplate {
     job_id: v1::messages::JobId,
     time: u32,
