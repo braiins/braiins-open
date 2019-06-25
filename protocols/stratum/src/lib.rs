@@ -6,10 +6,12 @@ use slog_term;
 
 // TODO: is it best practice to reexport this?
 pub use packed_struct;
-
 pub mod error;
 pub mod v1;
 pub mod v2;
+
+/// Currently allowed version bits that can be rolled
+pub const BIP320_N_VERSION_MASK: u32 = 0x1fffe000;
 
 lazy_static! {
     /// Build static reference to the logger that will be accessible from all crates

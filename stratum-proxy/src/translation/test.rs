@@ -132,13 +132,16 @@ fn test_setup_mining_connection_translate() {
             // Expect SetNewPrevHash
             await!(v2_verify_generated_response_message(&mut v2_rx));
             // Ensure that the V1 job has been registered
+            let submit_template = V1SubmitTemplate {
+                job_id: v1::messages::JobId::from_slice(&test_utils::v1::MINING_NOTIFY_JOB_ID),
+                time: test_utils::v1::MINING_WORK_NTIME,
+                version: test_utils::common::MINING_WORK_VERSION,
+            };
+
             assert_eq!(
-                Some(&v1::messages::JobId::from_slice(
-                    &test_utils::v1::MINING_NOTIFY_JOB_ID
-                )),
+                Some(submit_template),
                 translation.v2_to_v1_job_map.get(&0),
-                "New Mining Job ID not registered! {}",
-                10
+                "New Mining Job ID not registered!"
             );
             // Send SubmitShares
             v2_simulate_incoming_message(&mut translation, test_utils::v2::build_submit_shares());

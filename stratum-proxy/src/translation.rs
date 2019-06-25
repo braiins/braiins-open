@@ -103,7 +103,6 @@ type JobMap = HashMap<u32, V1SubmitTemplate>;
 
 //type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &wire::Message<V2Protocol>, &v1::framing::StratumResult)>;
 
-
 impl V2ToV1Translation {
     const PROTOCOL_VERSION: usize = 0;
     /// No support for the extended protocol yet, therefore, no extranonce advertised
@@ -380,7 +379,7 @@ impl V2ToV1Translation {
             coin_base.extend_from_slice(payload.coin_base_1());
             coin_base.extend_from_slice(v1_extra_nonce1.0.as_ref());
             coin_base.extend_from_slice(
-                self.channel_to_extra_nonce2_bytes(Self::CHANNEL_ID)
+                Self::channel_to_extra_nonce2_bytes(Self::CHANNEL_ID, self.v1_extra_nonce2_size)
                     .as_ref(),
             );
             coin_base.extend_from_slice(payload.coin_base_2());
@@ -452,16 +451,17 @@ impl V2ToV1Translation {
         })
     }
 
-    /// Converts specified `channel_id` into extra nonce 2
+    /// Converts specified `channel_id` into extra nonce 2 with a specified
+    /// `v1_extra_nonce2_size`
     /// TODO review the implementation 'how to efficiently render a u32 into a byte array'
     #[inline]
-    fn channel_to_extra_nonce2_bytes(&mut self, channel_id: u32) -> BytesMut {
-        let mut extra_nonce2: BytesMut = BytesMut::with_capacity(self.v1_extra_nonce2_size);
+    fn channel_to_extra_nonce2_bytes(channel_id: u32, v1_extra_nonce2_size: usize) -> BytesMut {
+        let mut extra_nonce2: BytesMut = BytesMut::with_capacity(v1_extra_nonce2_size);
 
         extra_nonce2.extend_from_slice(&u32::to_le_bytes(channel_id));
 
-        if self.v1_extra_nonce2_size > size_of::<u32>() {
-            let padding = self.v1_extra_nonce2_size - size_of::<u32>();
+        if v1_extra_nonce2_size > size_of::<u32>() {
+            let padding = v1_extra_nonce2_size - size_of::<u32>();
             extra_nonce2.extend_from_slice(&vec![0; padding]);
         }
         extra_nonce2
@@ -570,8 +570,11 @@ impl v1::V1Handler for V2ToV1Translation {
                     .v2_to_v1_job_map
                     .insert(
                         v2_job.job_id,
-                        V1SubmitTemplate{job_id: v1::messages::JobId::from_slice(payload.job_id()),
-                            time: payload.time(), version: payload.version()},
+                        V1SubmitTemplate {
+                            job_id: v1::messages::JobId::from_slice(payload.job_id()),
+                            time: payload.time(),
+                            version: payload.version(),
+                        },
                     )
                     .is_some()
                 {
@@ -714,8 +717,18 @@ impl v2::V2Handler for V2ToV1Translation {
             return;
         }
 
+        // Channel details must be filled by now, anything else is a bug, unfortunately, due to
+        // the 'expect' we have to clone them. TODO review this code
+        let v2_channel_details = &self
+            .v2_channel_details
+            .clone()
+            .expect("Missing channel details");
+        // TODO this is only here as we want to prevent locking up 'self' into multiple closures
+        // and causing borrow checker complains
+        let v1_extra_nonce2_size = self.v1_extra_nonce2_size;
+
         // Check job ID validity
-        let v1_job_id = self
+        let v1_submit_template = self
             .v2_to_v1_job_map
             .get(&payload.job_id)
             // convert missing job ID (None) into an error
@@ -723,30 +736,20 @@ impl v2::V2Handler for V2ToV1Translation {
                 "V2 Job ID not present {} in registry",
                 payload.job_id
             )))
-            .map(|j| j.clone())
-            .map_err(|e| self.reject_shares(payload, format!("{}", e)));
-
-        // Channel details must be filled by now, anything else is a bug, unfortunately, due to
-        // the 'expect' we have to clone them. TODO review this code
-        let v2_channel_details = &self
-            .v2_channel_details
-            .clone()
-            .expect("Missing channel details");
-
+            .map(|tmpl| tmpl.clone());
         // TODO validate the job (recalculate the hash and compare the target)
-
         // Submit upstream V1 job based on the found job ID in the map
-        let v1_submit_status = v1_job_id.map(|v1_job_id| {
+        let v1_submit_status = v1_submit_template.map(|v1_submit_template| {
             let submit = v1::messages::Submit::new(
                 v2_channel_details.user.clone(),
-                v1_job_id.clone(),
-                self.channel_to_extra_nonce2_bytes(Self::CHANNEL_ID)
+                v1_submit_template.job_id.clone(),
+                Self::channel_to_extra_nonce2_bytes(Self::CHANNEL_ID, v1_extra_nonce2_size)
                     .as_ref(),
-                // TODO: extend the context, that is being stored as part of v1 job, with ntime
-                /*v1_job_ntime*/
-                0u32 + payload.ntime_offset as u32,
+                v1_submit_template.time + payload.ntime_offset as u32,
                 payload.nonce,
-                payload.version,
+                // ensure the version bits in the template follow BIP320
+                (v1_submit_template.version & !stratum::BIP320_N_VERSION_MASK)
+                    | (payload.version & stratum::BIP320_N_VERSION_MASK),
             );
             // Convert the method into a message + provide handling methods
             let v1_submit_message = self.v1_method_into_message(
@@ -757,5 +760,9 @@ impl v2::V2Handler for V2ToV1Translation {
             Self::submit_message(&mut self.v1_tx, v1_submit_message);
             ()
         });
+
+        if let Err(e) = v1_submit_status {
+            self.reject_shares(payload, format!("{}", e));
+        }
     }
 }
