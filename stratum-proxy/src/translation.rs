@@ -598,6 +598,16 @@ impl v1::V1Handler for V2ToV1Translation {
             self.state,
             payload,
         );
+
+        // We won't process the job as long as the channel is not operational
+        if self.state != V2ToV1TranslationState::Operational {
+            info!(
+                LOGGER,
+                "Channel not yet operational, ignoring mining.notify from upstream"
+            );
+            return;
+        }
+
         self.calculate_merkle_root(payload)
             .and_then(|merkle_root| {
                 let v2_job = v2::messages::NewMiningJob {
