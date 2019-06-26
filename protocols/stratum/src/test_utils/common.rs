@@ -7,6 +7,6 @@ pub const POOL_PORT: usize = 3333;
 pub const USER_CREDENTIALS: &str = "braiins.worker0";
 
 /// Nonce for the block header of the sample mining job
-pub const MINING_WORK_NONCE: u32 = 0xdeadbeef;
+pub const MINING_WORK_NONCE: u32 = 0x0443c37b;
 /// Version for the block header
 pub const MINING_WORK_VERSION: u32 = 0x00000020;

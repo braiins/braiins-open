@@ -143,7 +143,8 @@ r#"}"#,
 /// TODO: verify that this merkle root is correct assuming extra nonce 1 = 0, extra nonce 2 size = 4,
 /// and extra nonce 2 =0
 pub const MINING_NOTIFY_MERKLE_ROOT: &str =
-    "085958174f0dceccf57a5e5c49641fbf821a0d2029b144fca97affeb7b561834";
+    "91176a137779ca8a591fa94461210fc2d62e607c7aef93ed38dff510f0d946a2";
+//"085958174f0dceccf57a5e5c49641fbf821a0d2029b144fca97affeb7b561834";
 // Original merkle root (doesn't match)
 //    "a4eedd0736c8e5d316bbd77f683ce932e96f4cc8ac54159bdc8575903f0013f3";
 
@@ -164,8 +165,10 @@ pub fn build_mining_notify() -> Notify {
 }
 
 pub const MINING_SUBMIT_JSON: &str = concat!(
-    r#"{"id":1,"method":"mining.submit","#,
-    r#""params":["user_1.pminer","11de9","01000000","5d10bc0a","7bc34304"]"#,
+    r#"{"id":2,"method":"mining.submit","#,
+    // TODO the correct share extra nonce 2 is 01000000, we have to replace the sample job
+    // completely with a new none that has extra nonce 2 == 0
+    r#""params":["braiins.worker0","011de9","00000000","5d10bc0a","7bc34304","20000000"]"#,
     r#"}"#
 );
 
