@@ -10,6 +10,7 @@ use crate::v1::framing::Frame;
 use crate::v1::framing::Method;
 
 use bitcoin_hashes::hex::{FromHex, ToHex};
+use hex::{decode, FromHexError};
 use failure::ResultExt;
 use serde::{Deserialize, Serialize};
 use slog::trace;
@@ -149,12 +150,22 @@ impl AsRef<Vec<u8>> for HexBytes {
     }
 }
 
+/// fix for error on odd-length hex sequences
+/// FIXME: find a nicer solution
+fn hex_decode(s: &str) -> std::result::Result<Vec<u8>, FromHexError> {
+    if s.len() % 2 != 0 {
+        hex::decode(&format!("0{}", s))
+    } else {
+        hex::decode(s)
+    }
+}
+
 impl TryFrom<&str> for HexBytes {
     type Error = crate::error::Error;
 
     fn try_from(value: &str) -> Result<Self> {
         Ok(HexBytes(
-            hex::decode(value).context("Parsing hex bytes failed")?,
+            hex_decode(value).context("Parsing hex bytes failed")?,
         ))
     }
 }

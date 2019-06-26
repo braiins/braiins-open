@@ -16,7 +16,7 @@ pub const MINING_SUBSCRIBE_REQ_JSON: &str = concat!(
     r#""params":["Braiins OS 2019-06-05",null,"stratum.slushpool.com",null]}"#
 );
 
-const EXTRA_NONCE_1: &str = "01650f001f25ea";
+const EXTRA_NONCE_1: &str = "6c6f010000000c";
 const EXTRA_NONCE_2_SIZE: usize = 4;
 
 fn build_request_message<T>(id: Option<u32>, payload: T) -> Frame
@@ -89,7 +89,7 @@ pub fn build_mining_submit_ok_response_message() -> Frame {
 pub fn build_subscribe_ok_result() -> SubscribeResult {
     SubscribeResult(
         vec![
-            Subscription("mining.set_difficulty".to_string(), "1".to_string()),
+            Subscription("mining.set_difficulty".to_string(), "4".to_string()),
             Subscription("mining.notify".to_string(), "1".to_string()),
         ],
         ExtraNonce1(HexBytes::try_from(EXTRA_NONCE_1).expect("Cannot parse extra nonce 1")),
@@ -120,7 +120,7 @@ pub fn build_stratum_err_response_frame() -> Response {
 }
 
 pub const MINING_SET_DIFFICULTY_JSON: &str =
-    r#"{"id":null,"method":"mining.set_difficulty","params":[4]}"#;
+    r#"{"id":null,"method":"mining.set_difficulty","params":[4.0]}"#;
 
 pub fn build_set_difficulty_request_message() -> Frame {
     build_request_message(None, build_set_difficulty())
@@ -135,7 +135,7 @@ pub const MINING_NOTIFY_NTIME: u32 = 0x0abc105d;
 pub const MINING_NOTIFY_JSON: &str = concat!(
 r#"{"#,
 r#""id":null,"method":"mining.notify","#,
-r#""params":["11de9","13f46cc7bf03a16697170dbb9d15680b7e75fcf10846037f171d7f6b00000000","01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff44026d0cfabe6d6dc22da09055dabfce93b90fec9c53cbec5ace52248db605efe1d2f2c1bfc8f1260100000000000000","e91d012f736c7573682f000000000200f2052a010000001976a914505b9f58045298b98a7af6333445098ac700ac3088ac0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf900000000",[],"20000000","1d00ffff","5d10bc0a",false],"#,
+r#""params":["011de9","13f46cc7bf03a16697170dbb9d15680b7e75fcf10846037f171d7f6b00000000","01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff44026d0cfabe6d6dc22da09055dabfce93b90fec9c53cbec5ace52248db605efe1d2f2c1bfc8f1260100000000000000","e91d012f736c7573682f000000000200f2052a010000001976a914505b9f58045298b98a7af6333445098ac700ac3088ac0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf900000000",[],"20000000","1d00ffff","5d10bc0a",false]"#,
 r#"}"#,
 );
 
@@ -165,7 +165,7 @@ pub fn build_mining_notify() -> Notify {
 
 pub const MINING_SUBMIT_JSON: &str = concat!(
     r#"{"id":1,"method":"mining.submit","#,
-    r#""params": ["user_1.pminer", "11de9", "01000000", "5d10bc0a", "7bc34304"]"#,
+    r#""params":["user_1.pminer","11de9","01000000","5d10bc0a","7bc34304"]"#,
     r#"}"#
 );
 
