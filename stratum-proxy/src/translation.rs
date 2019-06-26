@@ -59,7 +59,7 @@ pub struct V2ToV1Translation {
 }
 
 /// States of the Translation setup
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum V2ToV1TranslationState {
     /// No message received yet
     Init,
@@ -195,6 +195,7 @@ impl V2ToV1Translation {
 
     /// Sets the current pending channel to operational state and submits success message
     fn finalize_open_channel(&mut self) -> stratum::error::Result<()> {
+        trace!(LOGGER, "finalize_open_channel()");
         let mut init_target: Uint256Bytes = Uint256Bytes([0; 32]);
         self.v2_target
             .expect("Bug: initial target still not defined when attempting to finalize OpenChannel")
@@ -225,6 +226,12 @@ impl V2ToV1Translation {
     /// Reports failure to open the channel and changes the translation state
     /// From this point on a new OpenChannel message is expected as an attempt to reopen the channel
     fn abort_open_channel(&mut self, err_msg: &str) {
+        trace!(
+            LOGGER,
+            "abort_open_channel() - channel details: {:?}, msg: {}",
+            self.v2_channel_details,
+            err_msg
+        );
         self.state = V2ToV1TranslationState::V1SubscribeOrAuthorizeFail;
         // TODO eliminate the unnecessary clone
         self.v2_channel_details
@@ -249,6 +256,13 @@ impl V2ToV1Translation {
         msg: &wire::Message<v1::V1Protocol>,
         payload: &v1::framing::StratumResult,
     ) -> stratum::error::Result<()> {
+        trace!(
+            LOGGER,
+            "handle_subscribe_result() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
         v1::messages::SubscribeResult::try_from(payload)
             .and_then(|subscribe_result| {
                 self.v1_extra_nonce1 = Some(subscribe_result.extra_nonce_1().clone());
@@ -276,6 +290,13 @@ impl V2ToV1Translation {
         msg: &wire::Message<v1::V1Protocol>,
         payload: &v1::framing::StratumResult,
     ) -> stratum::error::Result<()> {
+        trace!(
+            LOGGER,
+            "handle_authorize_result() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
         // Authorize is expected as a plain boolean answer
         v1::messages::BooleanResult::try_from(payload)
             .and_then(|bool_result| {
@@ -321,6 +342,13 @@ impl V2ToV1Translation {
         msg: &wire::Message<v1::V1Protocol>,
         payload: &v1::framing::StratumError,
     ) -> stratum::error::Result<()> {
+        trace!(
+            LOGGER,
+            "handle_authorize_or_subscribe_error() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
         // Only the first of authorize or subscribe error issues the OpenChannelError message
         if self.state != V2ToV1TranslationState::V1SubscribeOrAuthorizeFail {
             trace!(
@@ -341,6 +369,13 @@ impl V2ToV1Translation {
         msg: &wire::Message<v1::V1Protocol>,
         payload: &v1::framing::StratumResult,
     ) -> stratum::error::Result<()> {
+        trace!(
+            LOGGER,
+            "handle_submit_result() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
         unimplemented!();
     }
 
@@ -349,6 +384,13 @@ impl V2ToV1Translation {
         msg: &wire::Message<v1::V1Protocol>,
         payload: &v1::framing::StratumError,
     ) -> stratum::error::Result<()> {
+        trace!(
+            LOGGER,
+            "handle_submit_result() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
         unimplemented!();
     }
 
@@ -357,7 +399,13 @@ impl V2ToV1Translation {
         msg: &wire::Message<v1::V1Protocol>,
         payload: &v1::framing::StratumError,
     ) -> stratum::error::Result<()> {
-        info!(LOGGER, "Received stratum error: {:?}", payload);
+        trace!(
+            LOGGER,
+            "handle_any_stratum_error() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
         unimplemented!();
     }
 
@@ -493,9 +541,10 @@ impl v1::V1Handler for V2ToV1Translation {
     ) {
         trace!(
             LOGGER,
-            "Visiting stratum result: {:?}, messsage {:?}",
+            "visit_stratum_result() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
             payload,
-            msg.id
         );
         // Each response message should have an ID for pairing
         msg.id
@@ -519,9 +568,16 @@ impl v1::V1Handler for V2ToV1Translation {
 
     fn visit_set_difficulty(
         &mut self,
-        _msg: &Message<v1::V1Protocol>,
+        msg: &Message<v1::V1Protocol>,
         payload: &v1::messages::SetDifficulty,
     ) {
+        trace!(
+            LOGGER,
+            "visit_set_difficulty() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
         let diff = payload.value() as u32;
         self.v2_target = Some(Self::DIFF1_TARGET / diff);
         if self.v1_authorized && self.v1_extra_nonce1.is_some() {
@@ -535,6 +591,13 @@ impl v1::V1Handler for V2ToV1Translation {
     /// Composes a new mining job and sends it downstream
     /// TODO: Only 1 channel is supported
     fn visit_notify(&mut self, msg: &Message<v1::V1Protocol>, payload: &v1::messages::Notify) {
+        trace!(
+            LOGGER,
+            "visit_notify() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
         self.calculate_merkle_root(payload)
             .and_then(|merkle_root| {
                 let v2_job = v2::messages::NewMiningJob {
@@ -560,10 +623,9 @@ impl v1::V1Handler for V2ToV1Translation {
                     };
                 trace!(
                     LOGGER,
-                    "Registering V2 job ID {:x?} -> V1 job ID {:x?} (details: {:x?})",
+                    "Registering V2 job ID {:x?} -> V1 job ID {:x?}",
                     v2_job.job_id,
                     payload.job_id(),
-                    payload,
                 );
                 // TODO extract this duplicate code, turn the map into a new type with this
                 // custom policy (attempt to insert with the same key is a bug)
@@ -607,6 +669,13 @@ impl v2::V2Handler for V2ToV1Translation {
         msg: &Message<v2::V2Protocol>,
         payload: &v2::messages::SetupMiningConnection,
     ) {
+        trace!(
+            LOGGER,
+            "visit_setup_mining_connection() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
         if self.state != V2ToV1TranslationState::Init {
             trace!(
                 LOGGER,
@@ -644,9 +713,16 @@ impl v2::V2Handler for V2ToV1Translation {
     /// - start sending Jobs downstream to V2 client
     fn visit_open_channel(
         &mut self,
-        _msg: &Message<v2::V2Protocol>,
+        msg: &Message<v2::V2Protocol>,
         payload: &v2::messages::OpenChannel,
     ) {
+        trace!(
+            LOGGER,
+            "visit_open_channel() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
         if self.state != V2ToV1TranslationState::ConnectionSetup
             && self.state != V2ToV1TranslationState::V1SubscribeOrAuthorizeFail
         {
@@ -706,9 +782,16 @@ impl v2::V2Handler for V2ToV1Translation {
     /// If any of the above points fail, reply with SubmitShareError + reasoning
     fn visit_submit_shares(
         &mut self,
-        _msg: &Message<v2::V2Protocol>,
+        msg: &Message<v2::V2Protocol>,
         payload: &v2::messages::SubmitShares,
     ) {
+        trace!(
+            LOGGER,
+            "visit_submit_shares() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
         // Report invalid channel ID
         if payload.channel_id != Self::CHANNEL_ID {
             self.reject_shares(
