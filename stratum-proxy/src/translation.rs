@@ -1,5 +1,4 @@
 use bitcoin_hashes::{sha256, sha256d, Hash, HashEngine};
-use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 use bytes::BytesMut;
 use failure::{Fail, ResultExt};
 use futures::channel::mpsc;
@@ -527,25 +526,15 @@ impl V2ToV1Translation {
         payload: &v1::messages::Notify,
     ) -> crate::error::Result<v2::messages::SetNewPrevHash> {
         let max_ntime_offset = (7200 - 0/*min(0, sys_time - payload.time())*/) / 4;
-
-        // Perform 'swab32' on the prevhash (protocol inconsistency)
-        // TODO this is to be moved into v1::messages::PrevHash as the message deserializer should
-        // take care of providing the correctly ordered prev hash (it's stratum v1 protocol
-        // inconsistency)
-        let mut prev_hash = Vec::new();
-        let mut prev_hash_cursor = std::io::Cursor::new(prev_hash);
-
-        for chunk in payload.prev_hash().chunks(size_of::<u32>()) {
-            let prev_hash_word = bytes::BigEndian::read_u32(chunk);
-            prev_hash_cursor.write_u32::<LittleEndian>(prev_hash_word);
-        }
-
-        let prev_hash = sha256d::Hash::from_slice(&prev_hash_cursor.into_inner())
-            .expect("Failed to create prevhash");
+        // TODO review how this can be prevented from failing. If this fails, it should result in
+        // panic as it marks a software bug
+        let prev_hash =
+            sha256d::Hash::from_slice(payload.prev_hash()).context("Build SetNewPrevHash")?;
+        let prev_hash = Uint256Bytes(prev_hash.into_inner());
 
         Ok(v2::messages::SetNewPrevHash {
             block_height: self.extract_block_height_from_notify(payload),
-            prev_hash: Uint256Bytes(prev_hash.into_inner()),
+            prev_hash,
             min_ntime: payload.time(),
             max_ntime_offset,
             nbits: payload.bits(),

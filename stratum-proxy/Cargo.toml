@@ -6,7 +6,6 @@ edition = "2018"
 
 [dependencies]
 bytes = "0.4"
-byteorder = "1.2.7"
 clap = "2.33.0"
 stratum = { path = "../protocols/stratum" }
 wire = { path = "../protocols/wire" }

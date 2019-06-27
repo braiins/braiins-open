@@ -10,7 +10,7 @@ use super::framing;
 use super::{ExtraNonce1, V1Handler, V1Protocol};
 use crate::error::{Error, Result};
 use crate::v1::framing::Method;
-use crate::v1::{HexBytes, HexU32Le};
+use crate::v1::{HexBytes, HexU32Le, PrevHash};
 
 #[cfg(test)]
 pub mod test;
@@ -207,9 +207,6 @@ impl JobId {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct PrevHash(HexBytes);
-
 /// Leading part of the coinbase transaction
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct CoinBase1(HexBytes);
@@ -256,7 +253,7 @@ impl Notify {
     }
 
     pub fn prev_hash(&self) -> &[u8] {
-        &((self.1).0).0
+        self.1.as_ref()
     }
 
     pub fn coin_base_1(&self) -> &[u8] {

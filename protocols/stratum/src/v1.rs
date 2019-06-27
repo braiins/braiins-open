@@ -10,11 +10,13 @@ use crate::v1::framing::Frame;
 use crate::v1::framing::Method;
 
 use bitcoin_hashes::hex::{FromHex, ToHex};
-use hex::{decode, FromHexError};
+use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 use failure::ResultExt;
+use hex::{decode, FromHexError};
 use serde::{Deserialize, Serialize};
 use slog::trace;
 use std::convert::TryFrom;
+use std::mem::size_of;
 use std::str::FromStr;
 use wire::{Message, Payload, ProtocolBase};
 
@@ -183,6 +185,76 @@ impl From<String> for HexBytes {
 impl Into<String> for HexBytes {
     fn into(self) -> String {
         hex::encode(self.0)
+    }
+}
+
+/// PrevHash in Stratum V1 has brain-damaged serialization as it swaps bytes of very u32 word
+/// into big endian. Therefore, we need a special type for it
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(into = "String", from = "String")]
+pub struct PrevHash(Vec<u8>);
+
+impl PrevHash {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+/// Referencing the internal part of the prev hash
+impl AsRef<Vec<u8>> for PrevHash {
+    fn as_ref(&self) -> &Vec<u8> {
+        &self.0
+    }
+}
+
+/// TODO: implement unit test
+impl TryFrom<&str> for PrevHash {
+    type Error = crate::error::Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        // Reorder prevhash will be stored via this cursor
+        let mut prev_hash_cursor = std::io::Cursor::new(Vec::new());
+
+        // Decode the plain byte array and sanity check
+        let prev_hash_stratum_order = hex_decode(value).context("Parsing hex bytes failed")?;
+        if prev_hash_stratum_order.len() != 32 {
+            return Err(ErrorKind::Json(format!(
+                "Incorrect prev hash length: {}",
+                prev_hash_stratum_order.len()
+            ))
+            .into());
+        }
+        // Swap every u32 from big endian to little endian byte order
+        for chunk in prev_hash_stratum_order.chunks(size_of::<u32>()) {
+            let prev_hash_word = bytes::BigEndian::read_u32(chunk);
+            prev_hash_cursor.write_u32::<LittleEndian>(prev_hash_word);
+        }
+
+        Ok(PrevHash(prev_hash_cursor.into_inner()))
+    }
+}
+
+/// TODO: this is not the cleanest way as any deserialization error is essentially consumed and
+/// manifested as empty vector. However, it is very comfortable to use this trait implementation
+/// in Extranonce1 serde support
+impl From<String> for PrevHash {
+    fn from(value: String) -> Self {
+        PrevHash::try_from(value.as_str()).unwrap_or(PrevHash(vec![]))
+    }
+}
+
+/// Helper Serializer that peforms the reverse process of converting the prev hash into stratum V1
+/// ordering
+/// TODO: implement unit test
+impl Into<String> for PrevHash {
+    fn into(self) -> String {
+        let mut prev_hash_stratum_cursor = std::io::Cursor::new(Vec::new());
+        // swap every u32 from little endian to big endian
+        for chunk in self.0.chunks(size_of::<u32>()) {
+            let prev_hash_word = bytes::LittleEndian::read_u32(chunk);
+            prev_hash_stratum_cursor.write_u32::<BigEndian>(prev_hash_word);
+        }
+        hex::encode(prev_hash_stratum_cursor.into_inner())
     }
 }
 
