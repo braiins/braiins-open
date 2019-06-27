@@ -13,4 +13,7 @@ pub enum ErrorKind {
 
     #[fail(display = "Subscription error: {}", _0)]
     Subscribe(String),
+
+    #[fail(display = "Submit error: {}", _0)]
+    Submit(String),
 }

@@ -1,7 +1,7 @@
 use bitcoin_hashes::{sha256, sha256d, Hash, HashEngine};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 use bytes::BytesMut;
-use failure::ResultExt;
+use failure::{Fail, ResultExt};
 use futures::channel::mpsc;
 use slog::{error, info, trace, warn};
 use std::collections::HashMap;
@@ -9,6 +9,7 @@ use std::convert::From;
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt;
+use std::io::Write;
 use std::mem::size_of;
 
 use stratum;
@@ -377,7 +378,37 @@ impl V2ToV1Translation {
             self.state,
             payload,
         );
-        unimplemented!();
+        // Authorize is expected as a plain boolean answer
+        v1::messages::BooleanResult::try_from(payload)
+            .and_then(|bool_result| {
+                if bool_result.0 {
+                    // TODO this is currently incomplete, we have to track all pending mining
+                    // results so that we can correlate the success message and ack
+                    let success_msg = v2::messages::SubmitSharesSuccess {
+                        channel_id: Self::CHANNEL_ID,
+                        last_seq_num: 0,
+                        new_submits_accepted_count: 1,
+                        new_shares_count: 1,
+                    };
+                    Self::submit_message(&mut self.v2_tx, success_msg);
+                } else {
+                    // TODO use reject_shares() method once we can track the original payload message
+                    let err_msg = v2::messages::SubmitSharesError {
+                        channel_id: Self::CHANNEL_ID,
+                        // TODO the sequence number needs to be determined from the failed submit, currently,
+                        // there is no infrastructure to get this
+                        seq_num: 0,
+                        code: format!("Share rejected: {:?}", payload).to_string(),
+                    };
+                    Self::submit_message(&mut self.v2_tx, err_msg);
+                }
+                trace!(LOGGER, "Submit result: {:?}", bool_result);
+
+                Ok(())
+            })
+            // TODO what should be the behavior when the result is incorrectly passed, shall we
+            // report it as a SubmitSharesError?
+            .map_err(|e| e)
     }
 
     fn handle_submit_error(
@@ -387,12 +418,22 @@ impl V2ToV1Translation {
     ) -> stratum::error::Result<()> {
         trace!(
             LOGGER,
-            "handle_submit_result() msg.id={:?} state={:?} payload:{:?}",
+            "handle_submit_error() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
             self.state,
             payload,
         );
-        unimplemented!();
+        // TODO use reject_shares() method once we can track the original payload message
+        let err_msg = v2::messages::SubmitSharesError {
+            channel_id: Self::CHANNEL_ID,
+            // TODO the sequence number needs to be determined from the failed submit, currently,
+            // there is no infrastructure to get this
+            seq_num: 0,
+            code: format!("Share rejected: {:?}", payload).to_string(),
+        };
+
+        Self::submit_message(&mut self.v2_tx, err_msg);
+        Ok(())
     }
 
     fn handle_any_stratum_error(

@@ -120,12 +120,35 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<V2Protocol>> {
             (None, Ok(Box::new(job) as Box<dyn Payload<V2Protocol>>))
         }
         MessageType::SetNewPrevHash => {
-            let job = messages::SetNewPrevHash::try_from(msg_bytes)?;
-            (None, Ok(Box::new(job) as Box<dyn Payload<V2Protocol>>))
+            let prev_hash = messages::SetNewPrevHash::try_from(msg_bytes)?;
+            (
+                None,
+                Ok(Box::new(prev_hash) as Box<dyn Payload<V2Protocol>>),
+            )
         }
         MessageType::SubmitShares => {
-            let job = messages::SubmitShares::try_from(msg_bytes)?;
-            (None, Ok(Box::new(job) as Box<dyn Payload<V2Protocol>>))
+            let submit_shares = messages::SubmitShares::try_from(msg_bytes)?;
+            (
+                // TODO possibly extract the sequence ID
+                None,
+                Ok(Box::new(submit_shares) as Box<dyn Payload<V2Protocol>>),
+            )
+        }
+        MessageType::SubmitSharesSuccess => {
+            let success = messages::SubmitSharesSuccess::try_from(msg_bytes)?;
+            (
+                // TODO what to do about the ID? - use sequence number?
+                None,
+                Ok(Box::new(success) as Box<dyn Payload<V2Protocol>>),
+            )
+        }
+        MessageType::SubmitSharesError => {
+            let err_msg = messages::SubmitSharesError::try_from(msg_bytes)?;
+            (
+                // TODO what to do about the ID?
+                None,
+                Ok(Box::new(err_msg) as Box<dyn Payload<V2Protocol>>),
+            )
         }
         _ => (
             None,
