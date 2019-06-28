@@ -143,9 +143,10 @@ fn test_setup_mining_connection_translate() {
                 version: test_utils::common::MINING_WORK_VERSION,
             };
 
-            let registered_submit_template = translation.v2_to_v1_job_map.get(&0).expect(
-                "No mining job with V2 ID 0",
-            );
+            let registered_submit_template = translation
+                .v2_to_v1_job_map
+                .get(&0)
+                .expect("No mining job with V2 ID 0");
             assert_eq!(
                 submit_template,
                 registered_submit_template.clone(),
