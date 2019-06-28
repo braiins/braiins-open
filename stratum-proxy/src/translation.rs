@@ -227,6 +227,23 @@ impl V2ToV1Translation {
             )
     }
 
+    /// Send new target
+    /// TODO extend the translation unit test accordingly
+    fn send_set_target(&mut self) {
+        trace!(LOGGER, "send_set_target()");
+        let max_target = Uint256Bytes::from(self.v2_target.expect(
+            "Bug: initial target still not defined when attempting to finalize \
+             OpenChannel",
+        ));
+
+        let msg = v2::messages::SetTarget {
+            channel_id: Self::CHANNEL_ID,
+            max_target,
+        };
+
+        Self::submit_message(&mut self.v2_tx, msg);
+    }
+
     /// Reports failure to open the channel and changes the translation state
     /// From this point on a new OpenChannel message is expected as an attempt to reopen the channel
     fn abort_open_channel(&mut self, err_msg: &str) {
@@ -698,10 +715,18 @@ impl v1::V1Handler for V2ToV1Translation {
         let diff = payload.value() as u32;
         self.v2_target = Some(Self::DIFF1_TARGET / diff);
         if self.v1_authorized && self.v1_extra_nonce1.is_some() {
-            self.finalize_open_channel()
-                .map_err(|e| trace!(LOGGER, "visit_set_difficulty: {}", e))
-                // Consume the error as there is no way to return anything from the visitor for now.
-                .ok();
+            // Initial set difficulty finalizes open channel if all preconditions are met
+            if self.state == V2ToV1TranslationState::OpenChannelPending {
+                self.finalize_open_channel()
+                    .map_err(|e| trace!(LOGGER, "visit_set_difficulty: {}", e))
+                    // Consume the error as there is no way to return anything from the visitor for now.
+                    .ok();
+            }
+            // Anything after that is standard difficulty adjustment
+            else {
+                trace!(LOGGER, "Sending current target: {:x?}", self.v2_target);
+                self.send_set_target();
+            }
         }
     }
 

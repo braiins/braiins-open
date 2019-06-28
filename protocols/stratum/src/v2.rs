@@ -126,6 +126,13 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<V2Protocol>> {
                 Ok(Box::new(prev_hash) as Box<dyn Payload<V2Protocol>>),
             )
         }
+        MessageType::SetTarget => {
+            let prev_hash = messages::SetTarget::try_from(msg_bytes)?;
+            (
+                None,
+                Ok(Box::new(prev_hash) as Box<dyn Payload<V2Protocol>>),
+            )
+        }
         MessageType::SubmitShares => {
             let submit_shares = messages::SubmitShares::try_from(msg_bytes)?;
             (
