@@ -42,12 +42,7 @@ pub trait V1Handler: 'static {
     ) {
     }
 
-    fn visit_mining_configure(
-        &mut self,
-        _msg: &Message<V1Protocol>,
-        _payload: &messages::Subscribe,
-    ) {
-    }
+    fn visit_configure(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Configure) {}
 
     fn visit_subscribe(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Subscribe) {}
 
@@ -76,6 +71,11 @@ pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
     );
     let (id, payload) = match deserialized {
         Frame::RpcRequest(request) => match request.payload.method {
+            Method::Configure => (
+                request.id,
+                Ok(Box::new(messages::Configure::try_from(request)?)
+                    as Box<dyn Payload<V1Protocol>>),
+            ),
             Method::Subscribe => (
                 request.id,
                 Ok(Box::new(messages::Subscribe::try_from(request)?)
@@ -261,7 +261,7 @@ impl Into<String> for PrevHash {
 /// Little-endian hex encoded u32
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(into = "String", from = "String")]
-pub struct HexU32Le(u32);
+pub struct HexU32Le(pub u32);
 
 impl TryFrom<&str> for HexU32Le {
     type Error = crate::error::Error;
@@ -285,7 +285,37 @@ impl From<String> for HexU32Le {
 impl Into<String> for HexU32Le {
     fn into(self) -> String {
         self.0.to_le_bytes().to_hex()
-        //hex::encode(self.0)
+    }
+}
+
+/// Big-endian alternative of the HexU32
+/// TODO: find out how to consolidate/parametrize it with generic parameters
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(into = "String", from = "String")]
+pub struct HexU32Be(pub u32);
+
+impl TryFrom<&str> for HexU32Be {
+    type Error = crate::error::Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        let parsed_bytes: [u8; 4] = FromHex::from_hex(value).context("parse u32 hex value")?;
+        Ok(HexU32Be(u32::from_be_bytes(parsed_bytes)))
+    }
+}
+
+/// TODO: this is not the cleanest way as any deserialization error is essentially consumed and
+/// manifested as empty vector. However, it is very comfortable to use this trait implementation
+/// in Extranonce1 serde support
+impl From<String> for HexU32Be {
+    fn from(value: String) -> Self {
+        HexU32Be::try_from(value.as_str()).unwrap_or(HexU32Be(0))
+    }
+}
+
+/// Helper Serializer
+impl Into<String> for HexU32Be {
+    fn into(self) -> String {
+        self.0.to_be_bytes().to_hex()
     }
 }
 

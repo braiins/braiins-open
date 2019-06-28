@@ -3,14 +3,14 @@
 use bitcoin_hashes::sha256d::Hash;
 use failure::ResultExt;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 use super::error::ErrorKind;
 use super::framing;
 use super::{ExtraNonce1, V1Handler, V1Protocol};
 use crate::error::{Error, Result};
 use crate::v1::framing::Method;
-use crate::v1::{HexBytes, HexU32Le, PrevHash};
+use crate::v1::{HexBytes, HexU32Be, HexU32Le, PrevHash};
 
 #[cfg(test)]
 pub mod test;
@@ -93,6 +93,84 @@ macro_rules! impl_conversion_response {
         }
     };
 }
+
+/// Version rolling mask has a new type to provide one consistent place
+/// that determines the exact serialization format of it
+/// Mask bits are allocated as per BIP320
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct VersionMask(pub HexU32Be);
+
+/// Version rolling configuration extension that follows the model in BIP310
+/// Miner requests a certain mask and minimum amount of bits
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct VersionRolling {
+    /// Mask bits are allocated as per BIP320
+    #[serde(rename = "version-rolling.mask")]
+    pub mask: VersionMask,
+    /// Minimum required number of bits for rolling
+    #[serde(rename = "version-rolling.min-bit-count")]
+    pub min_bit_count: usize,
+}
+
+impl VersionRolling {
+    pub fn new(mask: u32, min_bit_count: usize) -> Self {
+        Self {
+            mask: VersionMask(HexU32Be(mask)),
+            min_bit_count,
+        }
+    }
+}
+
+impl TryInto<(String, serde_json::Value)> for VersionRolling {
+    type Error = crate::error::Error;
+
+    fn try_into(self) -> Result<(String, serde_json::Value)> {
+        Ok((
+            "version-rolling".to_string(),
+            serde_json::to_value(self).context("JSON error")?,
+        ))
+    }
+}
+
+/// Mining configure
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct Configure(pub Vec<String>, pub serde_json::Value);
+
+impl Configure {
+    /// Constructs an empty configuration
+    pub fn new() -> Self {
+        Self {
+            0: vec![],
+            1: serde_json::value::Value::Object(serde_json::map::Map::new()),
+        }
+    }
+
+    /// Simplifies adding new feature to the current map
+    pub fn add_feature<T>(&mut self, feature: T) -> Result<()>
+    where
+        T: TryInto<(String, serde_json::Value), Error = crate::error::Error>,
+    {
+        let (feature_name, feature_map) = feature.try_into()?;
+        self.0.push(feature_name);
+
+        // Merge the feature into the current configuration map
+        if let serde_json::Value::Object(ref mut configure_map) = self.1 {
+            if let serde_json::Value::Object(ref feature_map) = feature_map {
+                for (k, v) in feature_map {
+                    configure_map.insert(k.clone(), v.clone());
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+impl_conversion_request!(Configure, Method::Configure, visit_configure);
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct ConfigureResult(pub serde_json::Value);
+
+impl_conversion_response!(ConfigureResult);
 
 /// Compounds all data required for mining subscription
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]

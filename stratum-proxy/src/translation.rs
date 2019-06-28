@@ -2,6 +2,7 @@ use bitcoin_hashes::{sha256, sha256d, Hash, HashEngine};
 use bytes::BytesMut;
 use failure::{Fail, ResultExt};
 use futures::channel::mpsc;
+use serde_json;
 use slog::{error, info, trace, warn};
 use std::collections::HashMap;
 use std::convert::From;
@@ -64,6 +65,8 @@ pub struct V2ToV1Translation {
 enum V2ToV1TranslationState {
     /// No message received yet
     Init,
+    /// Stratum V1 mining.configure is in progress
+    V1Configure,
     /// Connection successfully setup, waiting for OpenChannel message
     ConnectionSetup,
     /// Channel now needs finalization of subscribe+authorize+set difficulty target with the
@@ -250,6 +253,79 @@ impl V2ToV1Translation {
         self.v1_extra_nonce1 = None;
         self.v1_extra_nonce2_size = 0;
         self.v2_channel_details = None;
+    }
+
+    /// Finalizes a pending SetupMiningConnection upon successful negotiation of
+    /// mining configuration of version rolling bits
+    fn handle_configure_result(
+        &mut self,
+        msg: &wire::Message<v1::V1Protocol>,
+        payload: &v1::framing::StratumResult,
+    ) -> stratum::error::Result<()> {
+        trace!(
+            LOGGER,
+            "handle_configure_result() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
+
+        // TODO review the use of serde_json here, it may be possible to eliminate this dependency
+        // Extract version mask and verify it matches the maximum possible value
+        let proposed_version_mask: stratum::error::Result<v1::messages::VersionMask> =
+            serde_json::from_value(payload.0["version-rolling.mask"].clone())
+                .context("Failed to parse version-rolling mask")
+                .map_err(Into::into);
+        proposed_version_mask.map(|proposed_version_mask| {
+            trace!(
+                LOGGER,
+                "Evaluating: version-rolling state == {:?} && mask=={:x?}",
+                payload.0["version-rolling"].as_bool(),
+                proposed_version_mask
+            );
+            if payload.0["version-rolling"].as_bool() == Some(true)
+                && (proposed_version_mask.0).0 == stratum::BIP320_N_VERSION_MASK
+            {
+                self.state = V2ToV1TranslationState::ConnectionSetup;
+
+                let success = v2::messages::SetupMiningConnectionSuccess {
+                    used_protocol_version: Self::PROTOCOL_VERSION as u16,
+                    max_extranonce_size: Self::MAX_EXTRANONCE_SIZE as u16,
+                    // TODO provide public key for TOFU
+                    pub_key: vec![0xde, 0xad, 0xbe, 0xef],
+                };
+                Self::submit_message(&mut self.v2_tx, success);
+            } else {
+                // TODO consolidate into abort_connection() + communicate shutdown of this
+                // connection similarly everywhere in the code
+                let response = v2::messages::SetupMiningConnectionError {
+                    code: "Cannot negotiate upstream V1 version mask".to_string(),
+                };
+                Self::submit_message(&mut self.v2_tx, response);
+            }
+            ()
+        })
+    }
+
+    fn handle_configure_error(
+        &mut self,
+        msg: &wire::Message<v1::V1Protocol>,
+        payload: &v1::framing::StratumError,
+    ) -> stratum::error::Result<()> {
+        trace!(
+            LOGGER,
+            "handle_configure_error() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
+        // TODO consolidate into abort_connection() + communicate shutdown of this
+        // connection similarly everywhere in the code
+        let response = v2::messages::SetupMiningConnectionError {
+            code: "Cannot negotiate upstream V1 version mask".to_string(),
+        };
+        Self::submit_message(&mut self.v2_tx, response);
+        Ok(())
     }
 
     fn handle_subscribe_result(
@@ -743,15 +819,19 @@ impl v2::V2Handler for V2ToV1Translation {
         }
 
         self.v2_conn_details = Some(payload.clone());
-        self.state = V2ToV1TranslationState::ConnectionSetup;
+        let mut configure = v1::messages::Configure::new();
+        configure.add_feature(v1::messages::VersionRolling::new(
+            stratum::BIP320_N_VERSION_MASK,
+            stratum::BIP320_N_VERSION_MAX_BITS,
+        ));
 
-        let response = v2::messages::SetupMiningConnectionSuccess {
-            used_protocol_version: Self::PROTOCOL_VERSION as u16,
-            max_extranonce_size: Self::MAX_EXTRANONCE_SIZE as u16,
-            // TODO provide public key for TOFU
-            pub_key: vec![0xde, 0xad, 0xbe, 0xef],
-        };
-        Self::submit_message(&mut self.v2_tx, response);
+        let v1_configure_message = self.v1_method_into_message(
+            configure,
+            Self::handle_configure_result,
+            Self::handle_configure_error,
+        );
+        Self::submit_message(&mut self.v1_tx, v1_configure_message);
+        self.state = V2ToV1TranslationState::V1Configure;
     }
 
     /// Opening a channel is a 2 stage process when translating to  V1 stratum, where

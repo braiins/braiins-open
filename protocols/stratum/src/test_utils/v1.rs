@@ -7,12 +7,47 @@ use std::str::FromStr;
 use super::common::*;
 use crate::v1::framing::*;
 use crate::v1::messages::*;
-use crate::v1::{ExtraNonce1, HexBytes, V1Handler, V1Protocol};
+use crate::v1::{ExtraNonce1, HexBytes, HexU32Be, V1Handler, V1Protocol};
 use crate::LOGGER;
+
+pub const MINING_CONFIGURE_REQ_JSON: &str = concat!(
+    r#"{"id":0,"method":"mining.configure","#,
+    r#""params":[["version-rolling"],"#,
+    r#"{"version-rolling.mask":"1fffe000","version-rolling.min-bit-count":16}]}"#
+);
+
+pub fn build_configure_request_frame() -> Frame {
+    build_request_message(Some(0), build_configure())
+}
+
+pub fn build_configure() -> Configure {
+    let v = VersionRolling::new(
+        crate::BIP320_N_VERSION_MASK,
+        crate::BIP320_N_VERSION_MAX_BITS,
+    );
+
+    let mut configure = Configure::new();
+    configure.add_feature(v);
+
+    configure
+}
+
+pub const MINING_CONFIGURE_OK_RESP_JSON: &str = concat!(
+    r#"{"id":0,"error":null,"result": {"version-rolling":true,"#,
+    r#""version-rolling.mask":"1fffe000"}}"#
+);
+
+pub fn build_configure_ok_response_message() -> Frame {
+    let cfg: ConfigureResult =
+        serde_json::from_str(r#"{"version-rolling":true,"version-rolling.mask":"1fffe000"}"#)
+            .expect("configure_ok_response deserialization failed");
+    trace!(LOGGER, "build_configure_ok_response_message() {:?}", cfg);
+    build_result_response_message(0, cfg)
+}
 
 /// Testing subscribe request in a dense form without any spaces
 pub const MINING_SUBSCRIBE_REQ_JSON: &str = concat!(
-    r#"{"id":0,"method":"mining.subscribe","#,
+    r#"{"id":1,"method":"mining.subscribe","#,
     r#""params":["Braiins OS 2019-06-05",null,"stratum.slushpool.com",null]}"#
 );
 
@@ -52,7 +87,7 @@ pub const MINING_BROKEN_REQ_JSON: &str = concat!(
 /// Subscribe success response in a dense form without any spaces
 /// TODO: find out how to fill in extra nonce 1 and extra nonce 2 size from predefined constants
 pub const MINING_SUBSCRIBE_OK_RESULT_JSON: &str = concat!(
-    r#"{"id":0,"#,
+    r#"{"id":1,"#,
     r#""result":[[["mining.set_difficulty","4"],["mining.notify","1"]],"6c6f010000000c",4],"#,
     r#""error":null}"#
 );
@@ -75,15 +110,15 @@ fn build_ok_response_message(id: u32) -> Frame {
 }
 
 pub fn build_subscribe_ok_response_frame() -> Frame {
-    build_result_response_message(0, build_subscribe_ok_result())
+    build_result_response_message(1, build_subscribe_ok_result())
 }
 
 pub fn build_authorize_ok_response_message() -> Frame {
-    build_ok_response_message(1)
+    build_ok_response_message(2)
 }
 
 pub fn build_mining_submit_ok_response_message() -> Frame {
-    build_ok_response_message(2)
+    build_ok_response_message(3)
 }
 
 pub fn build_subscribe_ok_result() -> SubscribeResult {
@@ -165,7 +200,7 @@ pub fn build_mining_notify() -> Notify {
 }
 
 pub const MINING_SUBMIT_JSON: &str = concat!(
-    r#"{"id":2,"method":"mining.submit","#,
+    r#"{"id":3,"method":"mining.submit","#,
     // TODO the correct share extra nonce 2 is 01000000, we have to replace the sample job
     // completely with a new none that has extra nonce 2 == 0
     r#""params":["braiins.worker0","011de9","00000000","5d10bc0a","7bc34304","20000000"]"#,
@@ -189,7 +224,7 @@ pub fn build_mining_submit() -> Submit {
 }
 
 pub const MINING_AUTHORIZE_JSON: &str =
-    r#"{"id":1,"method":"mining.authorize","params":["braiins.worker0",""]}"#;
+    r#"{"id":2,"method":"mining.authorize","params":["braiins.worker0",""]}"#;
 
 pub fn build_authorize_request_message() -> Frame {
     build_request_message(Some(1), build_authorize())
@@ -282,9 +317,11 @@ impl V1Handler for TestIdentityHandler {
         );
     }
 
+    fn visit_configure(&mut self, msg: &wire::Message<V1Protocol>, payload: &Configure) {
+        self.visit_and_check_request(msg, payload, build_configure, MINING_CONFIGURE_REQ_JSON);
+    }
+
     fn visit_subscribe(&mut self, msg: &wire::Message<V1Protocol>, payload: &Subscribe) {
-        // we have to clone the payload to create a locally owned copy as build_request_message
-        // requires transfer of ownership
         self.visit_and_check_request(msg, payload, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
     }
 

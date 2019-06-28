@@ -95,7 +95,12 @@ fn test_setup_mining_connection_translate() {
                 &mut translation,
                 test_utils::v2::build_setup_mining_connection(),
             );
-
+            // Setup mining connection should result into: mining.configure
+            await!(v1_verify_generated_response_message(&mut v1_rx));
+            v1_simulate_incoming_message(
+                &mut translation,
+                test_utils::v1::build_configure_ok_response_message(),
+            );
             await!(v2_verify_generated_response_message(&mut v2_rx));
 
             // Opening a channel should result into: V1 generating a subscribe request
