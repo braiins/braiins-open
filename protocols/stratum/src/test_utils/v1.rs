@@ -166,7 +166,7 @@ pub fn build_set_difficulty() -> SetDifficulty {
 }
 
 pub const MINING_NOTIFY_JOB_ID: [u8; 3] = [0x01, 0x1d, 0xe9];
-pub const MINING_NOTIFY_NTIME: u32 = 0x0abc105d;
+pub const MINING_NOTIFY_NTIME: u32 = 0x5d10bc0a;
 pub const MINING_NOTIFY_JSON: &str = concat!(
 r#"{"#,
 r#""id":null,"method":"mining.notify","#,
@@ -203,7 +203,7 @@ pub const MINING_SUBMIT_JSON: &str = concat!(
     r#"{"id":3,"method":"mining.submit","#,
     // TODO the correct share extra nonce 2 is 01000000, we have to replace the sample job
     // completely with a new none that has extra nonce 2 == 0
-    r#""params":["braiins.worker0","011de9","00000000","5d10bc0a","7bc34304","00000000"]"#,
+    r#""params":["braiins.worker0","011de9","00000000","5d10bc0a","0443c37b","00000000"]"#,
     r#"}"#
 );
 

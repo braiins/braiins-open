@@ -303,11 +303,11 @@ pub struct Version(HexU32Be);
 
 /// Network difficulty target
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Bits(HexU32Le);
+pub struct Bits(HexU32Be);
 
 /// Network time
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Time(HexU32Le);
+pub struct Time(HexU32Be);
 
 /// New mining job notification
 /// TODO generate the field accessors
@@ -413,7 +413,7 @@ impl Submit {
             UserName(user_name),
             job_id,
             ExtraNonce2(HexBytes(extra_nonce2.into())),
-            Time(HexU32Le(time)),
+            Time(HexU32Be(time)),
             Nonce(HexU32Le(nonce)),
             Version(HexU32Be(version)),
         )
