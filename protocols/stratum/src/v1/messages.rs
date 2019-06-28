@@ -393,7 +393,7 @@ pub struct ExtraNonce2(HexBytes);
 
 /// Nonce for the block
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Nonce(HexU32Le);
+pub struct Nonce(HexU32Be);
 
 /// New mining job notification
 /// TODO generate the field accessors
@@ -414,7 +414,7 @@ impl Submit {
             job_id,
             ExtraNonce2(HexBytes(extra_nonce2.into())),
             Time(HexU32Be(time)),
-            Nonce(HexU32Le(nonce)),
+            Nonce(HexU32Be(nonce)),
             Version(HexU32Be(version)),
         )
     }
