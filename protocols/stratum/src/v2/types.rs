@@ -31,6 +31,6 @@ impl AsMut<[u8; 32]> for Uint256Bytes {
 
 impl Into<uint::U256> for Uint256Bytes {
     fn into(self) -> uint::U256 {
-        uint::U256::from_big_endian(&self.0)
+        uint::U256::from_little_endian(&self.0)
     }
 }
