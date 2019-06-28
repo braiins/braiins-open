@@ -365,6 +365,24 @@ impl Notify {
 
 impl_conversion_request!(Notify, Method::Notify, visit_notify);
 
+/// Server may arbitrarily adjust version mask
+/// Note, that we explicitly enforce 1 one element array so that serde doesn't flatten the
+/// 'params' JSON array to a single value, eliminating the array completely.
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct SetVersionMask(pub [VersionMask; 1]);
+
+impl SetVersionMask {
+    pub fn value(&self) -> u32 {
+        ((self.0[0]).0).0
+    }
+}
+
+impl_conversion_request!(
+    SetVersionMask,
+    Method::SetVersionMask,
+    visit_set_version_mask
+);
+
 /// Combined username and worker
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct UserName(String);

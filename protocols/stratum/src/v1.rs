@@ -57,6 +57,13 @@ pub trait V1Handler: 'static {
 
     fn visit_notify(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Notify) {}
 
+    fn visit_set_version_mask(
+        &mut self,
+        _msg: &Message<V1Protocol>,
+        _payload: &messages::SetVersionMask,
+    ) {
+    }
+
     fn visit_submit(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Submit) {}
 }
 
@@ -98,6 +105,11 @@ pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
             Method::Notify => (
                 request.id,
                 Ok(Box::new(messages::Notify::try_from(request)?) as Box<dyn Payload<V1Protocol>>),
+            ),
+            Method::SetVersionMask => (
+                request.id,
+                Ok(Box::new(messages::SetVersionMask::try_from(request)?)
+                    as Box<dyn Payload<V1Protocol>>),
             ),
             _ => (
                 None,

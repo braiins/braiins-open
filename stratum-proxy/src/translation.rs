@@ -785,6 +785,23 @@ impl v1::V1Handler for V2ToV1Translation {
             // Consume the result as we cannot perform any action
             .ok();
     }
+
+    /// TODO currently unimplemented, the proxy should refuse changing the version mask from the server
+    /// Since this is a notification only, the only action that the translation can do is log +
+    /// report an error
+    fn visit_set_version_mask(
+        &mut self,
+        msg: &Message<v1::V1Protocol>,
+        payload: &v1::messages::SetVersionMask,
+    ) {
+        trace!(
+            LOGGER,
+            "visit_set_version_mask() msg.id={:?} state={:?} payload:{:?}",
+            msg.id,
+            self.state,
+            payload,
+        );
+    }
 }
 
 /// TODO: implement an internal state where in each state only a subset of visit methods is valid,

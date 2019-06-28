@@ -39,6 +39,8 @@ pub enum Method {
     Submit,
     #[serde(rename = "mining.notify")]
     Notify,
+    #[serde(rename = "mining.set_version_mask")]
+    SetVersionMask,
     /// Catch all variant
     #[serde(other)]
     Unknown,
