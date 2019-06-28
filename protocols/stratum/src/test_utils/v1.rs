@@ -66,7 +66,7 @@ where
 }
 
 pub fn build_subscribe_request_frame() -> Frame {
-    build_request_message(Some(0), build_subscribe())
+    build_request_message(Some(1), build_subscribe())
 }
 
 pub fn build_subscribe() -> Subscribe {
