@@ -203,7 +203,7 @@ pub const MINING_SUBMIT_JSON: &str = concat!(
     r#"{"id":3,"method":"mining.submit","#,
     // TODO the correct share extra nonce 2 is 01000000, we have to replace the sample job
     // completely with a new none that has extra nonce 2 == 0
-    r#""params":["braiins.worker0","011de9","00000000","5d10bc0a","7bc34304","20000000"]"#,
+    r#""params":["braiins.worker0","011de9","00000000","5d10bc0a","7bc34304","00000000"]"#,
     r#"}"#
 );
 

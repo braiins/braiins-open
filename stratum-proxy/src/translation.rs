@@ -981,8 +981,7 @@ impl v2::V2Handler for V2ToV1Translation {
                     v1_submit_template.time + payload.ntime_offset as u32,
                     payload.nonce,
                     // ensure the version bits in the template follow BIP320
-                    (v1_submit_template.version & !stratum::BIP320_N_VERSION_MASK)
-                        | (payload.version & stratum::BIP320_N_VERSION_MASK),
+                    payload.version & stratum::BIP320_N_VERSION_MASK,
                 );
                 // Convert the method into a message + provide handling methods
                 let v1_submit_message = self.v1_method_into_message(
