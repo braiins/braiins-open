@@ -299,7 +299,7 @@ pub struct MerkleBranch(Vec<HexBytes>);
 
 /// Version field of Bitcoin block header
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Version(HexU32Le);
+pub struct Version(HexU32Be);
 
 /// Network difficulty target
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
@@ -415,7 +415,7 @@ impl Submit {
             ExtraNonce2(HexBytes(extra_nonce2.into())),
             Time(HexU32Le(time)),
             Nonce(HexU32Le(nonce)),
-            Version(HexU32Le(version)),
+            Version(HexU32Be(version)),
         )
     }
 
