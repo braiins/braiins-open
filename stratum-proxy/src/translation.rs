@@ -213,7 +213,7 @@ impl V2ToV1Translation {
                 self.state = V2ToV1TranslationState::Operational;
                 let msg = v2::messages::OpenChannelSuccess {
                     req_id: v2_channel_details.req_id,
-                    channel_id: 0,
+                    channel_id: Self::CHANNEL_ID,
                     dev_id: None,
                     init_target: init_target.clone(),
                     group_channel_id: 0,
