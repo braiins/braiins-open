@@ -41,6 +41,10 @@ pub struct V2ToV1Translation {
     v1_extra_nonce2_size: usize,
     v1_authorized: bool,
 
+    /// Latest mining.notify payload that arrived before V1 authorize has completed.
+    /// This allows immediate completion of channel open on V2.
+    v1_deferred_notify: Option<v1::messages::Notify>,
+
     /// Channel for sending out V2 responses
     v2_tx: mpsc::Sender<TxFrame>,
     v2_req_id: MessageId,
@@ -138,6 +142,7 @@ impl V2ToV1Translation {
             v1_extra_nonce1: None,
             v1_extra_nonce2_size: 0,
             v1_authorized: false,
+            v1_deferred_notify: None,
             v2_tx,
             v2_req_id: MessageId::new(),
             v2_job_id: MessageId::new(),
@@ -219,6 +224,9 @@ impl V2ToV1Translation {
                     group_channel_id: 0,
                 };
                 Self::submit_message(&mut self.v2_tx, msg);
+                if let Some(notify_payload) = self.v1_deferred_notify.take() {
+                    self.perform_notify(&notify_payload);
+                }
                 Some(())
             })
             .ok_or(
@@ -662,6 +670,68 @@ impl V2ToV1Translation {
             },
         );
     }
+
+    fn perform_notify(&mut self, payload: &v1::messages::Notify) {
+        self.calculate_merkle_root(payload)
+            .and_then(|merkle_root| {
+                let v2_job = v2::messages::NewMiningJob {
+                    channel_id: Self::CHANNEL_ID,
+                    job_id: self.v2_job_id.next(),
+                    block_height: self.extract_block_height_from_notify(payload),
+                    merkle_root: Uint256Bytes(merkle_root.into_inner()),
+                    version: payload.version(),
+                };
+
+                // Make sure we generate new prev hash. Empty JobMap means this is the first
+                // mining.notify message and we also
+                // have to issue NewPrevHash. In addition to that, we also check the clean
+                // jobs flag that indicates a must for new prev hash, too.
+                let maybe_set_new_prev_hash =
+                    if self.v2_to_v1_job_map.is_empty() || payload.clean_jobs() {
+                        self.v2_to_v1_job_map.clear();
+                        // Any error means immediate termination
+                        // TODO write a unit test for such scenario, too
+                        Some(self.build_set_new_prev_hash(payload)?)
+                    } else {
+                        None
+                    };
+                trace!(
+                    LOGGER,
+                    "Registering V2 job ID {:x?} -> V1 job ID {:x?}",
+                    v2_job.job_id,
+                    payload.job_id(),
+                );
+                // TODO extract this duplicate code, turn the map into a new type with this
+                // custom policy (attempt to insert with the same key is a bug)
+                if self
+                    .v2_to_v1_job_map
+                    .insert(
+                        v2_job.job_id,
+                        V1SubmitTemplate {
+                            job_id: v1::messages::JobId::from_slice(payload.job_id()),
+                            time: payload.time(),
+                            version: payload.version(),
+                        },
+                    )
+                    .is_some()
+                {
+                    error!(LOGGER, "BUG: V2 id {} already exists...", v2_job.job_id);
+                    // TODO add graceful handling of this bug (shutdown?)
+                    panic!("V2 id already exists");
+                }
+
+                Self::submit_message(&mut self.v2_tx, v2_job);
+
+                maybe_set_new_prev_hash.and_then(|set_new_prev_hash| {
+                    Self::submit_message(&mut self.v2_tx, set_new_prev_hash);
+                    Some(())
+                });
+                Ok(())
+            })
+            .map_err(|e| trace!(LOGGER, "visit_notify: {}", e))
+            // Consume the result as we cannot perform any action
+            .ok();
+    }
 }
 
 impl v1::V1Handler for V2ToV1Translation {
@@ -743,74 +813,15 @@ impl v1::V1Handler for V2ToV1Translation {
 
         // We won't process the job as long as the channel is not operational
         if self.state != V2ToV1TranslationState::Operational {
+            self.v1_deferred_notify = Some(payload.clone());
             info!(
                 LOGGER,
-                "Channel not yet operational, ignoring mining.notify from upstream"
+                "Channel not yet operational, caching latest mining.notify from upstream"
             );
             return;
         }
-
-        self.calculate_merkle_root(payload)
-            .and_then(|merkle_root| {
-                let v2_job = v2::messages::NewMiningJob {
-                    channel_id: Self::CHANNEL_ID,
-                    job_id: self.v2_job_id.next(),
-                    block_height: self.extract_block_height_from_notify(payload),
-                    merkle_root: Uint256Bytes(merkle_root.into_inner()),
-                    version: payload.version(),
-                };
-
-                // Make sure we generate new prev hash. Empty JobMap means this is the first
-                // mining.notify message and we also
-                // have to issue NewPrevHash. In addition to that, we also check the clean
-                // jobs flag that indicates a must for new prev hash, too.
-                let maybe_set_new_prev_hash =
-                    if self.v2_to_v1_job_map.is_empty() || payload.clean_jobs() {
-                        self.v2_to_v1_job_map.clear();
-                        // Any error means immediate termination
-                        // TODO write a unit test for such scenario, too
-                        Some(self.build_set_new_prev_hash(payload)?)
-                    } else {
-                        None
-                    };
-                trace!(
-                    LOGGER,
-                    "Registering V2 job ID {:x?} -> V1 job ID {:x?}",
-                    v2_job.job_id,
-                    payload.job_id(),
-                );
-                // TODO extract this duplicate code, turn the map into a new type with this
-                // custom policy (attempt to insert with the same key is a bug)
-                if self
-                    .v2_to_v1_job_map
-                    .insert(
-                        v2_job.job_id,
-                        V1SubmitTemplate {
-                            job_id: v1::messages::JobId::from_slice(payload.job_id()),
-                            time: payload.time(),
-                            version: payload.version(),
-                        },
-                    )
-                    .is_some()
-                {
-                    error!(LOGGER, "BUG: V2 id {} already exists...", v2_job.job_id);
-                    // TODO add graceful handling of this bug (shutdown?)
-                    panic!("V2 id already exists");
-                }
-
-                Self::submit_message(&mut self.v2_tx, v2_job);
-
-                maybe_set_new_prev_hash.and_then(|set_new_prev_hash| {
-                    Self::submit_message(&mut self.v2_tx, set_new_prev_hash);
-                    Some(())
-                });
-                Ok(())
-            })
-            .map_err(|e| trace!(LOGGER, "visit_notify: {}", e))
-            // Consume the result as we cannot perform any action
-            .ok();
+        self.perform_notify(payload);
     }
-
     /// TODO currently unimplemented, the proxy should refuse changing the version mask from the server
     /// Since this is a notification only, the only action that the translation can do is log +
     /// report an error
