@@ -11,6 +11,7 @@ serde_json = "1.0.39"
 bytes = "0.4"
 byteorder = "1.2.7"
 hex = "0.3.2"
+slog-envlogger = "2.1.0"
 # Temporarily disabled, see v1 TODO
 #serde_tuple = "0.2.2"
 slog = { version = "~2.4", features = ["max_level_trace", "release_max_level_trace"] }
