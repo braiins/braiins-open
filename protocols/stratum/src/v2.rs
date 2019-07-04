@@ -7,12 +7,12 @@ pub mod types;
 use crate::error::Result;
 
 use crate::v2::framing::MessageType;
-use crate::LOGGER;
 
 use failure::ResultExt;
 use packed_struct::PackedStructSlice;
-use slog::trace;
 use std::convert::TryFrom;
+
+use logging::macros::*;
 use wire::{Message, Payload, ProtocolBase};
 
 pub struct V2Protocol;
@@ -68,7 +68,7 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<V2Protocol>> {
         src.len(),
         "Malformed message"
     );
-    trace!(LOGGER, "V2: deserialized header: {:?}", header);
+    trace!("V2: deserialized header: {:?}", header);
     let msg_bytes = &src[framing::Header::SIZE..];
 
     // Build message based on its type specified in the header
@@ -165,7 +165,7 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<V2Protocol>> {
             .into()),
         ),
     };
-    trace!(LOGGER, "V2: message ID: {:?}", id);
+    trace!("V2: message ID: {:?}", id);
     // TODO: message ID handling is not implemented
     payload.map(|p| Message::new(id, p))
 }

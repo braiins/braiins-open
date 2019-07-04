@@ -1,14 +1,14 @@
 use serde::Serialize;
-use slog::trace;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 use std::str::FromStr;
+
+use logging::macros::*;
 
 use super::common::*;
 use crate::v1::framing::*;
 use crate::v1::messages::*;
 use crate::v1::{ExtraNonce1, HexBytes, HexU32Be, V1Handler, V1Protocol};
-use crate::LOGGER;
 
 pub const MINING_CONFIGURE_REQ_JSON: &str = concat!(
     r#"{"id":0,"method":"mining.configure","#,
@@ -41,7 +41,7 @@ pub fn build_configure_ok_response_message() -> Frame {
     let cfg: ConfigureResult =
         serde_json::from_str(r#"{"version-rolling":true,"version-rolling.mask":"1fffe000"}"#)
             .expect("configure_ok_response deserialization failed");
-    trace!(LOGGER, "build_configure_ok_response_message() {:?}", cfg);
+    trace!("build_configure_ok_response_message() {:?}", cfg);
     build_result_response_message(0, cfg)
 }
 
@@ -263,7 +263,6 @@ impl TestIdentityHandler {
         // Build expected payload for verifying correct deserialization
         let expected_payload = build_payload();
         trace!(
-            LOGGER,
             "V1 TestIdentityHandler: Message ID {:?} {:?}",
             msg.id,
             payload

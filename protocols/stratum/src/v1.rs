@@ -4,7 +4,6 @@ pub mod messages;
 
 use crate::error::Result;
 use crate::v1::error::ErrorKind;
-use crate::LOGGER;
 
 use crate::v1::framing::Frame;
 use crate::v1::framing::Method;
@@ -14,10 +13,11 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 use failure::ResultExt;
 use hex::{decode, FromHexError};
 use serde::{Deserialize, Serialize};
-use slog::trace;
 use std::convert::TryFrom;
 use std::mem::size_of;
 use std::str::FromStr;
+
+use logging::macros::*;
 use wire::{Message, Payload, ProtocolBase};
 
 pub struct V1Protocol;
@@ -71,11 +71,7 @@ pub trait V1Handler: 'static {
 pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
     let deserialized = framing::Frame::from_str(src)?;
 
-    trace!(
-        LOGGER,
-        "V1: Deserialized V1 message payload: {:?}",
-        deserialized
-    );
+    trace!("V1: Deserialized V1 message payload: {:?}", deserialized);
     let (id, payload) = match deserialized {
         Frame::RpcRequest(request) => match request.payload.method {
             Method::Configure => (
@@ -134,7 +130,7 @@ pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
             (Some(response.id), msg)
         }
     };
-    trace!(LOGGER, "V1: Deserialized message ID {:?}", id);
+    trace!("V1: Deserialized message ID {:?}", id);
     // convert the payload into message
     Ok(payload.map(|p| Message::new(id, p))?)
 }

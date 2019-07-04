@@ -1,14 +1,14 @@
 use bitcoin_hashes::{hex::FromHex, sha256d, Hash};
-use slog::trace;
 use std::fmt::Debug;
 use uint;
+
+use logging::macros::*;
 
 use crate::test_utils::common::*;
 use crate::test_utils::v1;
 use crate::v2::messages::*;
 use crate::v2::types::*;
 use crate::v2::{V2Handler, V2Protocol};
-use crate::LOGGER;
 
 /// Message payload visitor that compares the payload of the visited message (e.g. after
 /// deserialization test) with the payload built.
@@ -25,7 +25,6 @@ impl TestIdentityHandler {
         // Build expected payload for verifying correct deserialization
         let expected_payload = build();
         trace!(
-            LOGGER,
             "V2 TestIdentityHandler: Message ID {:?} {:?}",
             msg.id,
             payload

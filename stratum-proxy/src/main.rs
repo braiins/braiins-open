@@ -8,19 +8,21 @@ use std::cell::RefCell;
 use clap::{self, Arg};
 use ctrlc;
 use futures::future::FutureExt;
-use slog::{error, info, trace};
 use tokio::net::TcpListener;
 use tokio::prelude::*;
 use tokio::r#await;
 use wire::utils::CompatFix;
 use wire::{tokio, Framing};
 
+use logging::macros::*;
 use stratumproxy::server;
 
 static V2_ADDR: &'static str = "127.0.0.1:3334";
 static V1_ADDR: &'static str = "127.0.0.1:3335";
 
 fn main() {
+    let _log_guard = logging::setup_for_app();
+
     let args = clap::App::new("stratum-proxy")
         .arg(
             Arg::with_name("listen")
@@ -55,6 +57,4 @@ fn main() {
     });
 
     tokio::run(server_task.compat_fix());
-
-    // FIXME: flush logs
 }
