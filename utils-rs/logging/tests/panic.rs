@@ -1,8 +1,12 @@
+//! Test that setting logger config after using the logger
+//! results in a panic.
+//!
+//! **Warning**: Each logging test needs to be in a separate files
+//! due to global LOGGER initialization
+
 use logging::macros::*;
 use logging::{self, LoggingConfig};
 
-// Note: Each logging test needs to be in a separate files
-// due to global LOGGER initialization
 
 #[test]
 #[should_panic]

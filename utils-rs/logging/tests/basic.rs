@@ -1,3 +1,8 @@
+//! Test of logging basic setup and usage.
+//!
+//! **Warning**: Each logging test needs to be in a separate files
+//! due to global LOGGER initialization
+
 use std::env;
 use std::fs;
 
@@ -6,8 +11,6 @@ use logging::{self, Level, LoggingConfig, LOGGER};
 
 use tempfile::NamedTempFile;
 
-// Note: Each logging test needs to be in a separate files
-// due to global LOGGER initialization
 
 #[test]
 fn test_logging_basic() {
