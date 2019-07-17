@@ -33,7 +33,6 @@ use std::fs::OpenOptions;
 use std::mem;
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use lazy_static::lazy_static;
@@ -86,15 +85,10 @@ impl Default for LoggingConfig {
 
 /// Lock logger configuration with mutual exclusion
 #[inline(always)]
-fn lock_logger_config() -> MutexGuard<'static, LoggingConfig> {
+fn lock_logger_config() -> MutexGuard<'static, Option<LoggingConfig>> {
     LOGGER_CONFIG
         .lock()
         .expect("Could not lock logger config mutex")
-}
-
-/// Get copy of current logger configuration
-pub fn get_logger_config() -> LoggingConfig {
-    lock_logger_config().clone()
 }
 
 /// Set new logger configuration and return old one.
@@ -106,12 +100,8 @@ pub fn get_logger_config() -> LoggingConfig {
 /// Panics if `LOGGER` is already instantiated, ie. its configuration
 /// can no longer be changed.
 pub fn set_logger_config(config: LoggingConfig) -> LoggingConfig {
-    if LOGGER_INSTANTIATED.load(Ordering::SeqCst) {
-        panic!("Cannot set logger config, LOGGER already instantiated");
-    }
-
-    let mut locker = lock_logger_config();
-    mem::replace(&mut *locker, config)
+    lock_logger_config().replace(config)
+        .expect("Could not set logger config, LOGGER already instantiated")
 }
 
 /// Setup logger with configuration passed in `config`
@@ -238,25 +228,22 @@ impl Deref for GuardedLogger {
     }
 }
 
-/// Flag to check for in set_logger_config() whether setting the config makes sense any more
-static LOGGER_INSTANTIATED: AtomicBool = AtomicBool::new(false);
-
 lazy_static! {
-    static ref LOGGER_CONFIG: Mutex<LoggingConfig> = Mutex::new(LoggingConfig::default());
+    static ref LOGGER_CONFIG: Mutex<Option<LoggingConfig>> = Mutex::new(Some(LoggingConfig::default()));
 
     /// Static global reference to the logger that will be accessible from all crates
     pub static ref LOGGER: GuardedLogger = {
-        LOGGER_INSTANTIATED.store(true, Ordering::SeqCst);
-
         // envlogger doesn't allow to set default log level, so this is a workaround
         if !env::var("RUST_LOG").is_ok() {
             env::set_var("RUST_LOG", "info");
         }
 
         // Read configuration and create drains as appropriate
-        let config_lock = lock_logger_config();
-        let terminal_drain = get_terminal_drain(&*config_lock);
-        let file_drain = get_file_drain(&*config_lock);
+        let mut config_lock = lock_logger_config();
+        let config = config_lock.take()
+            .expect("Internal error: LOGGER_CONFIG empty in LOGGER initialization");
+        let terminal_drain = get_terminal_drain(&config);
+        let file_drain = get_file_drain(&config);
         drop(config_lock);
 
         // Combine drains if both are set up, use just one if one is set up,
