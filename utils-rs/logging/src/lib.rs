@@ -120,6 +120,7 @@ fn get_file_drain(config: &LoggingConfig) -> Option<impl Drain<Ok = (), Err = sl
 
         let file_decorator = slog_term::PlainDecorator::new(file);
         let file_drain = slog_term::FullFormat::new(file_decorator).build();
+        let file_drain = slog_envlogger::new(file_drain);
         Some(LevelFilter::new(file_drain, *level).fuse())
     })
 }
