@@ -36,10 +36,10 @@ use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 
 use lazy_static::lazy_static;
-use slog::{o, Discard, Drain, Duplicate, LevelFilter, Logger};
+use slog::{o, Discard, Drain, Duplicate, FilterLevel, LevelFilter, Logger};
 use slog_async::{Async, AsyncGuard};
+use slog_envlogger::EnvLogger;
 use slog_term;
-use slog_envlogger;
 
 // Re-export slog things for easy access to slog by dependers
 // and also because these are used by macros
@@ -100,7 +100,8 @@ fn lock_logger_config() -> MutexGuard<'static, Option<LoggingConfig>> {
 /// Panics if `LOGGER` is already instantiated, ie. its configuration
 /// can no longer be changed.
 pub fn set_logger_config(config: LoggingConfig) -> LoggingConfig {
-    lock_logger_config().replace(config)
+    lock_logger_config()
+        .replace(config)
         .expect("Could not set logger config, LOGGER already instantiated")
 }
 
@@ -127,12 +128,32 @@ pub fn setup_for_app() -> FlushGuard {
     setup(LoggingConfig::for_app())
 }
 
+/// Sets up envlogger filter for a drain, with proper default settings
+fn get_envlogger_drain<D: Drain>(drain: D) -> EnvLogger<D> {
+    let builder = slog_envlogger::LogBuilder::new(drain);
+    match env::var("RUST_LOG") {
+        Ok(ref rust_log) if !rust_log.is_empty() => {
+            // Use the RUST_LOG env var if present and non-empty
+            builder.parse(rust_log).build()
+        }
+        _ => {
+            // Otherwise, by default we use the Trace level here,
+            // because it only applies to the envlogger filter.
+            // This is unrelated to the slog level as specified
+            // in the configuration and used in the LevelFilter.
+            // By default we don't want the envolgger
+            // to filter messages in any way.
+            builder.filter(None, FilterLevel::Trace).build()
+        }
+    }
+}
+
 /// Create terminal drain for logger with logging level if requested
 fn get_terminal_drain(config: &LoggingConfig) -> Option<impl Drain<Ok = (), Err = slog::Never>> {
     config.term.map(|level| {
         let terminal_decorator = slog_term::TermDecorator::new().build();
         let terminal_drain = slog_term::FullFormat::new(terminal_decorator).build();
-        let terminal_drain = slog_envlogger::new(terminal_drain);
+        let terminal_drain = get_envlogger_drain(terminal_drain);
         LevelFilter::new(terminal_drain, level).fuse()
     })
 }
@@ -157,7 +178,7 @@ fn get_file_drain(config: &LoggingConfig) -> Option<impl Drain<Ok = (), Err = sl
 
         let file_decorator = slog_term::PlainDecorator::new(file);
         let file_drain = slog_term::FullFormat::new(file_decorator).build();
-        let file_drain = slog_envlogger::new(file_drain);
+        let file_drain = get_envlogger_drain(file_drain);
         Some(LevelFilter::new(file_drain, *level).fuse())
     })
 }
@@ -233,11 +254,6 @@ lazy_static! {
 
     /// Static global reference to the logger that will be accessible from all crates
     pub static ref LOGGER: GuardedLogger = {
-        // envlogger doesn't allow to set default log level, so this is a workaround
-        if !env::var("RUST_LOG").is_ok() {
-            env::set_var("RUST_LOG", "info");
-        }
-
         // Read configuration and create drains as appropriate
         let mut config_lock = lock_logger_config();
         let config = config_lock.take()

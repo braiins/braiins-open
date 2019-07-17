@@ -1,3 +1,4 @@
+use std::env;
 use std::fs;
 
 use logging::macros::*;
@@ -11,6 +12,10 @@ use tempfile::NamedTempFile;
 #[test]
 fn test_logging_basic() {
     const LOG_MSG: &'static str = "Hello, World!";
+
+    // Set RUST_LOG to "": Don't let outer environment influence the test
+    // and test the behaviour if RUST_LOG is empty
+    env::set_var("RUST_LOG", "");
 
     // Create configuration
     let temp_file = NamedTempFile::new().expect("Could not create temporary file");
