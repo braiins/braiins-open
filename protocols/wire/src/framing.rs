@@ -43,12 +43,12 @@ impl<T> Deref for Frame<T> {
 /// Message<Protocol> and for sending we have TxFrame. We should make this a bit more uniform
 pub trait Framing: 'static {
     /// Send message type
-    type Send: Send + Sync;
+    type Tx: Send + Sync;
     /// Receive message type
-    type Receive: Send + Sync;
+    type Rx: Send + Sync;
     type Error: From<IOError>;
-    type Codec: Encoder<Item = Self::Send, Error = Self::Error>
-        + Decoder<Item = Self::Receive, Error = Self::Error>
+    type Codec: Encoder<Item = Self::Tx, Error = Self::Error>
+        + Decoder<Item = Self::Rx, Error = Self::Error>
         + Default
         + Unpin
         + Send

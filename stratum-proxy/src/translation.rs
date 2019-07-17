@@ -1,6 +1,6 @@
-use bitcoin_hashes::{sha256, sha256d, Hash, HashEngine};
+use bitcoin_hashes::{sha256d, Hash, HashEngine};
 use bytes::BytesMut;
-use failure::{Fail, ResultExt};
+use failure::ResultExt;
 use futures::channel::mpsc;
 use serde_json;
 use std::collections::HashMap;
@@ -8,7 +8,6 @@ use std::convert::From;
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt;
-use std::io::Write;
 use std::mem::size_of;
 
 use stratum;
@@ -84,14 +83,14 @@ enum V2ToV1TranslationState {
 /// Represents a handler method that can process a particular stratum result.
 type V1StratumResultHandler = fn(
     &mut V2ToV1Translation,
-    &wire::Message<v1::V1Protocol>,
+    &wire::Message<v1::Protocol>,
     &v1::framing::StratumResult,
 ) -> stratum::error::Result<()>;
 
 /// Represents a handler method that can process a particular stratum error.
 type V1StratumErrorHandler = fn(
     &mut V2ToV1Translation,
-    &wire::Message<v1::V1Protocol>,
+    &wire::Message<v1::Protocol>,
     &v1::framing::StratumError,
 ) -> stratum::error::Result<()>;
 
@@ -109,7 +108,7 @@ struct V1SubmitTemplate {
 /// Maps V2 job ID to V1 job ID so that we can submit mining results upstream to V1 server
 type JobMap = HashMap<u32, V1SubmitTemplate>;
 
-//type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &wire::Message<V2Protocol>, &v1::framing::StratumResult)>;
+//type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &wire::Message<Protocol>, &v1::framing::StratumResult)>;
 
 impl V2ToV1Translation {
     const PROTOCOL_VERSION: usize = 0;
@@ -124,6 +123,7 @@ impl V2ToV1Translation {
     const DIFF1_TARGET: uint::U256 = uint::U256([0, 0, 0, 0xffff0000u64]);
 
     pub fn new(v1_tx: mpsc::Sender<TxFrame>, v2_tx: mpsc::Sender<TxFrame>) -> Self {
+        // TODO: unused?
         let diff_1_target = uint::U256::from_big_endian(&[
             0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -277,7 +277,7 @@ impl V2ToV1Translation {
     /// mining configuration of version rolling bits
     fn handle_configure_result(
         &mut self,
-        msg: &wire::Message<v1::V1Protocol>,
+        msg: &wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
     ) -> stratum::error::Result<()> {
         trace!(
@@ -325,7 +325,7 @@ impl V2ToV1Translation {
 
     fn handle_configure_error(
         &mut self,
-        msg: &wire::Message<v1::V1Protocol>,
+        msg: &wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumError,
     ) -> stratum::error::Result<()> {
         trace!(
@@ -345,7 +345,7 @@ impl V2ToV1Translation {
 
     fn handle_subscribe_result(
         &mut self,
-        msg: &wire::Message<v1::V1Protocol>,
+        msg: &wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
     ) -> stratum::error::Result<()> {
         trace!(
@@ -378,7 +378,7 @@ impl V2ToV1Translation {
     /// An authorize result should be true, any other problem results in aborting the channel
     fn handle_authorize_result(
         &mut self,
-        msg: &wire::Message<v1::V1Protocol>,
+        msg: &wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
     ) -> stratum::error::Result<()> {
         trace!(
@@ -416,9 +416,10 @@ impl V2ToV1Translation {
             })
     }
 
+    // TODO: unused?
     fn handle_ok_result(
         &mut self,
-        msg: &wire::Message<v1::V1Protocol>,
+        _msg: &wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
     ) -> stratum::error::Result<()> {
         let bool_result = v1::messages::BooleanResult::try_from(payload)?;
@@ -429,7 +430,7 @@ impl V2ToV1Translation {
 
     fn handle_authorize_or_subscribe_error(
         &mut self,
-        msg: &wire::Message<v1::V1Protocol>,
+        msg: &wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumError,
     ) -> stratum::error::Result<()> {
         trace!(
@@ -454,7 +455,7 @@ impl V2ToV1Translation {
 
     fn handle_submit_result(
         &mut self,
-        msg: &wire::Message<v1::V1Protocol>,
+        msg: &wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
     ) -> stratum::error::Result<()> {
         trace!(
@@ -498,7 +499,7 @@ impl V2ToV1Translation {
 
     fn handle_submit_error(
         &mut self,
-        msg: &wire::Message<v1::V1Protocol>,
+        msg: &wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumError,
     ) -> stratum::error::Result<()> {
         trace!(
@@ -520,9 +521,10 @@ impl V2ToV1Translation {
         Ok(())
     }
 
+    // TODO: unused?
     fn handle_any_stratum_error(
         &mut self,
-        msg: &wire::Message<v1::V1Protocol>,
+        msg: &wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumError,
     ) -> stratum::error::Result<()> {
         trace!(
@@ -586,7 +588,7 @@ impl V2ToV1Translation {
 
     /// TODO temporary workaround that provides locally tracked block height (from start of the
     /// mining session. This is yet to be implemented
-    fn extract_block_height_from_notify(&self, payload: &v1::messages::Notify) -> u32 {
+    fn extract_block_height_from_notify(&self, _payload: &v1::messages::Notify) -> u32 {
         self.block_height.get()
     }
 
@@ -711,13 +713,13 @@ impl V2ToV1Translation {
     }
 }
 
-impl v1::V1Handler for V2ToV1Translation {
+impl v1::Handler for V2ToV1Translation {
     /// The result visitor takes care of detecting a spurious response without matching request
     /// and passes processing further
     /// TODO write a solid unit test covering all 3 scenarios that can go wrong
     fn visit_stratum_result(
         &mut self,
-        msg: &wire::Message<v1::V1Protocol>,
+        msg: &wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
     ) {
         trace!(
@@ -748,7 +750,7 @@ impl v1::V1Handler for V2ToV1Translation {
 
     fn visit_set_difficulty(
         &mut self,
-        msg: &Message<v1::V1Protocol>,
+        msg: &Message<v1::Protocol>,
         payload: &v1::messages::SetDifficulty,
     ) {
         trace!(
@@ -777,7 +779,7 @@ impl v1::V1Handler for V2ToV1Translation {
 
     /// Composes a new mining job and sends it downstream
     /// TODO: Only 1 channel is supported
-    fn visit_notify(&mut self, msg: &Message<v1::V1Protocol>, payload: &v1::messages::Notify) {
+    fn visit_notify(&mut self, msg: &Message<v1::Protocol>, payload: &v1::messages::Notify) {
         trace!(
             "visit_notify() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
@@ -798,7 +800,7 @@ impl v1::V1Handler for V2ToV1Translation {
     /// report an error
     fn visit_set_version_mask(
         &mut self,
-        msg: &Message<v1::V1Protocol>,
+        msg: &Message<v1::Protocol>,
         payload: &v1::messages::SetVersionMask,
     ) {
         trace!(
@@ -813,10 +815,10 @@ impl v1::V1Handler for V2ToV1Translation {
 /// TODO: implement an internal state where in each state only a subset of visit methods is valid,
 /// the rest of the methods have default implementation that only reports error in the log and to the client, dropping a connection?
 /// Connection dropping is to be clarified
-impl v2::V2Handler for V2ToV1Translation {
+impl v2::Handler for V2ToV1Translation {
     fn visit_setup_mining_connection(
         &mut self,
-        msg: &Message<v2::V2Protocol>,
+        msg: &Message<v2::Protocol>,
         payload: &v2::messages::SetupMiningConnection,
     ) {
         trace!(
@@ -841,7 +843,7 @@ impl v2::V2Handler for V2ToV1Translation {
         configure.add_feature(v1::messages::VersionRolling::new(
             stratum::BIP320_N_VERSION_MASK,
             stratum::BIP320_N_VERSION_MAX_BITS,
-        ));
+        )); // FIXME: how to handle errors from configure.add_feature() ?
 
         let v1_configure_message = self.v1_method_into_message(
             configure,
@@ -862,7 +864,7 @@ impl v2::V2Handler for V2ToV1Translation {
     /// - start sending Jobs downstream to V2 client
     fn visit_open_channel(
         &mut self,
-        msg: &Message<v2::V2Protocol>,
+        msg: &Message<v2::Protocol>,
         payload: &v2::messages::OpenChannel,
     ) {
         trace!(
@@ -929,7 +931,7 @@ impl v2::V2Handler for V2ToV1Translation {
     /// If any of the above points fail, reply with SubmitShareError + reasoning
     fn visit_submit_shares(
         &mut self,
-        msg: &Message<v2::V2Protocol>,
+        msg: &Message<v2::Protocol>,
         payload: &v2::messages::SubmitShares,
     ) {
         trace!(

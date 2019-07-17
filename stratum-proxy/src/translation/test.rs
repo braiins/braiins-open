@@ -1,20 +1,15 @@
-#![feature(await_macro, async_await)]
 use futures::stream::StreamExt;
-use std::fmt::Debug;
-use std::str;
-use tokio::prelude::*;
 use tokio::runtime::current_thread as runtime;
 
 use super::*;
 use stratum::test_utils;
 use stratum::v1;
 use stratum::v2;
+use wire::tokio;
 use wire::utils::CompatFix;
-use wire::{self, Message, Payload};
-use wire::{tokio, ProtocolBase};
 
 //       F::Error: From<E>,
-//        M: TryInto<F::Send, Error = E>,
+//        M: TryInto<F::Tx, Error = E>,
 
 /// Simulates incoming message by converting it into a TxFrame and running the deserialization
 /// chain from that point on

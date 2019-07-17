@@ -8,30 +8,23 @@
 #![feature(await_macro, async_await)]
 
 use futures::future::Future;
-use std::convert::TryInto;
 use std::net::SocketAddr;
 
-use tokio::net::TcpListener;
 use tokio::prelude::*;
-use tokio::r#await;
 use tokio::runtime::current_thread as runtime;
-use wire::{tokio, Framing};
+use wire::tokio;
 
 use stratum;
 use stratum::test_utils;
 
 use stratum::error::Error;
-use stratum::v1::framing::codec::V1Framing;
-use stratum::v1::framing::Frame::{self, RpcRequest, RpcResponse};
-use stratum::v1::V1Protocol;
-
-use stratum::v2::framing::codec::V2Framing;
-use stratum::v2::framing::MessageType;
+use stratum::v1;
+use stratum::v2;
 
 use stratumproxy::server;
 
 use wire::utils::CompatFix;
-use wire::{Connection, Payload, Server, TxFrame};
+use wire::{Connection, Server};
 
 mod utils;
 
@@ -47,7 +40,7 @@ fn test_v2server() {
     tokio::run(
         async {
             let addr = format!("{}:{}", ADDR, PORT_V2).parse().unwrap();
-            let mut server = Server::<V2Framing>::bind(&addr).unwrap();
+            let mut server = Server::<v2::Framing>::bind(&addr).unwrap();
 
             // Spawn server task that reacts to any incoming message and responds
             // with SetupMiningConnectionSuccess
@@ -63,7 +56,7 @@ fn test_v2server() {
             });
 
             // Testing client
-            let mut connection = await!(Connection::<V2Framing>::connect(&addr))
+            let mut connection = await!(Connection::<v2::Framing>::connect(&addr))
                 .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
             await!(connection.send(test_utils::v2::build_setup_mining_connection()))
                 .expect("Could not send message");
@@ -81,8 +74,8 @@ fn test_v2server() {
 //    F: wire::Framing,
 //    P: wire::ProtocolBase,
 //    <F as wire::Framing>::Error: std::fmt::Debug,
-//    <F as wire::Framing>::Send: std::convert::From<wire::TxFrame>,
-//    <F as wire::Framing>::Receive:
+//    <F as wire::Framing>::Tx: std::convert::From<wire::TxFrame>,
+//    <F as wire::Framing>::Rx:
 //{
 //    tokio::run(
 //        async {
@@ -123,15 +116,14 @@ fn test_v2server() {
 //}
 
 fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
-    let addr = format!("{}:{}", ADDR, PORT_V1).parse().unwrap();
-    let mut server = Server::<V1Framing>::bind(&addr).unwrap();
+    let mut server = Server::<v1::Framing>::bind(&addr).unwrap();
 
     async move {
         while let Some(conn) = await!(server.next()) {
             let mut conn = conn.unwrap();
 
             while let Some(msg) = await!(conn.next()) {
-                let msg: wire::Message<V1Protocol> = msg.unwrap();
+                let msg: wire::Message<v1::Protocol> = msg.unwrap();
                 // test handler verifies that the message
                 msg.accept(&mut test_utils::v1::TestIdentityHandler);
 
@@ -157,7 +149,7 @@ fn test_v1server() {
             runtime::spawn(v1server_task(addr).compat_fix());
 
             // Testing client
-            let mut connection = await!(Connection::<V1Framing>::connect(&addr))
+            let mut connection = await!(Connection::<v1::Framing>::connect(&addr))
                 .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
 
             let request = test_utils::v1::build_subscribe_request_frame();
@@ -174,7 +166,7 @@ async fn test_v2_client(server_addr: String) {
     let sock_server_addr = server_addr.parse().expect("Invalid server address");
     // Test client for V2
     await!(utils::backoff(50, 4, async move || -> Result<(), Error> {
-        let mut conn = await!(Connection::<V2Framing>::connect(&sock_server_addr))?;
+        let mut conn = await!(Connection::<v2::Framing>::connect(&sock_server_addr))?;
 
         // Initialize server connection
         await!(conn.send(test_utils::v2::build_setup_mining_connection()))

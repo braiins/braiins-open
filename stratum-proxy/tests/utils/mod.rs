@@ -1,4 +1,3 @@
-use crate::tokio::r#await;
 use crate::tokio::timer::Delay;
 use futures::compat::Future01CompatExt;
 use futures::future::Future;
@@ -24,7 +23,7 @@ pub async fn backoff<E, T, FT: Future<Output = Result<T, E>>, F: Fn() -> FT>(
         return res;
     }
 
-    for i in 0..iterations {
+    for _ in 0..iterations {
         await!(Delay::new(Instant::now() + Duration::from_millis(delay as u64)).compat());
         delay = 2 * delay;
 

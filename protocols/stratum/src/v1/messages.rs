@@ -1,16 +1,15 @@
 //! Definition of all Stratum V1 messages
 
-use bitcoin_hashes::sha256d::Hash;
 use failure::ResultExt;
 use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 
 use super::error::ErrorKind;
 use super::framing;
-use super::{ExtraNonce1, V1Handler, V1Protocol};
-use crate::error::{Error, Result};
+use super::{ExtraNonce1, Handler, Protocol};
+use crate::error::Result;
 use crate::v1::framing::Method;
-use crate::v1::{HexBytes, HexU32Be, HexU32Le, PrevHash};
+use crate::v1::{HexBytes, HexU32Be, PrevHash};
 
 #[cfg(test)]
 pub mod test;
@@ -42,8 +41,8 @@ macro_rules! impl_conversion_request {
             }
         }
 
-        impl wire::Payload<V1Protocol> for $request {
-            fn accept(&self, msg: &wire::Message<V1Protocol>, handler: &mut V1Handler) {
+        impl wire::Payload<Protocol> for $request {
+            fn accept(&self, msg: &wire::Message<Protocol>, handler: &mut Handler) {
                 handler.$handler_fn(msg, self);
             }
         }

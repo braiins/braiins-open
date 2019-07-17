@@ -11,64 +11,61 @@ use crate::v1::framing::Method;
 use bitcoin_hashes::hex::{FromHex, ToHex};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 use failure::ResultExt;
-use hex::{decode, FromHexError};
+use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::mem::size_of;
 use std::str::FromStr;
 
 use logging::macros::*;
-use wire::{Message, Payload, ProtocolBase};
+use wire::{self, Message, Payload};
 
-pub struct V1Protocol;
-impl ProtocolBase for V1Protocol {
-    type Handler = V1Handler;
+pub use self::framing::codec::{Codec, Framing};
+
+pub struct Protocol;
+impl wire::Protocol for Protocol {
+    type Handler = Handler;
 }
 
 /// Specifies all messages to be visited
-pub trait V1Handler: 'static {
+pub trait Handler: 'static {
     /// Handles the result part of the response
     fn visit_stratum_result(
         &mut self,
-        _msg: &Message<V1Protocol>,
+        _msg: &Message<Protocol>,
         _payload: &framing::StratumResult,
     ) {
     }
     /// Handles the error part of the response
-    fn visit_stratum_error(
-        &mut self,
-        _msg: &Message<V1Protocol>,
-        _payload: &framing::StratumError,
-    ) {
-    }
+    fn visit_stratum_error(&mut self, _msg: &Message<Protocol>, _payload: &framing::StratumError) {}
 
-    fn visit_configure(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Configure) {}
+    fn visit_configure(&mut self, _msg: &Message<Protocol>, _payload: &messages::Configure) {}
 
-    fn visit_subscribe(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Subscribe) {}
+    fn visit_subscribe(&mut self, _msg: &Message<Protocol>, _payload: &messages::Subscribe) {}
 
-    fn visit_authorize(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Authorize) {}
+    fn visit_authorize(&mut self, _msg: &Message<Protocol>, _payload: &messages::Authorize) {}
 
     fn visit_set_difficulty(
         &mut self,
-        _msg: &Message<V1Protocol>,
+        _msg: &Message<Protocol>,
         _payload: &messages::SetDifficulty,
     ) {
     }
 
-    fn visit_notify(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Notify) {}
+    fn visit_notify(&mut self, _msg: &Message<Protocol>, _payload: &messages::Notify) {}
 
     fn visit_set_version_mask(
         &mut self,
-        _msg: &Message<V1Protocol>,
+        _msg: &Message<Protocol>,
         _payload: &messages::SetVersionMask,
     ) {
     }
 
-    fn visit_submit(&mut self, _msg: &Message<V1Protocol>, _payload: &messages::Submit) {}
+    fn visit_submit(&mut self, _msg: &Message<Protocol>, _payload: &messages::Submit) {}
 }
 
 /// TODO: deserialization should be done from &[u8] so that it is consistent with V2
-pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
+pub fn deserialize_message(src: &str) -> Result<Message<Protocol>> {
     let deserialized = framing::Frame::from_str(src)?;
 
     trace!("V1: Deserialized V1 message payload: {:?}", deserialized);
@@ -76,36 +73,33 @@ pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
         Frame::RpcRequest(request) => match request.payload.method {
             Method::Configure => (
                 request.id,
-                Ok(Box::new(messages::Configure::try_from(request)?)
-                    as Box<dyn Payload<V1Protocol>>),
+                Ok(Box::new(messages::Configure::try_from(request)?) as Box<dyn Payload<Protocol>>),
             ),
             Method::Subscribe => (
                 request.id,
-                Ok(Box::new(messages::Subscribe::try_from(request)?)
-                    as Box<dyn Payload<V1Protocol>>),
+                Ok(Box::new(messages::Subscribe::try_from(request)?) as Box<dyn Payload<Protocol>>),
             ),
             Method::Submit => (
                 request.id,
-                Ok(Box::new(messages::Submit::try_from(request)?) as Box<dyn Payload<V1Protocol>>),
+                Ok(Box::new(messages::Submit::try_from(request)?) as Box<dyn Payload<Protocol>>),
             ),
             Method::Authorize => (
                 request.id,
-                Ok(Box::new(messages::Authorize::try_from(request)?)
-                    as Box<dyn Payload<V1Protocol>>),
+                Ok(Box::new(messages::Authorize::try_from(request)?) as Box<dyn Payload<Protocol>>),
             ),
             Method::SetDifficulty => (
                 request.id,
                 Ok(Box::new(messages::SetDifficulty::try_from(request)?)
-                    as Box<dyn Payload<V1Protocol>>),
+                    as Box<dyn Payload<Protocol>>),
             ),
             Method::Notify => (
                 request.id,
-                Ok(Box::new(messages::Notify::try_from(request)?) as Box<dyn Payload<V1Protocol>>),
+                Ok(Box::new(messages::Notify::try_from(request)?) as Box<dyn Payload<Protocol>>),
             ),
             Method::SetVersionMask => (
                 request.id,
                 Ok(Box::new(messages::SetVersionMask::try_from(request)?)
-                    as Box<dyn Payload<V1Protocol>>),
+                    as Box<dyn Payload<Protocol>>),
             ),
             _ => (
                 None,
@@ -116,11 +110,10 @@ pub fn deserialize_message(src: &str) -> Result<Message<V1Protocol>> {
         // Note, however, the unwrap() is safe as the error/result are 'Some'
         Frame::RpcResponse(response) => {
             let msg = if response.payload.error.is_some() {
-                Ok(Box::new(response.payload.error.unwrap().clone())
-                    as Box<dyn Payload<V1Protocol>>)
+                Ok(Box::new(response.payload.error.unwrap().clone()) as Box<dyn Payload<Protocol>>)
             } else if response.payload.result.is_some() {
                 Ok(Box::new(response.payload.result.unwrap().clone())
-                    as Box<dyn Payload<V1Protocol>>)
+                    as Box<dyn Payload<Protocol>>)
             } else {
                 Err(ErrorKind::Rpc(format!(
                     "Malformed response no error, no result specified {:?}",
@@ -235,7 +228,8 @@ impl TryFrom<&str> for PrevHash {
         // Swap every u32 from big endian to little endian byte order
         for chunk in prev_hash_stratum_order.chunks(size_of::<u32>()) {
             let prev_hash_word = bytes::BigEndian::read_u32(chunk);
-            prev_hash_cursor.write_u32::<LittleEndian>(prev_hash_word);
+            prev_hash_cursor.write_u32::<LittleEndian>(prev_hash_word)
+                .expect("Internal error: Could not write buffer");
         }
 
         Ok(PrevHash(prev_hash_cursor.into_inner()))
@@ -260,7 +254,8 @@ impl Into<String> for PrevHash {
         // swap every u32 from little endian to big endian
         for chunk in self.0.chunks(size_of::<u32>()) {
             let prev_hash_word = bytes::LittleEndian::read_u32(chunk);
-            prev_hash_stratum_cursor.write_u32::<BigEndian>(prev_hash_word);
+            prev_hash_stratum_cursor.write_u32::<BigEndian>(prev_hash_word)
+                .expect("Internal error: Could not write buffer");
         }
         hex::encode(prev_hash_stratum_cursor.into_inner())
     }

@@ -5,8 +5,6 @@ use std;
 use std::fmt::{self, Display};
 use std::io;
 
-use stratum::error;
-
 #[derive(Debug)]
 pub struct Error {
     inner: Context<ErrorKind>,

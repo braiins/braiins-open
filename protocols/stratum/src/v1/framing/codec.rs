@@ -4,7 +4,7 @@ use std::str;
 use tokio::codec::{Decoder, Encoder, LinesCodec};
 
 use crate::error::Error;
-use crate::v1::{deserialize_message, V1Protocol};
+use crate::v1::{deserialize_message, Protocol};
 use wire::Message;
 use wire::{self, tokio, TxFrame};
 
@@ -12,10 +12,10 @@ use wire::{self, tokio, TxFrame};
 // FIXME: check bytesmut capacity when encoding (use BytesMut::remaining_mut())
 
 #[derive(Debug)]
-pub struct V1Codec(LinesCodec);
+pub struct Codec(LinesCodec);
 
-impl Decoder for V1Codec {
-    type Item = Message<V1Protocol>;
+impl Decoder for Codec {
+    type Item = Message<Protocol>;
     type Error = Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -27,7 +27,7 @@ impl Decoder for V1Codec {
     }
 }
 
-impl Encoder for V1Codec {
+impl Encoder for Codec {
     type Item = TxFrame;
     type Error = Error;
 
@@ -39,18 +39,18 @@ impl Encoder for V1Codec {
     }
 }
 
-impl Default for V1Codec {
+impl Default for Codec {
     fn default() -> Self {
-        V1Codec(LinesCodec::new())
+        Codec(LinesCodec::new())
     }
 }
 
 #[derive(Debug)]
-pub struct V1Framing;
+pub struct Framing;
 
-impl wire::Framing for V1Framing {
-    type Send = TxFrame;
-    type Receive = Message<V1Protocol>;
+impl wire::Framing for Framing {
+    type Tx = TxFrame;
+    type Rx = Message<Protocol>;
     type Error = Error;
-    type Codec = V1Codec;
+    type Codec = Codec;
 }

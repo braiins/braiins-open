@@ -1,28 +1,18 @@
-use futures::channel::mpsc;
-use futures::future::{self, Either, Future, FutureExt};
-use futures::stream::StreamExt;
 use std::net::SocketAddr;
 
-use tokio::net::TcpListener;
+use futures::channel::mpsc;
+use futures::future::{self, Either, Future};
+use futures::stream::StreamExt;
 use tokio::prelude::*;
-use tokio::r#await;
-use wire::{tokio, Framing};
 
-use stratum;
 use stratum::v1;
-use stratum::v1::framing::codec::V1Framing;
-use stratum::v1::{V1Handler, V1Protocol};
 use stratum::v2;
-use stratum::v2::framing::codec::V2Framing;
-use stratum::v2::framing::MessageType;
-use stratum::v2::{V2Handler, V2Protocol};
 
 use logging::macros::*;
+use wire::tokio;
 use wire::utils::CompatFix;
-use wire::Message;
-use wire::{Connection, Payload, Server, TxFrame};
+use wire::{Connection, Server, TxFrame};
 
-use crate::error::*;
 use crate::translation::V2ToV1Translation;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
@@ -30,13 +20,13 @@ struct ConnTranslation {
     /// Actual protocol translator
     translation: V2ToV1Translation,
     /// Upstream connection
-    v1_conn: Connection<V1Framing>,
+    v1_conn: Connection<v1::Framing>,
     // TODO to be removed as the translator may send out items directly via a particular connection
     // (when treated as a sink)
     /// Frames from the translator to be sent out via V1 connection
     v1_translation_rx: mpsc::Receiver<TxFrame>,
     /// Downstream connection
-    v2_conn: Connection<V2Framing>,
+    v2_conn: Connection<v2::Framing>,
     /// Frames from the translator to be sent out via V2 connection
     v2_translation_rx: mpsc::Receiver<TxFrame>,
 }
@@ -44,12 +34,12 @@ struct ConnTranslation {
 impl ConnTranslation {
     const MAX_TRANSLATION_CHANNEL_SIZE: usize = 10;
 
-    fn new(v2_conn: Connection<V2Framing>, v1_conn: Connection<V1Framing>) -> Self {
-        let (v1_translation_tx, mut v1_translation_rx) =
+    fn new(v2_conn: Connection<v2::Framing>, v1_conn: Connection<v1::Framing>) -> Self {
+        let (v1_translation_tx, v1_translation_rx) =
             mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
-        let (v2_translation_tx, mut v2_translation_rx) =
+        let (v2_translation_tx, v2_translation_rx) =
             mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
-        let mut translation = V2ToV1Translation::new(v1_translation_tx, v2_translation_tx);
+        let translation = V2ToV1Translation::new(v1_translation_tx, v2_translation_tx);
 
         Self {
             translation,
@@ -69,7 +59,10 @@ impl ConnTranslation {
         // V1 message send out loop
         let v1_send_task = async move {
             while let Some(msg) = await!(v1_translation_rx.next()) {
-                await!(v1_conn_tx.send_async(msg));
+                if let Err(err) = await!(v1_conn_tx.send_async(msg)) {
+                    error!("V1 connection failed: {}", err);
+                    break;
+                }
             }
         };
         tokio::spawn(v1_send_task.compat_fix());
@@ -77,7 +70,10 @@ impl ConnTranslation {
         // V2 message send out loop
         let v2_send_task = async move {
             while let Some(msg) = await!(v2_translation_rx.next()) {
-                await!(v2_conn_tx.send_async(msg));
+                if let Err(err) = await!(v2_conn_tx.send_async(msg)) {
+                    error!("V2 connection failed: {}", err);
+                    break;
+                }
             }
         };
         tokio::spawn(v2_send_task.compat_fix());
@@ -108,7 +104,7 @@ impl ConnTranslation {
     }
 }
 
-async fn handle_connection(mut conn_v2: Connection<V2Framing>, stratum_addr: SocketAddr) {
+async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: SocketAddr) {
     info!("Opening connection to V1: {:?}", stratum_addr);
     let conn_v1 = match await!(Connection::connect(&stratum_addr)) {
         Ok(conn) => conn,
@@ -135,7 +131,7 @@ pub fn run(
     let stratum_addr: SocketAddr = stratum_addr
         .parse()
         .expect("Failed to parse stratum address");
-    let mut server = Server::<V2Framing>::bind(&listen_addr).expect("Failed to bind");
+    let mut server = Server::<v2::Framing>::bind(&listen_addr).expect("Failed to bind");
 
     info!(
         "Stratum proxy service starting @ {} -> {}",

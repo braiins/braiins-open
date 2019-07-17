@@ -1,15 +1,16 @@
-use futures::compat::{Compat, Future01CompatExt};
-use futures::{FutureExt, TryFutureExt};
-use futures_01::sync::BiLock;
-use futures_01::{try_ready, Async};
 use std::future::Future as StdFuture;
 use std::io;
 use std::net::{Shutdown, SocketAddr};
 use std::pin::Pin;
+
+use futures::compat::Compat;
+use futures::{FutureExt, TryFutureExt};
+use futures_01::sync::BiLock;
+use futures_01::{try_ready, Async};
+
 use tokio::net::TcpStream;
 use tokio::prelude::Future as TokioFuture;
 use tokio::prelude::{AsyncRead, AsyncWrite, Poll};
-use tokio::runtime::Runtime;
 
 /// This is a wrapper that performs some more jugglign to convert
 /// 0.3 future into a 0.1 future runnable by Tokio including I/O.

@@ -13,18 +13,20 @@ use packed_struct::PackedStructSlice;
 use std::convert::TryFrom;
 
 use logging::macros::*;
-use wire::{Message, Payload, ProtocolBase};
+use wire::{self, Message, Payload};
 
-pub struct V2Protocol;
-impl ProtocolBase for V2Protocol {
-    type Handler = V2Handler;
+pub use self::framing::codec::{Codec, Framing};
+
+pub struct Protocol;
+impl wire::Protocol for Protocol {
+    type Handler = Handler;
 }
 
 macro_rules! handler_method {
     ($ty:ident, $name:ident) => (
         fn $name(
             &mut self,
-            _msg: &Message<V2Protocol>,
+            _msg: &Message<Protocol>,
             _payload: &messages::$ty,
         ) {}
     )
@@ -32,7 +34,7 @@ macro_rules! handler_method {
 
 /// Specifies all messages to be visited
 /// TODO document why anything implementing the Handler must be static
-pub trait V2Handler: 'static {
+pub trait Handler: 'static {
     handler_method!(SetupMiningConnection, visit_setup_mining_connection);
     handler_method!(
         SetupMiningConnectionSuccess,
@@ -57,7 +59,7 @@ pub trait V2Handler: 'static {
 
 /// TODO should/could this be part of the framing trait or protocol trait or none of these
 /// (implement From trait...)
-pub fn deserialize_message(src: &[u8]) -> Result<Message<V2Protocol>> {
+pub fn deserialize_message(src: &[u8]) -> Result<Message<Protocol>> {
     let header = framing::Header::unpack_from_slice(&src[0..framing::Header::SIZE])
         .context("Cannot decode V2 header")?;
     // Decoder should have ensured correct framing. This is only sanity check, therefore we don't
@@ -77,68 +79,62 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<V2Protocol>> {
             None,
             Ok(
                 Box::new(messages::SetupMiningConnection::try_from(msg_bytes)?)
-                    as Box<dyn Payload<V2Protocol>>,
+                    as Box<dyn Payload<Protocol>>,
             ),
         ),
         MessageType::SetupMiningConnectionSuccess => (
             None,
             Ok(
                 Box::new(messages::SetupMiningConnectionSuccess::try_from(msg_bytes)?)
-                    as Box<dyn Payload<V2Protocol>>,
+                    as Box<dyn Payload<Protocol>>,
             ),
         ),
         MessageType::SetupMiningConnectionError => (
             None,
             Ok(
                 Box::new(messages::SetupMiningConnectionError::try_from(msg_bytes)?)
-                    as Box<dyn Payload<V2Protocol>>,
+                    as Box<dyn Payload<Protocol>>,
             ),
         ),
         MessageType::OpenChannel => {
             let channel = messages::OpenChannel::try_from(msg_bytes)?;
             (
                 Some(channel.req_id),
-                Ok(Box::new(channel) as Box<dyn Payload<V2Protocol>>),
+                Ok(Box::new(channel) as Box<dyn Payload<Protocol>>),
             )
         }
         MessageType::OpenChannelSuccess => {
             let channel_success = messages::OpenChannelSuccess::try_from(msg_bytes)?;
             (
                 Some(channel_success.req_id),
-                Ok(Box::new(channel_success) as Box<dyn Payload<V2Protocol>>),
+                Ok(Box::new(channel_success) as Box<dyn Payload<Protocol>>),
             )
         }
         MessageType::OpenChannelError => {
             let channel_error = messages::OpenChannelSuccess::try_from(msg_bytes)?;
             (
                 Some(channel_error.req_id),
-                Ok(Box::new(channel_error) as Box<dyn Payload<V2Protocol>>),
+                Ok(Box::new(channel_error) as Box<dyn Payload<Protocol>>),
             )
         }
         MessageType::NewMiningJob => {
             let job = messages::NewMiningJob::try_from(msg_bytes)?;
-            (None, Ok(Box::new(job) as Box<dyn Payload<V2Protocol>>))
+            (None, Ok(Box::new(job) as Box<dyn Payload<Protocol>>))
         }
         MessageType::SetNewPrevHash => {
             let prev_hash = messages::SetNewPrevHash::try_from(msg_bytes)?;
-            (
-                None,
-                Ok(Box::new(prev_hash) as Box<dyn Payload<V2Protocol>>),
-            )
+            (None, Ok(Box::new(prev_hash) as Box<dyn Payload<Protocol>>))
         }
         MessageType::SetTarget => {
             let prev_hash = messages::SetTarget::try_from(msg_bytes)?;
-            (
-                None,
-                Ok(Box::new(prev_hash) as Box<dyn Payload<V2Protocol>>),
-            )
+            (None, Ok(Box::new(prev_hash) as Box<dyn Payload<Protocol>>))
         }
         MessageType::SubmitShares => {
             let submit_shares = messages::SubmitShares::try_from(msg_bytes)?;
             (
                 // TODO possibly extract the sequence ID
                 None,
-                Ok(Box::new(submit_shares) as Box<dyn Payload<V2Protocol>>),
+                Ok(Box::new(submit_shares) as Box<dyn Payload<Protocol>>),
             )
         }
         MessageType::SubmitSharesSuccess => {
@@ -146,7 +142,7 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<V2Protocol>> {
             (
                 // TODO what to do about the ID? - use sequence number?
                 None,
-                Ok(Box::new(success) as Box<dyn Payload<V2Protocol>>),
+                Ok(Box::new(success) as Box<dyn Payload<Protocol>>),
             )
         }
         MessageType::SubmitSharesError => {
@@ -154,7 +150,7 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<V2Protocol>> {
             (
                 // TODO what to do about the ID?
                 None,
-                Ok(Box::new(err_msg) as Box<dyn Payload<V2Protocol>>),
+                Ok(Box::new(err_msg) as Box<dyn Payload<Protocol>>),
             )
         }
         _ => (

@@ -55,11 +55,11 @@ macro_rules! impl_conversion {
         }
 
         //  specific protocol implementation
-        impl wire::Payload<super::V2Protocol> for $message {
+        impl wire::Payload<super::Protocol> for $message {
             fn accept(
                 &self,
-                msg: &wire::Message<super::V2Protocol>,
-                handler: &mut <super::V2Protocol as wire::ProtocolBase>::Handler,
+                msg: &wire::Message<super::Protocol>,
+                handler: &mut <super::Protocol as wire::Protocol>::Handler,
             ) {
                 handler.$handler_fn(msg, self);
             }
@@ -124,7 +124,7 @@ pub struct UpdateChannel;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UpdateChannelError;
 
-struct CloseChannel;
+pub struct CloseChannel;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitShares {
@@ -161,7 +161,7 @@ pub struct NewMiningJob {
     pub version: u32,
 }
 
-struct NewExtendedMiningJob;
+pub struct NewExtendedMiningJob;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetNewPrevHash {
@@ -174,9 +174,9 @@ pub struct SetNewPrevHash {
     //pub signature: ??,
 }
 
-struct SetCustomMiningJob;
-struct SetCustomMiningJobSuccess;
-struct Reconnect;
+pub struct SetCustomMiningJob;
+pub struct SetCustomMiningJobSuccess;
+pub struct Reconnect;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetTarget {
@@ -184,7 +184,7 @@ pub struct SetTarget {
     pub max_target: Uint256Bytes,
 }
 
-struct SetGroupChannel;
+pub struct SetGroupChannel;
 
 impl_conversion!(SetupMiningConnection, visit_setup_mining_connection);
 impl_conversion!(

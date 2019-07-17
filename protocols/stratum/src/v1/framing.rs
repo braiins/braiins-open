@@ -17,9 +17,8 @@ use std::str::FromStr;
 //use serde_tuple::*;
 //use serde_tuple::{Deserialize_tuple, Serialize_tuple};
 
-use super::{V1Handler, V1Protocol};
+use super::{Handler, Protocol};
 use crate::error::Result;
-use crate::v1::error::ErrorKind;
 use wire;
 
 pub const MAX_MESSAGE_LENGTH: usize = 16384;
@@ -94,8 +93,8 @@ impl StratumResult {
 //}
 
 /// Specific protocol implementation for any stratum result
-impl wire::Payload<V1Protocol> for StratumResult {
-    fn accept(&self, msg: &wire::Message<V1Protocol>, handler: &mut V1Handler) {
+impl wire::Payload<Protocol> for StratumResult {
+    fn accept(&self, msg: &wire::Message<Protocol>, handler: &mut Handler) {
         handler.visit_stratum_result(msg, self);
     }
 }
@@ -111,8 +110,8 @@ pub struct StratumError(pub i32, pub String, pub Option<String>);
 //}
 
 /// Specific protocol implementation for any stratum result
-impl wire::Payload<V1Protocol> for StratumError {
-    fn accept(&self, msg: &wire::Message<V1Protocol>, handler: &mut V1Handler) {
+impl wire::Payload<Protocol> for StratumError {
+    fn accept(&self, msg: &wire::Message<Protocol>, handler: &mut Handler) {
         handler.visit_stratum_error(msg, self);
     }
 }

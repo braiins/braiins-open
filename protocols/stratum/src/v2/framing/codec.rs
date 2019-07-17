@@ -4,20 +4,20 @@ use tokio::codec::length_delimited::{self, LengthDelimitedCodec};
 use tokio::codec::{Decoder, Encoder};
 
 use wire::tokio;
-use wire::{Framing, Message, TxFrame};
+use wire::{self, Message, TxFrame};
 
 use super::Header;
 use crate::error::Error;
-use crate::v2::{deserialize_message, V2Protocol};
+use crate::v2::{deserialize_message, Protocol};
 
 // FIXME: error handling
 // FIXME: check bytesmut capacity when encoding (use BytesMut::remaining_mut())
 
 #[derive(Debug)]
-pub struct V2Codec(LengthDelimitedCodec);
+pub struct Codec(LengthDelimitedCodec);
 
-impl Decoder for V2Codec {
-    type Item = Message<V2Protocol>;
+impl Decoder for Codec {
+    type Item = Message<Protocol>;
     type Error = Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -31,7 +31,7 @@ impl Decoder for V2Codec {
     }
 }
 
-impl Encoder for V2Codec {
+impl Encoder for Codec {
     type Item = TxFrame;
     type Error = Error;
 
@@ -41,10 +41,10 @@ impl Encoder for V2Codec {
     }
 }
 
-impl Default for V2Codec {
+impl Default for Codec {
     fn default() -> Self {
         // TODO: limit frame size with max_frame_length() ?
-        V2Codec(
+        Codec(
             // TODO: numbers vs constants
             length_delimited::Builder::new()
                 .little_endian()
@@ -63,11 +63,11 @@ impl Default for V2Codec {
 }
 
 #[derive(Debug)]
-pub struct V2Framing;
+pub struct Framing;
 
-impl Framing for V2Framing {
-    type Send = TxFrame;
-    type Receive = Message<V2Protocol>;
+impl wire::Framing for Framing {
+    type Tx = TxFrame;
+    type Rx = Message<Protocol>;
     type Error = Error;
-    type Codec = V2Codec;
+    type Codec = Codec;
 }

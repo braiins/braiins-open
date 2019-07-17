@@ -7,18 +7,15 @@ use std::cell::RefCell;
 
 use clap::{self, Arg};
 use ctrlc;
-use futures::future::FutureExt;
-use tokio::net::TcpListener;
-use tokio::prelude::*;
-use tokio::r#await;
-use wire::utils::CompatFix;
-use wire::{tokio, Framing};
 
 use logging::macros::*;
 use stratumproxy::server;
+use wire::tokio;
+use wire::utils::CompatFix;
 
-static V2_ADDR: &'static str = "127.0.0.1:3334";
-static V1_ADDR: &'static str = "127.0.0.1:3335";
+// TODO: defaults for listen & remote addrs?
+// static V2_ADDR: &'static str = "127.0.0.1:3334";
+// static V1_ADDR: &'static str = "127.0.0.1:3335";
 
 fn main() {
     let _log_guard = logging::setup_for_app();
@@ -53,8 +50,9 @@ fn main() {
 
     ctrlc::set_handler(move || {
         // Received SIGINT, tell the server taks to shut down:
-        quit.try_borrow_mut().map(|mut quit| quit.try_send(()));
-    });
+        let _ = quit.try_borrow_mut().map(|mut quit| quit.try_send(()));
+    })
+    .expect("Could not set SIGINT handler");
 
     tokio::run(server_task.compat_fix());
 }

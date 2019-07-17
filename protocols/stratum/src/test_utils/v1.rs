@@ -8,7 +8,7 @@ use logging::macros::*;
 use super::common::*;
 use crate::v1::framing::*;
 use crate::v1::messages::*;
-use crate::v1::{ExtraNonce1, HexBytes, HexU32Be, V1Handler, V1Protocol};
+use crate::v1::{ExtraNonce1, Handler, HexBytes, Protocol};
 
 pub const MINING_CONFIGURE_REQ_JSON: &str = concat!(
     r#"{"id":0,"method":"mining.configure","#,
@@ -27,7 +27,9 @@ pub fn build_configure() -> Configure {
     );
 
     let mut configure = Configure::new();
-    configure.add_feature(v);
+    configure
+        .add_feature(v)
+        .expect("Could not add Configure feature");
 
     configure
 }
@@ -250,7 +252,7 @@ impl TestIdentityHandler {
     /// representation
     fn visit_and_check<P, F>(
         &mut self,
-        msg: &wire::Message<V1Protocol>,
+        msg: &wire::Message<Protocol>,
         payload: &P,
         build_payload: F,
         full_message: Frame,
@@ -279,7 +281,7 @@ impl TestIdentityHandler {
 
     fn visit_and_check_request<P, F>(
         &mut self,
-        msg: &wire::Message<V1Protocol>,
+        msg: &wire::Message<Protocol>,
         payload: &P,
         build_payload: F,
         json_message: &str,
@@ -298,11 +300,8 @@ impl TestIdentityHandler {
     }
 }
 
-impl V1Handler for TestIdentityHandler {
-    fn visit_stratum_result(&mut self, msg: &wire::Message<V1Protocol>, payload: &StratumResult) {
-        let full_message =
-            build_result_response_message(msg.id.expect("Message ID missing"), payload);
-
+impl Handler for TestIdentityHandler {
+    fn visit_stratum_result(&mut self, msg: &wire::Message<Protocol>, payload: &StratumResult) {
         self.visit_and_check(
             msg,
             payload,
@@ -315,19 +314,19 @@ impl V1Handler for TestIdentityHandler {
         );
     }
 
-    fn visit_configure(&mut self, msg: &wire::Message<V1Protocol>, payload: &Configure) {
+    fn visit_configure(&mut self, msg: &wire::Message<Protocol>, payload: &Configure) {
         self.visit_and_check_request(msg, payload, build_configure, MINING_CONFIGURE_REQ_JSON);
     }
 
-    fn visit_subscribe(&mut self, msg: &wire::Message<V1Protocol>, payload: &Subscribe) {
+    fn visit_subscribe(&mut self, msg: &wire::Message<Protocol>, payload: &Subscribe) {
         self.visit_and_check_request(msg, payload, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
     }
 
-    fn visit_authorize(&mut self, msg: &wire::Message<V1Protocol>, payload: &Authorize) {
+    fn visit_authorize(&mut self, msg: &wire::Message<Protocol>, payload: &Authorize) {
         self.visit_and_check_request(msg, payload, build_authorize, MINING_AUTHORIZE_JSON);
     }
 
-    fn visit_set_difficulty(&mut self, msg: &wire::Message<V1Protocol>, payload: &SetDifficulty) {
+    fn visit_set_difficulty(&mut self, msg: &wire::Message<Protocol>, payload: &SetDifficulty) {
         self.visit_and_check_request(
             msg,
             payload,
@@ -336,11 +335,11 @@ impl V1Handler for TestIdentityHandler {
         );
     }
 
-    fn visit_notify(&mut self, msg: &wire::Message<V1Protocol>, payload: &Notify) {
+    fn visit_notify(&mut self, msg: &wire::Message<Protocol>, payload: &Notify) {
         self.visit_and_check_request(msg, payload, build_mining_notify, MINING_NOTIFY_JSON);
     }
 
-    fn visit_submit(&mut self, msg: &wire::Message<V1Protocol>, payload: &Submit) {
+    fn visit_submit(&mut self, msg: &wire::Message<Protocol>, payload: &Submit) {
         self.visit_and_check_request(msg, payload, build_mining_submit, MINING_SUBMIT_JSON);
     }
 }
