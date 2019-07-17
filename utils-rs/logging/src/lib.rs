@@ -1,3 +1,33 @@
+//! Logging boilerplate and configuration
+//!
+//! This crate takes care of a few shortcommings of `slog` and `slog_async`:
+//! - A global shared `Logger` instance using `slog_async`
+//! - Configuration of the global instance
+//! - Logging macros that operate on the shared instance
+//! - Flushing of logs on application exit
+//!
+//! It also re-exports `slog` - this is a way to provide common `slog`
+//! dependency.
+//!
+//! The global instance is created using `lazy_static`.
+//! This means it's configured and created the first time
+//! it's accessed. Once created, the global instance cannot
+//! be re-configured. To configure it, use `set_logger_config()`
+//! or one of the convenience functions `setup()` or `setup_for_app()`.
+//! Make sure this is done before the global logger is actually used,
+//! otherwise these functions panic.
+//!
+//! The global logger is also configured with `slog_envlogger`,
+//! that is, it applies filters set via the `RUST_LOG` env variable.
+//! Refer to the [`env_logger` documentation](https://docs.rs/env_logger/0.6.2/env_logger/)
+//! for more information.
+//!
+//! If no configuration is set with `set_logger_config()` et al.,
+//! the global logger will by default use `LoggingConfig::for_testing()`,
+//! ie. configuration suitable for testing. This is because as of now
+//! there's no way to have common setup/teardown for tests, and so
+//! it's best that the default is test-friendly.
+
 use std::env;
 use std::fs::OpenOptions;
 use std::mem;
@@ -67,7 +97,14 @@ pub fn get_logger_config() -> LoggingConfig {
     lock_logger_config().clone()
 }
 
-/// Set new logger configuration and return old one
+/// Set new logger configuration and return old one.
+/// This is thread-safe, the global configuration is
+/// protected by a mutex.
+///
+/// # Panics
+///
+/// Panics if `LOGGER` is already instantiated, ie. its configuration
+/// can no longer be changed.
 pub fn set_logger_config(config: LoggingConfig) -> LoggingConfig {
     if LOGGER_INSTANTIATED.load(Ordering::SeqCst) {
         panic!("Cannot set logger config, LOGGER already instantiated");
@@ -79,6 +116,11 @@ pub fn set_logger_config(config: LoggingConfig) -> LoggingConfig {
 
 /// Setup logger with configuration passed in `config`
 /// and return a `FlushGuard`. Convenience function.
+///
+/// # Panics
+///
+/// Panics if `LOGGER` is already instantiated, ie. its configuration
+/// can no longer be changed.
 pub fn setup(config: LoggingConfig) -> FlushGuard {
     set_logger_config(config);
     LOGGER.take_guard()
@@ -86,6 +128,11 @@ pub fn setup(config: LoggingConfig) -> FlushGuard {
 
 /// Setup logger with default configuration suitable for application usage
 /// (ie. in `main()`) and return a `FlushGuard`. Convenience function.
+///
+/// # Panics
+///
+/// Panics if `LOGGER` is already instantiated, ie. its configuration
+/// can no longer be changed.
 pub fn setup_for_app() -> FlushGuard {
     setup(LoggingConfig::for_app())
 }
@@ -125,7 +172,11 @@ fn get_file_drain(config: &LoggingConfig) -> Option<impl Drain<Ok = (), Err = sl
     })
 }
 
-/// Wraps an optional `AsyncGuard`, newtype created to add `must_use`.
+/// Logger flush RAII guard.
+///
+/// The guard ensures logs are flushed when it goes out of scope.
+/// Due to the way `slog_async` works by default it can't ensure log flush
+/// on application exit, this can only be done with the guard.
 #[must_use = "When dropped, FlushGuard flushes and stops its associated logger instance"]
 pub struct FlushGuard(Option<AsyncGuard>);
 
@@ -169,8 +220,11 @@ impl GuardedLogger {
         mem::replace(&mut *locker, FlushGuard(None))
     }
 
-    /// Take a `FlushGuard` and drop is, effectivelly flushing
+    /// Take a `FlushGuard` and drop it, effectivelly flushing
     /// the `Logger` immediately.
+    ///
+    /// **Warning**: This has no effect if the `FlushGuard`
+    /// has already been taken and dropped or exists elsewhere.
     pub fn flush(&self) {
         drop(self.take_guard());
     }
@@ -190,7 +244,7 @@ static LOGGER_INSTANTIATED: AtomicBool = AtomicBool::new(false);
 lazy_static! {
     static ref LOGGER_CONFIG: Mutex<LoggingConfig> = Mutex::new(LoggingConfig::default());
 
-    /// Static reference to the logger that will be accessible from all crates
+    /// Static global reference to the logger that will be accessible from all crates
     pub static ref LOGGER: GuardedLogger = {
         LOGGER_INSTANTIATED.store(true, Ordering::SeqCst);
 
@@ -221,6 +275,7 @@ lazy_static! {
     };
 }
 
+/// Log critical level record in the global logger
 #[macro_export]
 macro_rules! crit(
     (#$tag:expr, $($args:tt)+) => {
@@ -231,6 +286,7 @@ macro_rules! crit(
     };
 );
 
+/// Log error level record in the global logger
 #[macro_export]
 macro_rules! error(
     (#$tag:expr, $($args:tt)+) => {
@@ -241,6 +297,7 @@ macro_rules! error(
     };
 );
 
+/// Log warning level record in the global logger
 #[macro_export]
 macro_rules! warn(
     (#$tag:expr, $($args:tt)+) => {
@@ -251,6 +308,7 @@ macro_rules! warn(
     };
 );
 
+/// Log info level record in the global logger
 #[macro_export]
 macro_rules! info(
     (#$tag:expr, $($args:tt)*) => {
@@ -261,6 +319,7 @@ macro_rules! info(
     };
 );
 
+/// Log debug level record in the global logger
 #[macro_export]
 macro_rules! debug(
     (#$tag:expr, $($args:tt)+) => {
@@ -271,6 +330,7 @@ macro_rules! debug(
     };
 );
 
+/// Log trace level record in the global logger
 #[macro_export]
 macro_rules! trace(
     (#$tag:expr, $($args:tt)+) => {
