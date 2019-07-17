@@ -77,11 +77,17 @@ pub fn set_logger_config(config: LoggingConfig) -> LoggingConfig {
     mem::replace(&mut *locker, config)
 }
 
-/// Setup `LOGGER` for application usage (ie. in `main()`)
-/// and return a `FlushGuard`.
-pub fn setup_for_app() -> FlushGuard {
-    set_logger_config(LoggingConfig::for_app());
+/// Setup logger with configuration passed in `config`
+/// and return a `FlushGuard`. Convenience function.
+pub fn setup(config: LoggingConfig) -> FlushGuard {
+    set_logger_config(config);
     LOGGER.take_guard()
+}
+
+/// Setup logger with default configuration suitable for application usage
+/// (ie. in `main()`) and return a `FlushGuard`. Convenience function.
+pub fn setup_for_app() -> FlushGuard {
+    setup(LoggingConfig::for_app())
 }
 
 /// Create terminal drain for logger with logging level if requested
