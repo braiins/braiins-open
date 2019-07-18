@@ -7,7 +7,6 @@
 use logging::macros::*;
 use logging::{self, LoggingConfig};
 
-
 #[test]
 #[should_panic]
 fn test_logging_config_too_late() {

@@ -11,7 +11,6 @@ use logging::{self, Level, LoggingConfig, LOGGER};
 
 use tempfile::NamedTempFile;
 
-
 #[test]
 fn test_logging_basic() {
     const LOG_MSG: &'static str = "Hello, World!";
