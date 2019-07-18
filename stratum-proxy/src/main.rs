@@ -45,14 +45,20 @@ fn main() {
     let v2_addr = args.value_of("listen").unwrap();
     let v1_addr = args.value_of("remote").unwrap();
 
-    let (server_task, quit) = server::run(v2_addr.to_string(), v1_addr.to_string());
-    let quit = RefCell::new(quit);
+    let server = match server::ProxyServer::listen(v2_addr.to_string(), v1_addr.to_string()) {
+        Ok(task) => task,
+        Err(err) => {
+            error!("Can't bind the server: {}", err);
+            return;
+        }
+    };
 
+    let quit = RefCell::new(server.quit_channel());
     ctrlc::set_handler(move || {
-        // Received SIGINT, tell the server taks to shut down:
+        // Received SIGINT, tell the server task to shut down:
         let _ = quit.try_borrow_mut().map(|mut quit| quit.try_send(()));
     })
     .expect("Could not set SIGINT handler");
 
-    tokio::run(server_task.compat_fix());
+    tokio::run(server.run().compat_fix());
 }

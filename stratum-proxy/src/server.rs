@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use futures::channel::mpsc;
-use futures::future::{self, Either, Future};
+use futures::future::{self, Either};
 use futures::stream::StreamExt;
 use tokio::prelude::*;
 
@@ -13,6 +13,7 @@ use wire::tokio;
 use wire::utils::CompatFix;
 use wire::{Connection, Server, TxFrame};
 
+use crate::error::{ErrorKind, Result, ResultExt};
 use crate::translation::V2ToV1Translation;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
@@ -118,61 +119,116 @@ async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: Socke
     await!(translation.run())
 }
 
-/// Returns a server task and a channel endpoint which can be used
-/// to shutdown the server task.
-/// TODO: consider converting into into async and moving the binding part into the server task
-pub fn run(
-    listen_addr: String,
-    stratum_addr: String,
-) -> (impl Future<Output = ()>, mpsc::Sender<()>) {
-    let listen_addr = listen_addr
-        .parse()
-        .expect("Failed to parse the listen address");
-    let stratum_addr: SocketAddr = stratum_addr
-        .parse()
-        .expect("Failed to parse stratum address");
-    let mut server = Server::<v2::Framing>::bind(&listen_addr).expect("Failed to bind");
+/// Structure representing the main server task.
+///
+/// Created by binding a listening socket.
+/// Incoming connections are handled either by calling `next()` in a loop,
+/// (a stream-like interface) or, as a higher-level interface,
+/// the `run()` method turns the `ProxyServer`
+/// into an asynchronous task (which internally calls `next()` in a loop).
+#[derive(Debug)]
+pub struct ProxyServer {
+    server: Server<v2::Framing>,
+    listen_addr: SocketAddr,
+    stratum_addr: SocketAddr,
+    quit_tx: mpsc::Sender<()>,
+    quit_rx: Option<mpsc::Receiver<()>>,
+}
 
-    info!(
-        "Stratum proxy service starting @ {} -> {}",
-        listen_addr, stratum_addr
-    );
+impl ProxyServer {
+    /// Constructor, binds the listening socket
+    pub fn listen(listen_addr: String, stratum_addr: String) -> Result<ProxyServer> {
+        let listen_addr = listen_addr
+            .parse::<SocketAddr>()
+            .context(ErrorKind::BadIp(listen_addr))?;
 
-    let (quit_tx, quit_rx) = mpsc::channel(1);
-    let mut quit_rx = Some(quit_rx);
+        let stratum_addr = stratum_addr
+            .parse::<SocketAddr>()
+            .context(ErrorKind::BadIp(stratum_addr))?;
 
-    let server_task = async move {
+        let server = Server::<v2::Framing>::bind(&listen_addr)?;
+
+        let (quit_tx, quit_rx) = mpsc::channel(1);
+
+        Ok(ProxyServer {
+            server,
+            listen_addr,
+            stratum_addr,
+            quit_rx: Some(quit_rx),
+            quit_tx,
+        })
+    }
+
+    /// Obtain the quit channel transmit end,
+    /// which can be used to terminate the server task.
+    pub fn quit_channel(&self) -> mpsc::Sender<()> {
+        self.quit_tx.clone()
+    }
+
+    /// Handle a connection. Call this in a loop to make the `ProxyServer`
+    /// perform its job while being able to handle individual connection errors.
+    ///
+    /// This is a Stream-like interface but not actually implemented using a Stream
+    /// because Stream doesn't get on very well with async.
+    pub async fn next(&mut self) -> Option<Result<SocketAddr>> {
         // Select over the incoming connections stream and the quit channel
         // In case quit_rx is closed (by quit_tx being dropped),
         // we drop quit_rx as well and switch to only awaiting the socket.
-        loop {
-            let conn = if let Some(quit_rx_next) = quit_rx.as_mut().map(|rx| rx.next()) {
-                match await!(future::select(server.next(), quit_rx_next)) {
-                    Either::Left((Some(conn), _)) => conn,
+        // Note that functional style can't really be used here because
+        // unfortunately you can't await in map() et al.
+        let conn = match self.quit_rx {
+            Some(ref mut quit_rx) => {
+                match await!(future::select(self.server.next(), quit_rx.next())) {
+                    Either::Left((Some(conn), _)) => Some(conn),
                     Either::Right((None, _)) => {
                         // The quit_rx channel has been closed / quit_tx dropped,
                         // and so we can't poll the quit_rx any more (otherwise it panics)
-                        quit_rx = None;
-                        continue;
+                        self.quit_rx = None;
+                        None
                     }
-                    _ => break, // Quit notification on quit_rx or socket closed
+                    _ => return None, // Quit notification on quit_rx or socket closed
                 }
-            } else {
-                match await!(server.next()) {
-                    Some(conn) => conn,
-                    None => break, // Socket closed
-                }
-            };
+            }
+            None => None,
+        };
 
-            // TODO handle connection errors
-            let conn = conn.expect("Stratum error");
-            info!("Received a connection from: {:?}", conn.peer_addr());
-            //ok_or(ErrorKind::General("V2 service terminated".into()));
-            tokio::spawn(handle_connection(conn, stratum_addr).compat_fix());
+        // If conn is None at this point, the quit_rx is no longer open
+        // and we can just await the socket
+        let conn = match conn {
+            Some(conn) => conn,
+            None => match await!(self.server.next()) {
+                Some(conn) => conn,
+                None => return None, // Socket closed
+            },
+        };
+
+        let do_connect = move || {
+            let conn = conn?;
+            let peer_addr = conn.peer_addr()?;
+            tokio::spawn(handle_connection(conn, self.stratum_addr).compat_fix());
+            Ok(peer_addr)
+        };
+
+        Some(do_connect())
+    }
+
+    /// Creates a proxy server task that calls `.next()`
+    /// in a loop with the default error handling.
+    /// The default handling simply logs all
+    /// connection errors via the logging crate.
+    pub async fn run(mut self) {
+        info!(
+            "Stratum proxy service starting @ {} -> {}",
+            self.listen_addr, self.stratum_addr
+        );
+
+        while let Some(result) = await!(self.next()) {
+            match result {
+                Ok(peer) => info!("Connection accepted from {}", peer),
+                Err(err) => error!("Connection error: {}", err),
+            }
         }
 
         info!("Stratum proxy service terminated");
-    };
-
-    (server_task, quit_tx)
+    }
 }

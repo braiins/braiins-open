@@ -4,11 +4,10 @@ pub mod framing;
 pub mod messages;
 pub mod types;
 
-use crate::error::Result;
+use crate::error::{Result, ResultExt};
 
 use crate::v2::framing::MessageType;
 
-use failure::ResultExt;
 use packed_struct::PackedStructSlice;
 use std::convert::TryFrom;
 

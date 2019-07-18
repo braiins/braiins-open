@@ -60,6 +60,10 @@ impl Error {
     pub fn kind(&self) -> ErrorKind {
         self.inner.get_context().clone()
     }
+
+    pub fn into_inner(self) -> Context<ErrorKind> {
+        self.inner
+    }
 }
 
 /// Convenience conversion to Error from ErrorKind that carries the context
@@ -136,3 +140,6 @@ impl From<serde_json::error::Error> for Error {
 
 /// A specialized `Result` type bound to [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Re-export failure's ResultExt for easier usage
+pub use failure::ResultExt;

@@ -6,7 +6,6 @@
 
 pub mod codec;
 
-use failure::ResultExt;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -18,7 +17,7 @@ use std::str::FromStr;
 //use serde_tuple::{Deserialize_tuple, Serialize_tuple};
 
 use super::{Handler, Protocol};
-use crate::error::Result;
+use crate::error::{Result, ResultExt};
 use wire;
 
 pub const MAX_MESSAGE_LENGTH: usize = 16384;

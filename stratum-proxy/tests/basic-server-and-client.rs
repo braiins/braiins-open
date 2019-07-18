@@ -190,9 +190,11 @@ fn test_v2server_full() {
             //            runtime::spawn(v1server_task(addr_v1.parse().unwrap()).compat_fix());
 
             let addr_v2 = format!("{}:{}", ADDR, PORT_V2_FULL);
-            let (v2server_task, mut v2server_quit) = server::run(addr_v2.clone(), addr_v1);
-            runtime::spawn(v2server_task.compat_fix());
+            let v2server = server::ProxyServer::listen(addr_v2.clone(), addr_v1)
+                .expect("Could not bind v2server");
+            let mut v2server_quit = v2server.quit_channel();
 
+            runtime::spawn(v2server.run().compat_fix());
             await!(test_v2_client(addr_v2));
 
             // Signal the server to shut down

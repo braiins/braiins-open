@@ -17,12 +17,20 @@ pub enum ErrorKind {
     General(String),
 
     /// General error used for more specific .
+    #[fail(display = "Stratum error: {}", _0)]
+    Stratum(stratum::error::ErrorKind),
+
+    /// Bitcoin Hashes error.
     #[fail(display = "Bitcoin Hashes error: {}", _0)]
     BitcoinHashes(String),
 
     /// Input/Output error.
     #[fail(display = "I/O error: {}", _0)]
     Io(String),
+
+    /// CLI usage / configuration error
+    #[fail(display = "Could not parse `{}` as IP address", _0)]
+    BadIp(String),
 }
 
 /// Implement Fail trait instead of use Derive to get more control over custom type.
@@ -49,6 +57,10 @@ impl Error {
     pub fn kind(&self) -> ErrorKind {
         self.inner.get_context().clone()
     }
+
+    pub fn into_inner(self) -> Context<ErrorKind> {
+        self.inner
+    }
 }
 
 /// Convenience conversion to Error from ErrorKind that carries the context
@@ -56,6 +68,14 @@ impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Self {
         Self {
             inner: Context::new(kind),
+        }
+    }
+}
+
+impl From<stratum::error::Error> for Error {
+    fn from(e: stratum::error::Error) -> Self {
+        Self {
+            inner: e.into_inner().map(|kind| ErrorKind::Stratum(kind)),
         }
     }
 }
@@ -86,7 +106,6 @@ impl From<bitcoin_hashes::error::Error> for Error {
         }
     }
 }
-
 impl From<Context<&str>> for Error {
     fn from(context: Context<&str>) -> Self {
         Self {
@@ -103,5 +122,14 @@ impl From<Context<String>> for Error {
     }
 }
 
+impl From<Context<ErrorKind>> for Error {
+    fn from(context: Context<ErrorKind>) -> Self {
+        Self { inner: context }
+    }
+}
+
 /// A specialized `Result` type bound to [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Re-export failure's ResultExt for easier usage
+pub use failure::ResultExt;

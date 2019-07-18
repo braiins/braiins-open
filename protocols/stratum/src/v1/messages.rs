@@ -1,13 +1,12 @@
 //! Definition of all Stratum V1 messages
 
-use failure::ResultExt;
 use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 
 use super::error::ErrorKind;
 use super::framing;
 use super::{ExtraNonce1, Handler, Protocol};
-use crate::error::Result;
+use crate::error::{Result, ResultExt};
 use crate::v1::framing::Method;
 use crate::v1::{HexBytes, HexU32Be, PrevHash};
 

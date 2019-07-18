@@ -2,7 +2,7 @@ pub mod error;
 pub mod framing;
 pub mod messages;
 
-use crate::error::Result;
+use crate::error::{Result, ResultExt};
 use crate::v1::error::ErrorKind;
 
 use crate::v1::framing::Frame;
@@ -10,7 +10,6 @@ use crate::v1::framing::Method;
 
 use bitcoin_hashes::hex::{FromHex, ToHex};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
-use failure::ResultExt;
 use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -228,7 +227,8 @@ impl TryFrom<&str> for PrevHash {
         // Swap every u32 from big endian to little endian byte order
         for chunk in prev_hash_stratum_order.chunks(size_of::<u32>()) {
             let prev_hash_word = bytes::BigEndian::read_u32(chunk);
-            prev_hash_cursor.write_u32::<LittleEndian>(prev_hash_word)
+            prev_hash_cursor
+                .write_u32::<LittleEndian>(prev_hash_word)
                 .expect("Internal error: Could not write buffer");
         }
 
@@ -254,7 +254,8 @@ impl Into<String> for PrevHash {
         // swap every u32 from little endian to big endian
         for chunk in self.0.chunks(size_of::<u32>()) {
             let prev_hash_word = bytes::LittleEndian::read_u32(chunk);
-            prev_hash_stratum_cursor.write_u32::<BigEndian>(prev_hash_word)
+            prev_hash_stratum_cursor
+                .write_u32::<BigEndian>(prev_hash_word)
                 .expect("Internal error: Could not write buffer");
         }
         hex::encode(prev_hash_stratum_cursor.into_inner())
