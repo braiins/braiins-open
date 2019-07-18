@@ -166,7 +166,6 @@ pub fn build_set_difficulty() -> SetDifficulty {
 }
 
 pub const MINING_NOTIFY_JOB_ID: [u8; 3] = [0x01, 0x1d, 0xe9];
-pub const MINING_NOTIFY_NTIME: u32 = 0x5d10bc0a;
 pub const MINING_NOTIFY_JSON: &str = concat!(
 r#"{"#,
 r#""id":null,"method":"mining.notify","#,

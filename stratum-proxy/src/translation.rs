@@ -976,7 +976,7 @@ impl v2::V2Handler for V2ToV1Translation {
                     v1_submit_template.job_id.clone(),
                     Self::channel_to_extra_nonce2_bytes(Self::CHANNEL_ID, v1_extra_nonce2_size)
                         .as_ref(),
-                    v1_submit_template.time + payload.ntime_offset as u32,
+                    payload.ntime,
                     payload.nonce,
                     // ensure the version bits in the template follow BIP320
                     payload.version & stratum::BIP320_N_VERSION_MASK,

@@ -179,7 +179,7 @@ pub fn build_submit_shares() -> SubmitShares {
         seq_num: 0,
         job_id: mining_job.job_id,
         nonce: MINING_WORK_NONCE,
-        ntime_offset: 0,
+        ntime: MINING_WORK_NTIME,
         version: MINING_WORK_VERSION,
     }
 }

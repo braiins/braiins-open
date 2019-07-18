@@ -139,7 +139,7 @@ fn test_setup_mining_connection_translate() {
             // Ensure that the V1 job has been registered
             let submit_template = V1SubmitTemplate {
                 job_id: v1::messages::JobId::from_slice(&test_utils::v1::MINING_NOTIFY_JOB_ID),
-                time: test_utils::v1::MINING_NOTIFY_NTIME,
+                time: test_utils::common::MINING_WORK_NTIME,
                 version: test_utils::common::MINING_WORK_VERSION,
             };
 

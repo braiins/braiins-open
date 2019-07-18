@@ -10,3 +10,5 @@ pub const USER_CREDENTIALS: &str = "braiins.worker0";
 pub const MINING_WORK_NONCE: u32 = 0x0443c37b;
 /// Version for the block header
 pub const MINING_WORK_VERSION: u32 = 0x20000000;
+/// Ntime for the block header
+pub const MINING_WORK_NTIME: u32 = 0x5d10bc0a;

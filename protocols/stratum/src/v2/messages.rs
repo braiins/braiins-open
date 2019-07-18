@@ -133,7 +133,7 @@ pub struct SubmitShares {
     pub job_id: u32,
 
     pub nonce: u32,
-    pub ntime_offset: u16,
+    pub ntime: u32,
     pub version: u32,
 }
 
