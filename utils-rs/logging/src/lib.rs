@@ -29,14 +29,15 @@
 //! it's best that the default is test-friendly.
 
 use std::env;
+use std::fmt;
 use std::fs::OpenOptions;
 use std::mem;
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 use lazy_static::lazy_static;
-use slog::{o, Discard, Drain, Duplicate, FilterLevel, LevelFilter, Logger};
+use slog::{o, Discard, Drain, FilterLevel, Logger};
 use slog_async::{Async, AsyncGuard};
 use slog_envlogger::EnvLogger;
 use slog_term;
@@ -46,13 +47,27 @@ use slog_term;
 pub use slog;
 pub use slog::Level;
 
+/// Logging target configuration: Where to log
+#[derive(Clone, Debug)]
+pub enum LoggingTarget {
+    /// Log to standard error
+    Stderr,
+    /// Log to standard output
+    Stdout,
+    /// Log to a file
+    File(PathBuf),
+    /// Don't log anything anywhere
+    None,
+}
+
 /// Describes logger configuration which can be set in runtime
 #[derive(Clone, Debug)]
 pub struct LoggingConfig {
-    /// Logging level and filename associated with a file output
-    pub file: Option<(Level, PathBuf)>,
-    /// Logging level associated with a terminal output
-    pub term: Option<Level>,
+    /// Where to log
+    pub target: LoggingTarget,
+    /// The default logging level,
+    /// this may be altered with the RUST_LOG env var on startup.
+    pub level: Level,
 }
 
 impl LoggingConfig {
@@ -60,16 +75,31 @@ impl LoggingConfig {
     /// doesn't pollute terminal, logs to `test-log.txt` in system tmp location.
     pub fn for_testing() -> Self {
         Self {
-            file: Some((Level::Trace, env::temp_dir().join("test-log.txt"))),
-            term: None,
+            target: LoggingTarget::File(env::temp_dir().join("test-log.txt")),
+            level: Level::Trace,
         }
     }
 
     /// Default setup for standalone programs
+    ///
+    /// The default level is `Debug` for debug builds
+    /// and `Info` for release builds.
     pub fn for_app() -> Self {
         Self {
-            file: None,
-            term: Some(Level::Trace),
+            target: LoggingTarget::Stderr,
+            level: if cfg!(debug_assertions) {
+                Level::Debug
+            } else {
+                Level::Info
+            },
+        }
+    }
+
+    /// Configuration where nothing is logged
+    pub fn no_logging() -> Self {
+        Self {
+            target: LoggingTarget::None,
+            level: Level::Error,
         }
     }
 }
@@ -129,58 +159,59 @@ pub fn setup_for_app() -> FlushGuard {
 }
 
 /// Sets up envlogger filter for a drain, with proper default settings
-fn get_envlogger_drain<D: Drain>(drain: D) -> EnvLogger<D> {
+fn get_envlogger_drain<D: Drain>(drain: D, default_level: Level) -> EnvLogger<D> {
     let builder = slog_envlogger::LogBuilder::new(drain);
     match env::var("RUST_LOG") {
         Ok(ref rust_log) if !rust_log.is_empty() => {
-            // Use the RUST_LOG env var if present and non-empty
+            // Use the RUST_LOG env var
             builder.parse(rust_log).build()
         }
         _ => {
-            // Otherwise, by default we use the Trace level here,
-            // because it only applies to the envlogger filter.
-            // This is unrelated to the slog level as specified
-            // in the configuration and used in the LevelFilter.
-            // By default we don't want the envolgger
-            // to filter messages in any way.
-            builder.filter(None, FilterLevel::Trace).build()
+            // No RUST_LOG env var or empty, use the default level
+
+            // For some reason there's no impl From<Level> for FilterLevel,
+            // so we have go through usize here :-/
+            let filter_level = FilterLevel::from_usize(default_level.as_usize())
+                .expect("Internal error: Could not convert slog::Level to slog::FilterLevel");
+
+            builder.filter(None, filter_level).build()
         }
     }
 }
 
-/// Create terminal drain for logger with logging level if requested
-fn get_terminal_drain(config: &LoggingConfig) -> Option<impl Drain<Ok = (), Err = slog::Never>> {
-    config.term.map(|level| {
-        let terminal_decorator = slog_term::TermDecorator::new().build();
-        let terminal_drain = slog_term::FullFormat::new(terminal_decorator).build();
-        let terminal_drain = get_envlogger_drain(terminal_drain);
-        LevelFilter::new(terminal_drain, level).fuse()
-    })
+/// Create terminal drain for logger, logging to either stderr or stdout
+fn get_terminal_drain(stderr: bool) -> impl Drain<Ok = (), Err = impl fmt::Debug> {
+    let builder = slog_term::TermDecorator::new();
+    let builder = if stderr {
+        builder.stderr()
+    } else {
+        builder.stdout()
+    };
+    let terminal_decorator = builder.build();
+    let terminal_drain = slog_term::FullFormat::new(terminal_decorator).build();
+    terminal_drain
 }
 
-/// Create file drain for logger with logging level if requested
-fn get_file_drain(config: &LoggingConfig) -> Option<impl Drain<Ok = (), Err = slog::Never>> {
-    config.file.as_ref().and_then(|(level, path)| {
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .append(true)
-            .truncate(false)
-            .open(path.as_path())
-            .map_err(|e| {
-                eprintln!(
-                    "Logging setup error: Could not open file `{}` for logging: {}",
-                    path.display(),
-                    e
-                )
-            })
-            .ok()?;
+/// Create file drain for logger
+fn get_file_drain(path: &Path) -> impl Drain<Ok = (), Err = impl fmt::Debug> {
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|e| {
+            panic!(
+                "Logging setup error: Could not open file `{}` for logging: {}",
+                path.display(),
+                e
+            )
+        })
+        .unwrap();
 
-        let file_decorator = slog_term::PlainDecorator::new(file);
-        let file_drain = slog_term::FullFormat::new(file_decorator).build();
-        let file_drain = get_envlogger_drain(file_drain);
-        Some(LevelFilter::new(file_drain, *level).fuse())
-    })
+    let file_decorator = slog_term::PlainDecorator::new(file);
+    let file_drain = slog_term::FullFormat::new(file_decorator).build();
+    file_drain
 }
 
 /// Logger flush RAII guard.
@@ -202,18 +233,31 @@ pub struct GuardedLogger {
 }
 
 impl GuardedLogger {
-    fn from_drain<D>(drain: D) -> Self
+    fn new(config: &LoggingConfig) -> GuardedLogger {
+        use LoggingTarget::*;
+
+        match &config.target {
+            None => Self::with_discard(),
+            Stderr => Self::with_drain(config, get_terminal_drain(true)),
+            Stdout => Self::with_drain(config, get_terminal_drain(false)),
+            File(path) => Self::with_drain(config, get_file_drain(path)),
+        }
+    }
+
+    fn with_drain<D, E>(config: &LoggingConfig, drain: D) -> Self
     where
-        D: Drain<Ok = (), Err = slog::Never> + Send + 'static,
+        E: fmt::Debug,
+        D: Drain<Ok = (), Err = E> + Send + 'static,
     {
-        let (drain, guard) = Async::new(drain).build_with_guard();
+        let drain = get_envlogger_drain(drain, config.level);
+        let (drain, guard) = Async::new(drain.fuse()).build_with_guard();
         Self {
             logger: Logger::root(drain.fuse(), o!()),
             guard: Mutex::new(FlushGuard(Some(guard))),
         }
     }
 
-    fn new_discard() -> Self {
+    fn with_discard() -> Self {
         Self {
             logger: Logger::root(Discard, o!()),
             guard: Mutex::new(FlushGuard(None)),
@@ -254,27 +298,12 @@ lazy_static! {
 
     /// Static global reference to the logger that will be accessible from all crates
     pub static ref LOGGER: GuardedLogger = {
-        // Read configuration and create drains as appropriate
+        // Take the configuration data
         let mut config_lock = lock_logger_config();
         let config = config_lock.take()
             .expect("Internal error: LOGGER_CONFIG empty in LOGGER initialization");
-        let terminal_drain = get_terminal_drain(&config);
-        let file_drain = get_file_drain(&config);
-        drop(config_lock);
 
-        // Combine drains if both are set up, use just one if one is set up,
-        // use a discard drain if none are set up
-        match (terminal_drain, file_drain) {
-            (Some(terminal_drain), Some(file_drain)) => {
-                let composite_drain = Duplicate::new(terminal_drain, file_drain).fuse();
-                GuardedLogger::from_drain(composite_drain)
-            },
-            (Some(terminal_drain), None) => GuardedLogger::from_drain(terminal_drain.fuse()),
-            (None, Some(file_drain)) => GuardedLogger::from_drain(file_drain.fuse()),
-            (None, None) => {
-                GuardedLogger::new_discard()
-            },
-        }
+        GuardedLogger::new(&config)
     };
 }
 

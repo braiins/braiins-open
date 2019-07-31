@@ -7,7 +7,7 @@ use std::env;
 use std::fs;
 
 use logging::macros::*;
-use logging::{self, Level, LoggingConfig, LOGGER};
+use logging::{self, Level, LoggingConfig, LoggingTarget, LOGGER};
 
 use tempfile::NamedTempFile;
 
@@ -22,8 +22,8 @@ fn test_logging_basic() {
     // Create configuration
     let temp_file = NamedTempFile::new().expect("Could not create temporary file");
     let config = LoggingConfig {
-        file: Some((Level::Trace, temp_file.path().into())),
-        term: None,
+        target: LoggingTarget::File(temp_file.path().into()),
+        level: Level::Trace,
     };
 
     // Setup logger

@@ -10,12 +10,8 @@ use logging::{self, LoggingConfig};
 #[test]
 #[should_panic]
 fn test_logging_config_too_late() {
-    // Silent config to not mess up testing stdout
-    let config = LoggingConfig {
-        file: None,
-        term: None,
-    };
-    logging::set_logger_config(config);
+    // Use silent config
+    logging::set_logger_config(LoggingConfig::no_logging());
 
     // Log something
     trace!("This will tirgger LOGGER instantiation");
