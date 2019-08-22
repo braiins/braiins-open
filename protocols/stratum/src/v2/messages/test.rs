@@ -28,9 +28,8 @@ use crate::v2::framing;
 
 #[test]
 fn test_deserialize_setup_connection() {
-    let deserialized =
-        SetupMiningConnection::try_from(SETUP_MINING_CONNECTION_SERIALIZED.as_bytes())
-            .expect("Deserialization failed");
+    let deserialized = SetupMiningConnection::try_from(SETUP_MINING_CONNECTION_SERIALIZED)
+        .expect("Deserialization failed");
 
     assert_eq!(
         deserialized,
@@ -47,7 +46,7 @@ fn test_serialize_setup_connection() {
 
     // The message has ben serialized completely, let's skip the header for now
     assert_eq!(
-        SETUP_MINING_CONNECTION_SERIALIZED.as_bytes(),
+        SETUP_MINING_CONNECTION_SERIALIZED,
         &frame[framing::Header::SIZE..],
     );
 }

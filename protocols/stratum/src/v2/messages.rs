@@ -22,15 +22,21 @@
 
 //! All stratum V2 protocol messages
 
-use super::framing::{Header, MessageType};
-use super::types::*;
-use packed_struct::PackedStruct;
-use serde;
-use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::io::{Cursor, Write};
 
+use packed_struct::PackedStruct;
+use serde;
+use serde::{Deserialize, Serialize};
+
+use super::framing::{Header, MessageType};
+use super::types::*;
 use crate::error::{Error, Result};
+
+#[cfg(not(feature = "v2json"))]
+use super::serialization;
+#[cfg(feature = "v2json")]
+use serde_json as serialization;
 
 #[cfg(test)]
 mod test;
@@ -40,16 +46,14 @@ fn serialize_with_header<M: Serialize>(
     message: M,
     msg_type: MessageType,
 ) -> Result<ii_wire::TxFrame> {
-    // FIXME: temporary JSON serialization
-
     let buffer = Vec::with_capacity(128); // This is what serde does
 
     // TODO review the behavior below, that would mean it would optimize the move completely?
-    // Cursor is used here to write JSON and then the header in front of it
-    // otherwise the JSON would have to be shifted in memory
+    // Cursor is used here to write the serialized message and then the header in front of it
+    // otherwise the the serialized message would have to be shifted in memory
     let mut cursor = Cursor::new(buffer);
     cursor.set_position(Header::SIZE as u64);
-    serde_json::to_writer(&mut cursor, &message)?; // This shouldn't actually fail
+    serialization::to_writer(&mut cursor, &message)?;
 
     let payload_len = cursor.position() as usize - Header::SIZE;
     let header = Header::new(msg_type, payload_len);
@@ -74,7 +78,7 @@ macro_rules! impl_conversion {
             type Error = Error;
 
             fn try_from(msg: &[u8]) -> Result<Self> {
-                serde_json::from_slice(msg).map_err(Into::into)
+                serialization::from_slice(msg).map_err(Into::into)
             }
         }
 
@@ -94,7 +98,7 @@ macro_rules! impl_conversion {
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SetupMiningConnection {
     pub protocol_version: u16,
-    pub connection_url: String,
+    pub connection_url: String255,
     /// for header only mining, this fields stays at 0
     pub required_extranonce_size: u16,
 }

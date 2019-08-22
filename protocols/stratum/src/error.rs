@@ -160,6 +160,15 @@ impl From<serde_json::error::Error> for Error {
     }
 }
 
+impl From<super::v2::serialization::Error> for Error {
+    fn from(e: super::v2::serialization::Error) -> Self {
+        let msg = e.to_string();
+        Self {
+            inner: e.context(ErrorKind::Serde(msg)),
+        }
+    }
+}
+
 /// A specialized `Result` type bound to [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
 

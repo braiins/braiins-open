@@ -101,19 +101,23 @@ impl Handler for TestIdentityHandler {
     }
 }
 
-pub const SETUP_MINING_CONNECTION_SERIALIZED: &str =
-    r#"{"protocol_version":0,"connection_url":"stratum.slushpool.com","required_extranonce_size":0}"#;
+#[cfg(not(feature = "v2json"))]
+pub const SETUP_MINING_CONNECTION_SERIALIZED: &'static [u8] =
+    b"\x00\x00\x15stratum.slushpool.com\x00\x00";
+#[cfg(feature = "v2json")]
+pub const SETUP_MINING_CONNECTION_SERIALIZED: &'static [u8] =
+    br#"{"protocol_version":0,"connection_url":"stratum.slushpool.com","required_extranonce_size":0}"#;
 
 pub fn build_setup_mining_connection() -> SetupMiningConnection {
     SetupMiningConnection {
         protocol_version: 0,
-        connection_url: POOL_URL.into(),
+        connection_url: String255::from_str(POOL_URL),
         required_extranonce_size: 0,
     }
 }
 
-pub const SETUP_MINING_CONNECTION_SUCCESS_SERIALIZED: &str =
-    r#"{"protocol_version":0,"connection_url":"stratum.slushpool.com","required_extranonce_size":0}"#;
+pub const SETUP_MINING_CONNECTION_SUCCESS_SERIALIZED: &'static [u8] =
+    br#"{"protocol_version":0,"connection_url":"stratum.slushpool.com","required_extranonce_size":0}"#;
 
 pub fn build_setup_mining_connection_success() -> SetupMiningConnectionSuccess {
     SetupMiningConnectionSuccess {

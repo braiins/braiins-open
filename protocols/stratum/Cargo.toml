@@ -22,3 +22,6 @@ uint = "0.5.0"
 ii-bitcoin = { path = "../../coins/bitcoin" }
 ii-wire = { path = "../wire" }
 ii-logging = { path = "../../utils-rs/logging" }
+
+[features]
+v2json = []

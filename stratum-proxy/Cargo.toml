@@ -19,3 +19,6 @@ uint = "0.5.0"
 ctrlc = "3.1.0"
 serde_json = "1.0.39"
 ii-async-compat = { path = "../utils-rs/async-compat" }
+
+[features]
+v2json = ["ii-stratum/v2json"]

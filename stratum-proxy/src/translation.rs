@@ -919,7 +919,7 @@ impl v2::Handler for V2ToV1Translation {
             let subscribe = v1::messages::Subscribe(
                 Some(payload.device.fw_ver.clone()),
                 None,
-                Some(conn_details.connection_url.clone()),
+                Some(conn_details.connection_url.try_into().unwrap()),   // FIXME: error handling
                 None,
             );
 

@@ -24,6 +24,7 @@
 pub mod error;
 pub mod framing;
 pub mod messages;
+pub mod serialization;
 pub mod types;
 
 use crate::error::{Result, ResultExt};
@@ -206,7 +207,7 @@ pub mod test {
         );
         let mut serialized_msg = BytesMut::with_capacity(64);
         serialized_msg.extend_from_slice(&header.pack());
-        serialized_msg.extend_from_slice(SETUP_MINING_CONNECTION_SERIALIZED.as_bytes());
+        serialized_msg.extend_from_slice(SETUP_MINING_CONNECTION_SERIALIZED);
 
         let msg = deserialize_message(&serialized_msg).expect("Deserialization failed");
         msg.accept(&mut TestIdentityHandler);
