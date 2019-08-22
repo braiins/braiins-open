@@ -16,13 +16,13 @@ use std::convert::TryFrom;
 use std::mem::size_of;
 use std::str::FromStr;
 
-use logging::macros::*;
-use wire::{self, Message, Payload};
+use ii_logging::macros::*;
+use ii_wire::{self, Message, Payload};
 
 pub use self::framing::codec::{Codec, Framing};
 
 pub struct Protocol;
-impl wire::Protocol for Protocol {
+impl ii_wire::Protocol for Protocol {
     type Handler = Handler;
 }
 

@@ -1,5 +1,5 @@
 [package]
-name = "wire"
+name = "ii-wire"
 version = "0.1.0"
 authors = ["Braiins <braiins@braiins.com>"]
 edition = "2018"

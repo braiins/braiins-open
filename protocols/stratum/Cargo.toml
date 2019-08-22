@@ -1,5 +1,5 @@
 [package]
-name = "stratum"
+name = "ii-stratum"
 version = "0.1.0"
 authors = ["Jan Čapek <jan@braiins.com>"]
 edition = "2018"
@@ -18,5 +18,5 @@ packed_struct = "0.3"
 packed_struct_codegen = "0.3"
 bitcoin_hashes = "0.3.2"
 uint = "0.5.0"
-wire = { path = "../wire" }
-logging = { path = "../../utils-rs/logging" }
+ii-wire = { path = "../wire" }
+ii-logging = { path = "../../utils-rs/logging" }

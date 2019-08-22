@@ -40,8 +40,8 @@ macro_rules! impl_conversion_request {
             }
         }
 
-        impl wire::Payload<Protocol> for $request {
-            fn accept(&self, msg: &wire::Message<Protocol>, handler: &mut Handler) {
+        impl ii_wire::Payload<Protocol> for $request {
+            fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut Handler) {
                 handler.$handler_fn(msg, self);
             }
         }

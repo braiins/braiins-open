@@ -2,11 +2,11 @@ use futures::stream::StreamExt;
 use tokio::runtime::current_thread as runtime;
 
 use super::*;
-use stratum::test_utils;
-use stratum::v1;
-use stratum::v2;
-use wire::tokio;
-use wire::utils::CompatFix;
+use ii_stratum::test_utils;
+use ii_stratum::v1;
+use ii_stratum::v2;
+use ii_wire::tokio;
+use ii_wire::utils::CompatFix;
 
 //       F::Error: From<E>,
 //        M: TryInto<F::Tx, Error = E>,
@@ -15,10 +15,10 @@ use wire::utils::CompatFix;
 /// chain from that point on
 fn v2_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
 where
-    M: TryInto<TxFrame, Error = stratum::error::Error>,
+    M: TryInto<TxFrame, Error = ii_stratum::error::Error>,
 {
     // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait)
-    let frame: wire::TxFrame = message.try_into().expect("Could not serialize message");
+    let frame: ii_wire::TxFrame = message.try_into().expect("Could not serialize message");
 
     let msg = v2::deserialize_message(&frame).expect("Deserialization failed");
     msg.accept(translation);
@@ -26,10 +26,10 @@ where
 
 fn v1_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
 where
-    M: TryInto<TxFrame, Error = stratum::error::Error>,
+    M: TryInto<TxFrame, Error = ii_stratum::error::Error>,
 {
     // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait) as if it arrived to translation
-    let frame: wire::TxFrame = message.try_into().expect("Could not serialize message");
+    let frame: ii_wire::TxFrame = message.try_into().expect("Could not serialize message");
 
     let msg = v1::deserialize_message(
         std::str::from_utf8(&frame).expect("Cannot convert frame to utf-8 str"),

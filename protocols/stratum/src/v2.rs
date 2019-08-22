@@ -11,13 +11,13 @@ use crate::v2::framing::MessageType;
 use packed_struct::PackedStructSlice;
 use std::convert::TryFrom;
 
-use logging::macros::*;
-use wire::{self, Message, Payload};
+use ii_logging::macros::*;
+use ii_wire::{self, Message, Payload};
 
 pub use self::framing::codec::{Codec, Framing};
 
 pub struct Protocol;
-impl wire::Protocol for Protocol {
+impl ii_wire::Protocol for Protocol {
     type Handler = Handler;
 }
 

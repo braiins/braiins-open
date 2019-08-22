@@ -3,8 +3,8 @@ use bytes::BytesMut;
 use tokio::codec::length_delimited::{self, LengthDelimitedCodec};
 use tokio::codec::{Decoder, Encoder};
 
-use wire::tokio;
-use wire::{self, Message, TxFrame};
+use ii_wire::tokio;
+use ii_wire::{self, Message, TxFrame};
 
 use super::Header;
 use crate::error::Error;
@@ -65,7 +65,7 @@ impl Default for Codec {
 #[derive(Debug)]
 pub struct Framing;
 
-impl wire::Framing for Framing {
+impl ii_wire::Framing for Framing {
     type Tx = TxFrame;
     type Rx = Message<Protocol>;
     type Error = Error;

@@ -18,7 +18,6 @@ use std::str::FromStr;
 
 use super::{Handler, Protocol};
 use crate::error::{Result, ResultExt};
-use wire;
 
 pub const MAX_MESSAGE_LENGTH: usize = 16384;
 
@@ -92,8 +91,8 @@ impl StratumResult {
 //}
 
 /// Specific protocol implementation for any stratum result
-impl wire::Payload<Protocol> for StratumResult {
-    fn accept(&self, msg: &wire::Message<Protocol>, handler: &mut Handler) {
+impl ii_wire::Payload<Protocol> for StratumResult {
+    fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut Handler) {
         handler.visit_stratum_result(msg, self);
     }
 }
@@ -109,8 +108,8 @@ pub struct StratumError(pub i32, pub String, pub Option<String>);
 //}
 
 /// Specific protocol implementation for any stratum result
-impl wire::Payload<Protocol> for StratumError {
-    fn accept(&self, msg: &wire::Message<Protocol>, handler: &mut Handler) {
+impl ii_wire::Payload<Protocol> for StratumError {
+    fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut Handler) {
         handler.visit_stratum_error(msg, self);
     }
 }
@@ -164,12 +163,12 @@ impl From<Response> for Frame {
     }
 }
 
-impl TryInto<wire::TxFrame> for Frame {
+impl TryInto<ii_wire::TxFrame> for Frame {
     type Error = crate::error::Error;
 
-    fn try_into(self: Frame) -> std::result::Result<wire::TxFrame, Self::Error> {
+    fn try_into(self: Frame) -> std::result::Result<ii_wire::TxFrame, Self::Error> {
         let serialized = serde_json::to_vec(&self).context("Serializing RPC to JSON failed")?;
-        Ok(wire::Frame::new(serialized.into_boxed_slice()))
+        Ok(ii_wire::Frame::new(serialized.into_boxed_slice()))
     }
 }
 
@@ -237,7 +236,7 @@ impl FromStr for Frame {
 mod test {
     use super::*;
     use crate::test_utils::v1::*;
-    use wire::TxFrame;
+    use ii_wire::TxFrame;
 
     #[test]
     fn test_deserialize_serialize_request() {

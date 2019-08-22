@@ -10,21 +10,20 @@
 use futures::future::Future;
 use std::net::SocketAddr;
 
+use ii_wire::tokio;
 use tokio::prelude::*;
 use tokio::runtime::current_thread as runtime;
-use wire::tokio;
 
-use stratum;
-use stratum::test_utils;
+use ii_stratum::test_utils;
 
-use stratum::error::Error;
-use stratum::v1;
-use stratum::v2;
+use ii_stratum::error::Error;
+use ii_stratum::v1;
+use ii_stratum::v2;
 
-use stratumproxy::server;
+use ii_stratum_proxy::server;
 
-use wire::utils::CompatFix;
-use wire::{Connection, Server};
+use ii_wire::utils::CompatFix;
+use ii_wire::{Connection, Server};
 
 mod utils;
 
@@ -71,11 +70,11 @@ fn test_v2server() {
 // WIP attempt to generalize
 //fn test_server<F, P>(client_handler: &P::Handler, server_handler: &P::Handler, port: usize)
 //where
-//    F: wire::Framing,
-//    P: wire::ProtocolBase,
-//    <F as wire::Framing>::Error: std::fmt::Debug,
-//    <F as wire::Framing>::Tx: std::convert::From<wire::TxFrame>,
-//    <F as wire::Framing>::Rx:
+//    F: ii_wire::Framing,
+//    P: ii_wire::ProtocolBase,
+//    <F as ii_wire::Framing>::Error: std::fmt::Debug,
+//    <F as ii_wire::Framing>::Tx: std::convert::From<ii_wire::TxFrame>,
+//    <F as ii_wire::Framing>::Rx:
 //{
 //    tokio::run(
 //        async {
@@ -87,7 +86,7 @@ fn test_v2server() {
 //            // with SetupMiningConnectionSuccess
 //            tokio::spawn_async(async move {
 //                let mut conn = await!(server.next()).unwrap().unwrap();
-//                let msg:wire::Message<P> = await!(conn.next()).unwrap().unwrap();
+//                let msg:ii_wire::Message<P> = await!(conn.next()).unwrap().unwrap();
 //                // test handler verifies that the message
 //                msg.accept(server_handler);
 //
@@ -123,7 +122,7 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
             let mut conn = conn.unwrap();
 
             while let Some(msg) = await!(conn.next()) {
-                let msg: wire::Message<v1::Protocol> = msg.unwrap();
+                let msg: ii_wire::Message<v1::Protocol> = msg.unwrap();
                 // test handler verifies that the message
                 msg.accept(&mut test_utils::v1::TestIdentityHandler);
 

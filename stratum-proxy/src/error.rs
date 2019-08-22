@@ -18,7 +18,7 @@ pub enum ErrorKind {
 
     /// General error used for more specific .
     #[fail(display = "Stratum error: {}", _0)]
-    Stratum(stratum::error::ErrorKind),
+    Stratum(ii_stratum::error::ErrorKind),
 
     /// Bitcoin Hashes error.
     #[fail(display = "Bitcoin Hashes error: {}", _0)]
@@ -72,8 +72,8 @@ impl From<ErrorKind> for Error {
     }
 }
 
-impl From<stratum::error::Error> for Error {
-    fn from(e: stratum::error::Error) -> Self {
+impl From<ii_stratum::error::Error> for Error {
+    fn from(e: ii_stratum::error::Error) -> Self {
         Self {
             inner: e.into_inner().map(|kind| ErrorKind::Stratum(kind)),
         }

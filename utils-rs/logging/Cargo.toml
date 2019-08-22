@@ -1,5 +1,5 @@
 [package]
-name = "logging"
+name = "ii-logging"
 version = "0.1.0"
 authors = ["Vojtech Kral <vojtech.kral@braiins.com>"]
 edition = "2018"

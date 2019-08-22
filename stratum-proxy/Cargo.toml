@@ -1,5 +1,5 @@
 [package]
-name = "stratumproxy"
+name = "ii-stratum-proxy"
 version = "0.1.0"
 authors = ["Braiins <braiins@braiins.com>"]
 edition = "2018"
@@ -7,12 +7,12 @@ edition = "2018"
 [dependencies]
 bytes = "0.4"
 clap = "2.33.0"
-stratum = { path = "../protocols/stratum" }
-wire = { path = "../protocols/wire" }
+ii-stratum = { path = "../protocols/stratum" }
+ii-wire = { path = "../protocols/wire" }
 futures-preview = { version = "0.3.0-alpha.15", features = ["compat"] }
 futures-01 = { version = "0.1.27", package = "futures" }
 failure = "0.1.5"
-logging = { path = "../utils-rs/logging" }
+ii-logging = { path = "../utils-rs/logging" }
 bitcoin_hashes = "0.3.2"
 uint = "0.5.0"
 ctrlc = "3.1.0"

@@ -5,13 +5,13 @@ use futures::future::{self, Either};
 use futures::stream::StreamExt;
 use tokio::prelude::*;
 
-use stratum::v1;
-use stratum::v2;
+use ii_stratum::v1;
+use ii_stratum::v2;
 
-use logging::macros::*;
-use wire::tokio;
-use wire::utils::CompatFix;
-use wire::{Connection, Server, TxFrame};
+use ii_logging::macros::*;
+use ii_wire::tokio;
+use ii_wire::utils::CompatFix;
+use ii_wire::{Connection, Server, TxFrame};
 
 use crate::error::{ErrorKind, Result, ResultExt};
 use crate::translation::V2ToV1Translation;

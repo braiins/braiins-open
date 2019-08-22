@@ -3,7 +3,6 @@ use std::convert::TryInto;
 use super::*;
 use crate::test_utils::v2::*;
 use crate::v2::framing;
-use wire;
 
 #[test]
 fn test_deserialize_setup_connection() {
@@ -20,7 +19,7 @@ fn test_deserialize_setup_connection() {
 
 #[test]
 fn test_serialize_setup_connection() {
-    let frame: wire::TxFrame = build_setup_mining_connection()
+    let frame: ii_wire::TxFrame = build_setup_mining_connection()
         .try_into()
         .expect("Could not serialize message");
 

@@ -5,8 +5,8 @@ use tokio::codec::{Decoder, Encoder, LinesCodec};
 
 use crate::error::Error;
 use crate::v1::{deserialize_message, Protocol};
-use wire::Message;
-use wire::{self, tokio, TxFrame};
+use ii_wire::Message;
+use ii_wire::{self, tokio, TxFrame};
 
 // FIXME: error handling
 // FIXME: check bytesmut capacity when encoding (use BytesMut::remaining_mut())
@@ -48,7 +48,7 @@ impl Default for Codec {
 #[derive(Debug)]
 pub struct Framing;
 
-impl wire::Framing for Framing {
+impl ii_wire::Framing for Framing {
     type Tx = TxFrame;
     type Rx = Message<Protocol>;
     type Error = Error;

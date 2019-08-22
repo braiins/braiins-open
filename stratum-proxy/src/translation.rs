@@ -10,13 +10,12 @@ use std::convert::TryInto;
 use std::fmt;
 use std::mem::size_of;
 
-use stratum;
-use stratum::v1;
-use stratum::v2;
-use stratum::v2::types::Uint256Bytes;
+use ii_stratum::v1;
+use ii_stratum::v2;
+use ii_stratum::v2::types::Uint256Bytes;
 
-use logging::macros::*;
-use wire::{Message, MessageId, TxFrame};
+use ii_logging::macros::*;
+use ii_wire::{Message, MessageId, TxFrame};
 
 #[cfg(test)]
 mod test;
@@ -80,19 +79,19 @@ enum V2ToV1TranslationState {
     Operational,
 }
 
-/// Represents a handler method that can process a particular stratum result.
+/// Represents a handler method that can process a particular ii_stratum result.
 type V1StratumResultHandler = fn(
     &mut V2ToV1Translation,
-    &wire::Message<v1::Protocol>,
+    &ii_wire::Message<v1::Protocol>,
     &v1::framing::StratumResult,
-) -> stratum::error::Result<()>;
+) -> ii_stratum::error::Result<()>;
 
-/// Represents a handler method that can process a particular stratum error.
+/// Represents a handler method that can process a particular ii_stratum error.
 type V1StratumErrorHandler = fn(
     &mut V2ToV1Translation,
-    &wire::Message<v1::Protocol>,
+    &ii_wire::Message<v1::Protocol>,
     &v1::framing::StratumError,
-) -> stratum::error::Result<()>;
+) -> ii_stratum::error::Result<()>;
 
 /// Custom mapping of V1 request id onto result/error handlers
 type V1ReqMap = HashMap<u32, (V1StratumResultHandler, V1StratumErrorHandler)>;
@@ -108,7 +107,7 @@ struct V1SubmitTemplate {
 /// Maps V2 job ID to V1 job ID so that we can submit mining results upstream to V1 server
 type JobMap = HashMap<u32, V1SubmitTemplate>;
 
-//type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &wire::Message<Protocol>, &v1::framing::StratumResult)>;
+//type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &ii_wire::Message<Protocol>, &v1::framing::StratumResult)>;
 
 impl V2ToV1Translation {
     const PROTOCOL_VERSION: usize = 0;
@@ -197,7 +196,7 @@ impl V2ToV1Translation {
     }
 
     /// Sets the current pending channel to operational state and submits success message
-    fn finalize_open_channel(&mut self) -> stratum::error::Result<()> {
+    fn finalize_open_channel(&mut self) -> ii_stratum::error::Result<()> {
         trace!("finalize_open_channel()");
         let mut init_target: Uint256Bytes = Uint256Bytes([0; 32]);
         self.v2_target
@@ -277,9 +276,9 @@ impl V2ToV1Translation {
     /// mining configuration of version rolling bits
     fn handle_configure_result(
         &mut self,
-        msg: &wire::Message<v1::Protocol>,
+        msg: &ii_wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
-    ) -> stratum::error::Result<()> {
+    ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_configure_result() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
@@ -289,7 +288,7 @@ impl V2ToV1Translation {
 
         // TODO review the use of serde_json here, it may be possible to eliminate this dependency
         // Extract version mask and verify it matches the maximum possible value
-        let proposed_version_mask: stratum::error::Result<v1::messages::VersionMask> =
+        let proposed_version_mask: ii_stratum::error::Result<v1::messages::VersionMask> =
             serde_json::from_value(payload.0["version-rolling.mask"].clone())
                 .context("Failed to parse version-rolling mask")
                 .map_err(Into::into);
@@ -300,7 +299,7 @@ impl V2ToV1Translation {
                 proposed_version_mask
             );
             if payload.0["version-rolling"].as_bool() == Some(true)
-                && (proposed_version_mask.0).0 == stratum::BIP320_N_VERSION_MASK
+                && (proposed_version_mask.0).0 == ii_stratum::BIP320_N_VERSION_MASK
             {
                 self.state = V2ToV1TranslationState::ConnectionSetup;
 
@@ -325,9 +324,9 @@ impl V2ToV1Translation {
 
     fn handle_configure_error(
         &mut self,
-        msg: &wire::Message<v1::Protocol>,
+        msg: &ii_wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumError,
-    ) -> stratum::error::Result<()> {
+    ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_configure_error() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
@@ -345,9 +344,9 @@ impl V2ToV1Translation {
 
     fn handle_subscribe_result(
         &mut self,
-        msg: &wire::Message<v1::Protocol>,
+        msg: &ii_wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
-    ) -> stratum::error::Result<()> {
+    ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_subscribe_result() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
@@ -378,9 +377,9 @@ impl V2ToV1Translation {
     /// An authorize result should be true, any other problem results in aborting the channel
     fn handle_authorize_result(
         &mut self,
-        msg: &wire::Message<v1::Protocol>,
+        msg: &ii_wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
-    ) -> stratum::error::Result<()> {
+    ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_authorize_result() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
@@ -419,9 +418,9 @@ impl V2ToV1Translation {
     // TODO: unused?
     fn handle_ok_result(
         &mut self,
-        _msg: &wire::Message<v1::Protocol>,
+        _msg: &ii_wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
-    ) -> stratum::error::Result<()> {
+    ) -> ii_stratum::error::Result<()> {
         let bool_result = v1::messages::BooleanResult::try_from(payload)?;
         trace!("Received: {:?}", bool_result);
 
@@ -430,9 +429,9 @@ impl V2ToV1Translation {
 
     fn handle_authorize_or_subscribe_error(
         &mut self,
-        msg: &wire::Message<v1::Protocol>,
+        msg: &ii_wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumError,
-    ) -> stratum::error::Result<()> {
+    ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_authorize_or_subscribe_error() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
@@ -455,9 +454,9 @@ impl V2ToV1Translation {
 
     fn handle_submit_result(
         &mut self,
-        msg: &wire::Message<v1::Protocol>,
+        msg: &ii_wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
-    ) -> stratum::error::Result<()> {
+    ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_submit_result() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
@@ -499,9 +498,9 @@ impl V2ToV1Translation {
 
     fn handle_submit_error(
         &mut self,
-        msg: &wire::Message<v1::Protocol>,
+        msg: &ii_wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumError,
-    ) -> stratum::error::Result<()> {
+    ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_submit_error() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
@@ -524,9 +523,9 @@ impl V2ToV1Translation {
     // TODO: unused?
     fn handle_any_stratum_error(
         &mut self,
-        msg: &wire::Message<v1::Protocol>,
+        msg: &ii_wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumError,
-    ) -> stratum::error::Result<()> {
+    ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_any_stratum_error() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
@@ -719,7 +718,7 @@ impl v1::Handler for V2ToV1Translation {
     /// TODO write a solid unit test covering all 3 scenarios that can go wrong
     fn visit_stratum_result(
         &mut self,
-        msg: &wire::Message<v1::Protocol>,
+        msg: &ii_wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
     ) {
         trace!(
@@ -730,14 +729,14 @@ impl v1::Handler for V2ToV1Translation {
         );
         // Each response message should have an ID for pairing
         msg.id
-            .ok_or(stratum::error::Error::from(v1::error::ErrorKind::Rpc(
-                "Missing ID in stratum result".to_string(),
+            .ok_or(ii_stratum::error::Error::from(v1::error::ErrorKind::Rpc(
+                "Missing ID in ii_stratum result".to_string(),
             )))
             // find the ID in the request map
             .and_then(|id| {
                 self.v1_req_map
                     .remove(&id)
-                    .ok_or(stratum::error::Error::from(v1::error::ErrorKind::Rpc(
+                    .ok_or(ii_stratum::error::Error::from(v1::error::ErrorKind::Rpc(
                         format!("Received invalid ID {}", id).into(),
                     )))
             })
@@ -841,8 +840,8 @@ impl v2::Handler for V2ToV1Translation {
         self.v2_conn_details = Some(payload.clone());
         let mut configure = v1::messages::Configure::new();
         configure.add_feature(v1::messages::VersionRolling::new(
-            stratum::BIP320_N_VERSION_MASK,
-            stratum::BIP320_N_VERSION_MAX_BITS,
+            ii_stratum::BIP320_N_VERSION_MASK,
+            ii_stratum::BIP320_N_VERSION_MAX_BITS,
         )); // FIXME: how to handle errors from configure.add_feature() ?
 
         let v1_configure_message = self.v1_method_into_message(
@@ -854,7 +853,7 @@ impl v2::Handler for V2ToV1Translation {
         self.state = V2ToV1TranslationState::V1Configure;
     }
 
-    /// Opening a channel is a 2 stage process when translating to  V1 stratum, where
+    /// Opening a channel is a 2 stage process when translating to  V1 ii_stratum, where
     /// both stages can be executed in arbitrary order:
     /// - perform subscribe (and start queuing incoming V1 jobs)
     /// - perform authorize
@@ -981,7 +980,7 @@ impl v2::Handler for V2ToV1Translation {
                     payload.ntime,
                     payload.nonce,
                     // ensure the version bits in the template follow BIP320
-                    payload.version & stratum::BIP320_N_VERSION_MASK,
+                    payload.version & ii_stratum::BIP320_N_VERSION_MASK,
                 );
                 // Convert the method into a message + provide handling methods
                 let v1_submit_message = self.v1_method_into_message(

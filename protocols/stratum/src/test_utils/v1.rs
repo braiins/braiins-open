@@ -3,7 +3,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 use std::str::FromStr;
 
-use logging::macros::*;
+use ii_logging::macros::*;
 
 use super::common::*;
 use crate::v1::framing::*;
@@ -252,7 +252,7 @@ impl TestIdentityHandler {
     /// representation
     fn visit_and_check<P, F>(
         &mut self,
-        msg: &wire::Message<Protocol>,
+        msg: &ii_wire::Message<Protocol>,
         payload: &P,
         build_payload: F,
         full_message: Frame,
@@ -270,7 +270,8 @@ impl TestIdentityHandler {
         );
         assert_eq!(expected_payload, *payload, "Message payloads don't match");
 
-        let serialized_message: wire::TxFrame = full_message.try_into().expect("Cannot serialize");
+        let serialized_message: ii_wire::TxFrame =
+            full_message.try_into().expect("Cannot serialize");
         assert_eq!(
             json_message,
             std::str::from_utf8(&serialized_message)
@@ -281,7 +282,7 @@ impl TestIdentityHandler {
 
     fn visit_and_check_request<P, F>(
         &mut self,
-        msg: &wire::Message<Protocol>,
+        msg: &ii_wire::Message<Protocol>,
         payload: &P,
         build_payload: F,
         json_message: &str,
@@ -301,7 +302,7 @@ impl TestIdentityHandler {
 }
 
 impl Handler for TestIdentityHandler {
-    fn visit_stratum_result(&mut self, msg: &wire::Message<Protocol>, payload: &StratumResult) {
+    fn visit_stratum_result(&mut self, msg: &ii_wire::Message<Protocol>, payload: &StratumResult) {
         self.visit_and_check(
             msg,
             payload,
@@ -314,19 +315,19 @@ impl Handler for TestIdentityHandler {
         );
     }
 
-    fn visit_configure(&mut self, msg: &wire::Message<Protocol>, payload: &Configure) {
+    fn visit_configure(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Configure) {
         self.visit_and_check_request(msg, payload, build_configure, MINING_CONFIGURE_REQ_JSON);
     }
 
-    fn visit_subscribe(&mut self, msg: &wire::Message<Protocol>, payload: &Subscribe) {
+    fn visit_subscribe(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Subscribe) {
         self.visit_and_check_request(msg, payload, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
     }
 
-    fn visit_authorize(&mut self, msg: &wire::Message<Protocol>, payload: &Authorize) {
+    fn visit_authorize(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Authorize) {
         self.visit_and_check_request(msg, payload, build_authorize, MINING_AUTHORIZE_JSON);
     }
 
-    fn visit_set_difficulty(&mut self, msg: &wire::Message<Protocol>, payload: &SetDifficulty) {
+    fn visit_set_difficulty(&mut self, msg: &ii_wire::Message<Protocol>, payload: &SetDifficulty) {
         self.visit_and_check_request(
             msg,
             payload,
@@ -335,11 +336,11 @@ impl Handler for TestIdentityHandler {
         );
     }
 
-    fn visit_notify(&mut self, msg: &wire::Message<Protocol>, payload: &Notify) {
+    fn visit_notify(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Notify) {
         self.visit_and_check_request(msg, payload, build_mining_notify, MINING_NOTIFY_JSON);
     }
 
-    fn visit_submit(&mut self, msg: &wire::Message<Protocol>, payload: &Submit) {
+    fn visit_submit(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Submit) {
         self.visit_and_check_request(msg, payload, build_mining_submit, MINING_SUBMIT_JSON);
     }
 }

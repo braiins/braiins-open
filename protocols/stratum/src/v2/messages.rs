@@ -7,7 +7,6 @@ use serde;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::io::{Cursor, Write};
-use wire;
 
 use crate::error::{Error, Result};
 
@@ -15,7 +14,10 @@ use crate::error::{Error, Result};
 mod test;
 
 /// Serializes the specified message into a frame
-fn serialize_with_header<M: Serialize>(message: M, msg_type: MessageType) -> Result<wire::TxFrame> {
+fn serialize_with_header<M: Serialize>(
+    message: M,
+    msg_type: MessageType,
+) -> Result<ii_wire::TxFrame> {
     // FIXME: temporary JSON serialization
 
     let buffer = Vec::with_capacity(128); // This is what serde does
@@ -32,15 +34,15 @@ fn serialize_with_header<M: Serialize>(message: M, msg_type: MessageType) -> Res
     cursor.set_position(0);
     cursor.write(&header.pack())?;
 
-    Ok(wire::Frame::new(cursor.into_inner().into_boxed_slice()))
+    Ok(ii_wire::Frame::new(cursor.into_inner().into_boxed_slice()))
 }
 
 macro_rules! impl_conversion {
     ($message:ident, /*$msg_type:path,*/ $handler_fn:ident) => {
-        impl TryFrom<$message> for wire::TxFrame {
+        impl TryFrom<$message> for ii_wire::TxFrame {
             type Error = Error;
 
-            fn try_from(m: $message) -> Result<wire::TxFrame> {
+            fn try_from(m: $message) -> Result<ii_wire::TxFrame> {
                 serialize_with_header(&m, MessageType::$message)
             }
         }
@@ -55,11 +57,11 @@ macro_rules! impl_conversion {
         }
 
         //  specific protocol implementation
-        impl wire::Payload<super::Protocol> for $message {
+        impl ii_wire::Payload<super::Protocol> for $message {
             fn accept(
                 &self,
-                msg: &wire::Message<super::Protocol>,
-                handler: &mut <super::Protocol as wire::Protocol>::Handler,
+                msg: &ii_wire::Message<super::Protocol>,
+                handler: &mut <super::Protocol as ii_wire::Protocol>::Handler,
             ) {
                 handler.$handler_fn(msg, self);
             }

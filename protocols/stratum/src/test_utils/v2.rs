@@ -2,7 +2,7 @@ use bitcoin_hashes::{hex::FromHex, sha256d, Hash};
 use std::fmt::Debug;
 use uint;
 
-use logging::macros::*;
+use ii_logging::macros::*;
 
 use crate::test_utils::common::*;
 use crate::test_utils::v1;
@@ -17,7 +17,7 @@ use crate::v2::{Handler, Protocol};
 pub struct TestIdentityHandler;
 
 impl TestIdentityHandler {
-    fn visit_and_check<P, F>(&self, msg: &wire::Message<Protocol>, payload: &P, build: F)
+    fn visit_and_check<P, F>(&self, msg: &ii_wire::Message<Protocol>, payload: &P, build: F)
     where
         P: Debug + PartialEq,
         F: FnOnce() -> P,
@@ -36,7 +36,7 @@ impl TestIdentityHandler {
 impl Handler for TestIdentityHandler {
     fn visit_setup_mining_connection(
         &mut self,
-        msg: &wire::Message<Protocol>,
+        msg: &ii_wire::Message<Protocol>,
         payload: &SetupMiningConnection,
     ) {
         self.visit_and_check(msg, payload, build_setup_mining_connection);
@@ -44,33 +44,37 @@ impl Handler for TestIdentityHandler {
 
     fn visit_setup_mining_connection_success(
         &mut self,
-        msg: &wire::Message<Protocol>,
+        msg: &ii_wire::Message<Protocol>,
         payload: &SetupMiningConnectionSuccess,
     ) {
         self.visit_and_check(msg, payload, build_setup_mining_connection_success);
     }
 
-    fn visit_open_channel(&mut self, msg: &wire::Message<Protocol>, payload: &OpenChannel) {
+    fn visit_open_channel(&mut self, msg: &ii_wire::Message<Protocol>, payload: &OpenChannel) {
         self.visit_and_check(msg, payload, build_open_channel);
     }
 
     fn visit_open_channel_success(
         &mut self,
-        msg: &wire::Message<Protocol>,
+        msg: &ii_wire::Message<Protocol>,
         payload: &OpenChannelSuccess,
     ) {
         self.visit_and_check(msg, payload, build_open_channel_success);
     }
 
-    fn visit_new_mining_job(&mut self, msg: &wire::Message<Protocol>, payload: &NewMiningJob) {
+    fn visit_new_mining_job(&mut self, msg: &ii_wire::Message<Protocol>, payload: &NewMiningJob) {
         self.visit_and_check(msg, payload, build_new_mining_job);
     }
 
-    fn visit_set_new_prev_hash(&mut self, msg: &wire::Message<Protocol>, payload: &SetNewPrevHash) {
+    fn visit_set_new_prev_hash(
+        &mut self,
+        msg: &ii_wire::Message<Protocol>,
+        payload: &SetNewPrevHash,
+    ) {
         self.visit_and_check(msg, payload, build_set_new_prev_hash);
     }
 
-    fn visit_submit_shares(&mut self, msg: &wire::Message<Protocol>, payload: &SubmitShares) {
+    fn visit_submit_shares(&mut self, msg: &ii_wire::Message<Protocol>, payload: &SubmitShares) {
         self.visit_and_check(msg, payload, build_submit_shares);
     }
 }

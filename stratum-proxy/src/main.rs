@@ -8,17 +8,17 @@ use std::cell::RefCell;
 use clap::{self, Arg};
 use ctrlc;
 
-use logging::macros::*;
-use stratumproxy::server;
-use wire::tokio;
-use wire::utils::CompatFix;
+use ii_logging::macros::*;
+use ii_stratum_proxy::server;
+use ii_wire::tokio;
+use ii_wire::utils::CompatFix;
 
 // TODO: defaults for listen & remote addrs?
 // static V2_ADDR: &'static str = "127.0.0.1:3334";
 // static V1_ADDR: &'static str = "127.0.0.1:3335";
 
 fn main() {
-    let _log_guard = logging::setup_for_app();
+    let _log_guard = ii_logging::setup_for_app();
 
     let args = clap::App::new("stratum-proxy")
         .arg(

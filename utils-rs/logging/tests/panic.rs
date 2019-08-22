@@ -4,18 +4,18 @@
 //! **Warning**: Each logging test needs to be in a separate files
 //! due to global LOGGER initialization
 
-use logging::macros::*;
-use logging::{self, LoggingConfig};
+use ii_logging::macros::*;
+use ii_logging::{self, LoggingConfig};
 
 #[test]
 #[should_panic]
 fn test_logging_config_too_late() {
     // Use silent config
-    logging::set_logger_config(LoggingConfig::no_logging());
+    ii_logging::set_logger_config(LoggingConfig::no_logging());
 
     // Log something
     trace!("This will tirgger LOGGER instantiation");
 
     // This should now panic
-    logging::set_logger_config(LoggingConfig::default());
+    ii_logging::set_logger_config(LoggingConfig::default());
 }

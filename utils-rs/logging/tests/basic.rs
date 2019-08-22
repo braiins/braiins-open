@@ -6,8 +6,8 @@
 use std::env;
 use std::fs;
 
-use logging::macros::*;
-use logging::{self, Level, LoggingConfig, LoggingTarget, LOGGER};
+use ii_logging::macros::*;
+use ii_logging::{self, Level, LoggingConfig, LoggingTarget, LOGGER};
 
 use tempfile::NamedTempFile;
 
@@ -27,7 +27,7 @@ fn test_logging_basic() {
     };
 
     // Setup logger
-    logging::set_logger_config(config);
+    ii_logging::set_logger_config(config);
     let flush_guard = LOGGER.take_guard();
 
     // Log a message and flush logs
