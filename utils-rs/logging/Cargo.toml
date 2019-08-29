@@ -1,7 +1,7 @@
 [package]
 name = "ii-logging"
 version = "0.1.0"
-authors = ["Vojtech Kral <vojtech.kral@braiins.com>"]
+authors = ["Braiins <braiins@braiins.com>"]
 edition = "2018"
 
 [dependencies]
