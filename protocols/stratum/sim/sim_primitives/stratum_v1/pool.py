@@ -49,7 +49,9 @@ class PoolV1(Pool):
 
     def new_mining_session_v1(self, uid):
         """Override mining session to build specifically V1 Session"""
-        return self.new_mining_session(uid, self.on_vardiff_change, clz=MiningSessionV1)
+        return self.new_mining_session(
+            uid, self._on_vardiff_change, clz=MiningSessionV1
+        )
 
     def visit_subscribe(self, msg: Subscribe):
         """Handle mining.subscribe.
@@ -129,7 +131,7 @@ class PoolV1(Pool):
         )
         self.process_submit(msg.job_id, self.mining_sessions[self.active_conn_uid])
 
-    def on_vardiff_change(self, session: MiningSession):
+    def _on_vardiff_change(self, session: MiningSession):
         """Handle difficulty change for the current session.
 
         Note that to enforce difficulty change as soon as possible,
