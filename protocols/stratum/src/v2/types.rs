@@ -45,3 +45,9 @@ impl From<uint::U256> for Uint256Bytes {
         bytes
     }
 }
+
+impl From<Uint256Bytes> for ii_bitcoin::Target {
+    fn from(value: Uint256Bytes) -> Self {
+        value.0.into()
+    }
+}
