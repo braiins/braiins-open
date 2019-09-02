@@ -12,17 +12,7 @@ from event_bus import EventBus
 class MiningSessionV1(MiningSession):
     """V1 specific mining session registers authorize requests """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.authorize_requests = []
-
-    def append_authorize(self, msg: Authorize):
-        self.authorize_requests.append(msg)
-
-
-class PoolV1(Pool):
-    class SessionStates(enum.Enum):
+    class States(enum.Enum):
         """Stratum V1 mining session follows the state machine below."""
 
         INIT = 0
@@ -33,48 +23,58 @@ class PoolV1(Pool):
         RUNNING = 4
 
     def __init__(self, *args, **kwargs):
-        self.state = self.SessionStates.INIT
-        self.mining_sessions = dict()
-        # Temporary storage of per session Authorize requests, these will be moved into
-        # the session once the session is started after receiving mining.subscribe
-        self.tmp_mining_session_authorize_requests = dict()
+        self.state = self.States.INIT
         super().__init__(*args, **kwargs)
 
+        self.authorize_requests = []
+
+    def run(self):
+        """V1 Session switches its state"""
+        super().run()
+        self.state = self.States.RUNNING
+
+    def append_authorize(self, msg: Authorize):
+        self.authorize_requests.append(msg)
+
+
+class PoolV1(Pool):
+    def __init__(self, *args, **kwargs):
+        self.mining_sessions = dict()
+        super().__init__(*args, **kwargs)
+
+    def connect_in(self, connection: Connection):
+        """Starts a new session on the incoming connection"""
+        session = self.new_mining_session(
+            connection.uid, self._on_vardiff_change, clz=MiningSessionV1
+        )
+        # The new mining session is always identified by the connection UID as there can only be at most 1 session
+        self.mining_sessions[connection.uid] = session
+        # Register the connection only after building the mining session
+        super().connect_in(connection)
+
     def disconnect(self, connection: Connection):
-        """Terminates the session if the client managed to create one."""
+        """Shutdown the connection and terminate the session if the client managed to create one."""
+        # Disconnect before shutting down the session
+        super().disconnect(connection)
+
         if connection.uid in self.mining_sessions:
             self.mining_sessions[connection.uid].terminate()
             del self.mining_sessions[connection.uid]
-        super().disconnect(connection)
-
-    def new_mining_session_v1(self, uid):
-        """Override mining session to build specifically V1 Session"""
-        return self.new_mining_session(
-            uid, self._on_vardiff_change, clz=MiningSessionV1
-        )
 
     def visit_subscribe(self, msg: Subscribe):
         """Handle mining.subscribe.
-
-
         """
-        if self.state in (self.SessionStates.INIT, self.SessionStates.AUTHORIZED):
-            session = self.new_mining_session_v1(self.active_conn_uid)
-            self.mining_sessions[self.active_conn_uid] = session
+        mining_session = self._current_mining_session()
 
-            if self.state == self.SessionStates.AUTHORIZED:
-                # Transfer all authorize requests into the session and drop
-                map(
-                    self.mining_sessions[self.active_conn_uid].authorize,
-                    self.tmp_mining_session_authorize_requests[self.active_conn_uid],
-                )
-                del self.tmp_mining_session_authorize_requests[self.active_conn_uid]
-                self.state = self.SessionStates.RUNNING
-            else:
-                self.state = self.SessionStates.SUBSCRIBED
-
+        if mining_session.state in (
+            mining_session.States.INIT,
+            mining_session.States.AUTHORIZED,
+        ):
+            # Subscribe is now complete we can activate a mining session that starts
+            # generating new jobs immediately
+            mining_session.state = mining_session.States.SUBSCRIBED
             self._send_msg(
-                session.uid,
+                mining_session.uid,
                 SubscribeResponse(
                     subscription_ids=None,
                     # TODO: Extra nonce 1 is 8 bytes long and hardcoded
@@ -82,54 +82,41 @@ class PoolV1(Pool):
                     extra_nonce2_size=self.extra_nonce2_size,
                 ),
             )
+            # Run the session so that it starts supplying jobs
+            mining_session.run()
         else:
             self._send_msg(
                 self.active_conn_uid,
                 ErrorResult(
-                    -1, 'Subscribe not expected when in: {}'.format(self.state)
+                    -1,
+                    'Subscribe not expected when in: {}'.format(mining_session.state),
                 ),
             )
 
     def visit_authorize(self, msg: Authorize):
         """Parse authorize.
-
-        Depending on the state, temporarily store authorize credentials if a
-        MiningSession doesn't exist yet (waiting for subscribe) or append them to the
-        mining session
+        Sending authorize is legal at any state of the mining session.
         """
+        mining_session = self._current_mining_session()
+        mining_session.append_authorize(msg)
         self.bus.emit(
             self.name,
             self.env.now,
             self.active_conn_uid,
-            'AUTHORIZE: {}'.format(self.state),
+            'AUTHORIZE: {}'.format(mining_session.state),
             msg,
         )
-        if self.state == self.SessionStates.INIT:
-            self.tmp_mining_session_authorize_requests.setdefault(
-                self.active_conn_uid, []
-            )
-            self.tmp_mining_session_authorize_requests[self.active_conn_uid].append(msg)
-            self.state = self.SessionStates.AUTHORIZED
-        elif self.state == self.SessionStates.SUBSCRIBED:
-            self.mining_sessions[self.active_conn_uid].append_authorize(msg)
-            self.state = self.SessionStates.RUNNING
-        else:
-            self._send_msg(
-                self.active_conn_uid,
-                ErrorResult(
-                    -1, 'Authorize not expected when in: {}'.format(self.state)
-                ),
-            )
 
     def visit_submit(self, msg: Submit):
+        mining_session = self._current_mining_session()
         self.bus.emit(
             self.name,
             self.env.now,
             self.active_conn_uid,
-            'SUBMIT: { }'.format(self.state),
+            'SUBMIT: { }'.format(mining_session.state),
             msg,
         )
-        self.process_submit(msg.job_id, self.mining_sessions[self.active_conn_uid])
+        self.process_submit(msg.job_id, mining_session)
 
     def _on_vardiff_change(self, session: MiningSession):
         """Handle difficulty change for the current session.
@@ -159,6 +146,18 @@ class PoolV1(Pool):
 
     def on_submit_rejected(self):
         pass
+
+    def _current_mining_session(self):
+        """Accessor for the current mining session cannot fail.
+
+         The session is always built upon accepting incoming connection"""
+        mining_session = self.mining_sessions.get(self.active_conn_uid, None)
+        assert (
+            mining_session is not None
+        ), 'Active connection UID {} is not associated with a mining session!'.format(
+            self.active_conn_uid
+        )
+        return mining_session
 
     def __build_mining_notify(self, session: MiningSession, clean_jobs: bool):
         """
