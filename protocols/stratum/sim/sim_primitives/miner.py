@@ -2,7 +2,7 @@ import numpy as np
 import simpy
 from .network import Connection, gen_uid
 from event_bus import EventBus
-from sim_primitives.stratum_v1.messages import Notify
+from sim_primitives.stratum_v1.messages import Notify, Submit
 
 
 class Miner(object):
@@ -32,7 +32,7 @@ class Miner(object):
             try:
                 x = yield self.connection.incoming.get()
                 if isinstance(x, Notify):
-                    self.job_uid = x.job_uid
+                    self.job_uid = x.job_id
                     # Share difficulty comes separately
                     # self.share_diff = x.share_diff
                     if self.mine_proc is None:
@@ -92,11 +92,12 @@ class Miner(object):
                     self.env.now,
                     'solution {} found for job {}'.format(submit_uid, self.job_uid),
                 )
-                # self.connection.outgoing.put(
-                #     SubmitJob(
-                #         self.connection.uid, self.job_uid, self.share_diff, submit_uid
-                #     )
-                # )
+
+                self.connection.outgoing.put(
+                    Submit(
+                        self.name, self.job_uid, 'extranonce2', self.env.now, 'nonce'
+                    )
+                )
 
     def connect_to_pool(self, target):
         self.bus.emit(

@@ -101,7 +101,7 @@ class PoolV1(Pool):
             self.name,
             self.env.now,
             self.active_conn_uid,
-            'AUTHORIZE: { }'.format(self.state),
+            'AUTHORIZE: {}'.format(self.state),
             msg,
         )
         if self.state == self.SessionStates.INIT:
@@ -167,7 +167,7 @@ class PoolV1(Pool):
         and immediately start mining on this job
         :return: MiningNotify message
         """
-        job = session.job_registry.new_mining_job(retire_old_jobs=clean_jobs)
+        job = session.job_registry.new_mining_job(diff_target=session.curr_diff, retire_old_jobs=clean_jobs)
         return Notify(
             job_id=job.uid,
             prev_hash=self.prev_hash,
