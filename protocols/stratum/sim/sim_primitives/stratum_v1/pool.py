@@ -78,8 +78,8 @@ class PoolV1(Pool):
                 SubscribeResponse(
                     subscription_ids=None,
                     # TODO: Extra nonce 1 is 8 bytes long and hardcoded
-                    extra_nonce1=bytes([0] * 8),
-                    extra_nonce2_size=self.extra_nonce2_size,
+                    extranonce1=bytes([0] * 8),
+                    extranonce2_size=self.extranonce2_size,
                 ),
             )
             # Run the session so that it starts supplying jobs

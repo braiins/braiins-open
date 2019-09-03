@@ -147,7 +147,7 @@ class Pool(AcceptingConnection):
         bus: EventBus,
         default_difficulty: int = 100000,
         diff_1_target: int = 0xFFFF << 208,
-        extra_nonce2_size: int = 8,
+        extranonce2_size: int = 8,
         avg_pool_block_time: float = 60,
         enable_vardiff: bool = False,
         desired_submits_per_sec: float = 0.3,
@@ -158,7 +158,7 @@ class Pool(AcceptingConnection):
         self.bus = bus
         self.default_difficulty = default_difficulty
         self.diff_1_target = diff_1_target
-        self.extra_nonce2_size = extra_nonce2_size
+        self.extranonce2_size = extranonce2_size
         self.avg_pool_block_time = avg_pool_block_time
 
         self.connections = dict()

@@ -15,17 +15,17 @@ class Authorize(Message):
 
 
 class Subscribe(Message):
-    def __init__(self, signature, extra_nonce1, url):
+    def __init__(self, signature, extranonce1, url):
         self.signature = signature
-        self.extra_nonce1 = extra_nonce1
+        self.extranonce1 = extranonce1
         self.url = url
 
 
 class SubscribeResponse(Message):
-    def __init__(self, subscription_ids, extra_nonce1, extra_nonce2_size):
+    def __init__(self, subscription_ids, extranonce1, extranonce2_size):
         self.subscription_ids = subscription_ids
-        self.extra_nonce1 = extra_nonce1
-        self.extra_nonce2_size = extra_nonce2_size
+        self.extranonce1 = extranonce1
+        self.extranonce2_size = extranonce2_size
 
 
 class SetDifficulty(Message):
@@ -34,10 +34,10 @@ class SetDifficulty(Message):
 
 
 class Submit(Message):
-    def __init__(self, user_name, job_id, extra_nonce2, time, nonce):
+    def __init__(self, user_name, job_id, extranonce2, time, nonce):
         self.user_name = user_name
         self.job_id = job_id
-        self.extra_nonce2 = extra_nonce2
+        self.extranonce2 = extranonce2
         self.time = time
         self.nonce = nonce
 
