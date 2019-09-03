@@ -45,7 +45,7 @@ class PoolV1(Pool):
     def connect_in(self, connection: Connection):
         """Starts a new session on the incoming connection"""
         session = self.new_mining_session(
-            connection.uid, self._on_vardiff_change, clz=MiningSessionV1
+            connection, self._on_vardiff_change, clz=MiningSessionV1
         )
         # The new mining session is always identified by the connection UID as there can only be at most 1 session
         self.mining_sessions[connection.uid] = session
@@ -74,7 +74,7 @@ class PoolV1(Pool):
             # generating new jobs immediately
             mining_session.state = mining_session.States.SUBSCRIBED
             self._send_msg(
-                mining_session.uid,
+                mining_session.owner.uid,
                 SubscribeResponse(
                     subscription_ids=None,
                     # TODO: Extra nonce 1 is 8 bytes long and hardcoded
@@ -124,10 +124,10 @@ class PoolV1(Pool):
         Note that to enforce difficulty change as soon as possible,
         the message is accompanied by generating new mining job
         """
-        self._send_msg(session.uid, SetDifficulty(session.curr_diff))
+        self._send_msg(session.owner.uid, SetDifficulty(session.curr_diff))
 
         self._send_msg(
-            session.uid, self.__build_mining_notify(session, clean_jobs=False)
+            session.owner.uid, self.__build_mining_notify(session, clean_jobs=False)
         )
 
     def _on_new_block(self):
@@ -138,7 +138,7 @@ class PoolV1(Pool):
         # broadcast the changed block to listeners
         for session in self.mining_sessions.values():
             self._send_msg(
-                session.uid, self.__build_mining_notify(session, clean_jobs=True)
+                session.owner.uid, self.__build_mining_notify(session, clean_jobs=True)
             )
 
     def _on_submit_accepted(self):

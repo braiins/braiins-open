@@ -69,7 +69,7 @@ class MiningSession:
         name: str,
         env: simpy.Environment,
         bus: EventBus,
-        uid,
+        owner,
         diff,
         diff_1_target,
         enable_vardiff,
@@ -84,7 +84,7 @@ class MiningSession:
         self.name = name
         self.env = env
         self.bus = bus
-        self.uid = uid
+        self.owner = owner
         self.curr_diff = diff
         self.diff_1_target = diff_1_target
         self.enable_vardiff = enable_vardiff
@@ -130,7 +130,7 @@ class MiningSession:
                 new_diff = self.curr_diff * factor
                 self.curr_diff = int(round(new_diff))
                 self.bus.emit(
-                    self.name, self.env.now, self.uid, 'DIFF_UPDATE', self.curr_diff
+                    self.name, self.env.now, self.owner, 'DIFF_UPDATE', self.curr_diff
                 )
                 self.on_vardiff_change(self)
             except simpy.Interrupt:
@@ -206,13 +206,13 @@ class Pool(AcceptingConnection):
         del self.connections[connection.uid]
         del self.recv_loop_processes[connection.uid]
 
-    def new_mining_session(self, uid, on_vardiff_change, clz=MiningSession):
+    def new_mining_session(self, owner, on_vardiff_change, clz=MiningSession):
         """Creates a new mining session"""
         session = clz(
             name=self.name,
             env=self.env,
             bus=self.bus,
-            uid=uid,
+            owner=owner,
             diff=self.default_difficulty,
             diff_1_target=self.diff_1_target,
             enable_vardiff=self.enable_vardiff,
@@ -220,7 +220,7 @@ class Pool(AcceptingConnection):
             vardiff_desired_submits_per_sec=self.desired_submits_per_sec,
             on_vardiff_change=on_vardiff_change,
         )
-        self.bus.emit(self.name, self.env.now, uid, 'NEW MINING SESSION', session)
+        self.bus.emit(self.name, self.env.now, owner, 'NEW MINING SESSION', session)
         return session
 
     def add_extra_meter(self, meter: HashrateMeter):
