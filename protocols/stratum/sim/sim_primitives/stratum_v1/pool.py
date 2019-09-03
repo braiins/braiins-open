@@ -147,6 +147,12 @@ class PoolV1(Pool):
     def on_submit_rejected(self):
         pass
 
+    def _on_invalid_message(self, msg):
+        self._send_msg(
+            self.active_conn_uid,
+            ErrorResult(-2, 'Unrecognized message: {}'.format(msg)),
+        )
+
     def _current_mining_session(self):
         """Accessor for the current mining session cannot fail.
 

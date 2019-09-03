@@ -241,6 +241,10 @@ class Pool(AcceptingConnection):
     def _on_submit_accepted(self):
         pass
 
+    @abstractmethod
+    def _on_invalid_message(self):
+        pass
+
     def __receive_loop(self, conn_uid: str):
         """
         :param conn_uid:
@@ -257,9 +261,7 @@ class Pool(AcceptingConnection):
                     self.active_conn_uid = conn_uid
                     msg.accept(self)
                 except AttributeError as e:
-                    self.connections[conn_uid].incoming.put(
-                        Error(conn_uid, 'Invalid operation')
-                    )
+                    self._on_invalid_message(msg)
                 self.active_conn_uid = None
 
             except simpy.Interrupt:
