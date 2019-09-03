@@ -22,7 +22,7 @@ class AcceptingConnection(ABC):
         pass
 
 
-class Channel:
+class ConnectionStore:
     """This class represents the propagation network connection."""
 
     def __init__(self, env, mean_latency, latency_stddev_percent):
@@ -53,26 +53,26 @@ class Connection:
         self.port = port
         self.mean_latency = mean_latency
         self.latency_stddev_percent = latency_stddev_percent
-        # Channel directions are from client prospective
-        # Outgoing - client will store messages into this channel,
-        # while server will pickup the messages from this channell
-        self.outgoing = Channel(env, mean_latency, latency_stddev_percent)
-        # Incoming - vica versa
-        self.incoming = Channel(env, mean_latency, latency_stddev_percent)
-        self.target = None
+        # Connection directions are from client prospective
+        # Outgoing - client will store messages into the outgoing store,
+        # while server will pickup the messages from the outgoing store
+        self.outgoing = ConnectionStore(env, mean_latency, latency_stddev_percent)
+        # Incoming - vice versa
+        self.incoming = ConnectionStore(env, mean_latency, latency_stddev_percent)
+        self.conn_target = None
 
-    def connect_to(self, target):
-        target.connect_in(self)
-        self.target = target
+    def connect_to(self, conn_target):
+        conn_target.connect_in(self)
+        self.conn_target = conn_target
 
     def disconnect(self):
-        if self.target is None:
+        if self.conn_target is None:
             raise RuntimeError('Not connected')
-        self.target.disconnect(self)
-        self.target = None
+        self.conn_target.disconnect(self)
+        self.conn_target = None
 
     def is_connected(self):
-        return self.target is not None
+        return self.conn_target is not None
 
 
 class ConnectionFactory:
