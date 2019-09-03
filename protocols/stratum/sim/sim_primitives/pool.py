@@ -116,7 +116,6 @@ class MiningSession:
     def __vardiff_loop(self):
         while True:
             try:
-                yield self.env.timeout(self.vardiff_time_window_size)
                 submits_per_sec = self.meter.get_submit_per_secs()
                 if submits_per_sec == 0:
                     # no accepted shares, we will halve the diff
@@ -133,6 +132,7 @@ class MiningSession:
                     self.name, self.env.now, self.owner, 'DIFF_UPDATE', self.curr_diff
                 )
                 self.on_vardiff_change(self)
+                yield self.env.timeout(self.vardiff_time_window_size)
             except simpy.Interrupt:
                 break
 
