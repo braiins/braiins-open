@@ -242,6 +242,10 @@ class Pool(AcceptingConnection):
         pass
 
     @abstractmethod
+    def _on_submit_rejected(self):
+        pass
+
+    @abstractmethod
     def _on_invalid_message(self):
         pass
 
