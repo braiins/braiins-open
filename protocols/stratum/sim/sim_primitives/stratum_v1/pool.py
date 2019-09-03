@@ -173,7 +173,7 @@ class PoolV1(Pool):
         :return: MiningNotify message
         """
         job = session.job_registry.new_mining_job(
-            diff_target=session.curr_diff, retire_old_jobs=clean_jobs
+            diff_target=session.curr_target, retire_old_jobs=clean_jobs
         )
         return Notify(
             job_id=job.uid,
