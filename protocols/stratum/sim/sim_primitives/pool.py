@@ -105,7 +105,7 @@ class MiningSession:
         """Explicit activation starts any simulation processes associated with the session"""
         if self.enable_vardiff:
             self.meter = HashrateMeter(self.env)
-            self.vardiff_process = env.process(self.__vardiff_loop())
+            self.vardiff_process = self.env.process(self.__vardiff_loop())
 
     def terminate(self):
         """Complete shutdown of the session"""
