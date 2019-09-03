@@ -6,7 +6,6 @@ use ii_stratum::test_utils;
 use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_wire::tokio;
-use ii_wire::utils::CompatFix;
 
 //       F::Error: From<E>,
 //        M: TryInto<F::Tx, Error = E>,
@@ -80,7 +79,7 @@ async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<TxFrame
 /// TODO we need a way to detect that translation is not responding and the entire test should fail
 #[test]
 fn test_setup_mining_connection_translate() {
-    runtime::run(
+    ii_async_compat::run(
         async {
             let (v1_tx, mut v1_rx) = mpsc::channel(1);
             let (v2_tx, mut v2_rx) = mpsc::channel(1);
@@ -160,7 +159,6 @@ fn test_setup_mining_connection_translate() {
             // Expect SubmitSharesSuccess to be generated
             await!(v2_verify_generated_response_message(&mut v2_rx));
         }
-            .compat_fix(),
     );
 }
 

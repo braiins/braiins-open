@@ -354,6 +354,15 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "ii-async-compat"
+version = "0.1.0"
+dependencies = [
+ "futures 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures-preview 0.3.0-alpha.16 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio 0.1.19 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "ii-bitcoin"
 version = "0.1.0"
 dependencies = [
@@ -407,6 +416,7 @@ dependencies = [
  "failure 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-preview 0.3.0-alpha.16 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ii-async-compat 0.1.0",
  "ii-logging 0.1.0",
  "ii-stratum 0.1.0",
  "ii-wire 0.1.0",

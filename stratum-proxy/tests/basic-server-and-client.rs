@@ -22,7 +22,6 @@ use ii_stratum::v2;
 
 use ii_stratum_proxy::server;
 
-use ii_wire::utils::CompatFix;
 use ii_wire::{Connection, Server};
 
 mod utils;
@@ -36,7 +35,7 @@ static PORT_V2_FULL: usize = 9003;
 fn test_v2server() {
     // FIXME: unwraps
 
-    tokio::run(
+    ii_async_compat::run(
         async {
             let addr = format!("{}:{}", ADDR, PORT_V2).parse().unwrap();
             let mut server = Server::<v2::Framing>::bind(&addr).unwrap();
@@ -63,7 +62,6 @@ fn test_v2server() {
             let response = await!(connection.next()).unwrap().unwrap();
             response.accept(&mut test_utils::v2::TestIdentityHandler);
         }
-            .compat_fix(),
     );
 }
 
@@ -76,7 +74,7 @@ fn test_v2server() {
 //    <F as ii_wire::Framing>::Tx: std::convert::From<ii_wire::TxFrame>,
 //    <F as ii_wire::Framing>::Rx:
 //{
-//    tokio::run(
+//    ii_async_compat::run(
 //        async {
 //            let addr = format!("{}:{}", ADDR, port).parse().unwrap();
 //
@@ -110,7 +108,6 @@ fn test_v2server() {
 //            let response = await!(connection.next()).unwrap().unwrap();
 //            response.accept(client_handler);
 //        }
-//            .compat_fix(),
 //    );
 //}
 
@@ -139,13 +136,13 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
 #[test]
 #[ignore]
 fn test_v1server() {
-    runtime::run(
+    ii_async_compat::run(
         async {
             let addr = format!("{}:{}", ADDR, PORT_V1).parse().unwrap();
 
             // Spawn server task that reacts to any incoming message and responds
             // with SetupMiningConnectionSuccess
-            runtime::spawn(v1server_task(addr).compat_fix());
+            ii_async_compat::spawn(v1server_task(addr));
 
             // Testing client
             let mut connection = await!(Connection::<v1::Framing>::connect(&addr))
@@ -157,7 +154,6 @@ fn test_v1server() {
             let response = await!(connection.next()).unwrap().unwrap();
             response.accept(&mut test_utils::v1::TestIdentityHandler);
         }
-            .compat_fix(),
     );
 }
 
@@ -181,25 +177,24 @@ async fn test_v2_client(server_addr: String) {
 
 #[test]
 fn test_v2server_full() {
-    runtime::run(
+    ii_async_compat::run(
         async {
             // This resolves to dbg.stratum.slushpool.com
             let addr_v1 = format!("{}:{}", "52.212.249.159", 3333);
             //            let addr_v1 = format!("{}:{}", ADDR, PORT_V1);
-            //            runtime::spawn(v1server_task(addr_v1.parse().unwrap()).compat_fix());
+            //            ii_async_compat::spawn(v1server_task(addr_v1.parse().unwrap()));
 
             let addr_v2 = format!("{}:{}", ADDR, PORT_V2_FULL);
             let v2server = server::ProxyServer::listen(addr_v2.clone(), addr_v1)
                 .expect("Could not bind v2server");
             let mut v2server_quit = v2server.quit_channel();
 
-            runtime::spawn(v2server.run().compat_fix());
+            ii_async_compat::spawn(v2server.run());
             await!(test_v2_client(addr_v2));
 
             // Signal the server to shut down
             let _ = v2server_quit.try_send(());
             // TODO kill v1 test server
         }
-            .compat_fix(),
     );
 }

@@ -10,7 +10,6 @@ use ii_stratum::v2;
 
 use ii_logging::macros::*;
 use ii_wire::tokio;
-use ii_wire::utils::CompatFix;
 use ii_wire::{Connection, Server, TxFrame};
 
 use crate::error::{ErrorKind, Result, ResultExt};
@@ -66,7 +65,7 @@ impl ConnTranslation {
                 }
             }
         };
-        tokio::spawn(v1_send_task.compat_fix());
+        ii_async_compat::spawn(v1_send_task);
 
         // V2 message send out loop
         let v2_send_task = async move {
@@ -77,7 +76,7 @@ impl ConnTranslation {
                 }
             }
         };
-        tokio::spawn(v2_send_task.compat_fix());
+        ii_async_compat::spawn(v2_send_task);
 
         loop {
             let v1_or_v2 = await!(future::select(v1_conn_rx.next(), v2_conn_rx.next()));
@@ -205,7 +204,7 @@ impl ProxyServer {
         let do_connect = move || {
             let conn = conn?;
             let peer_addr = conn.peer_addr()?;
-            tokio::spawn(handle_connection(conn, self.stratum_addr).compat_fix());
+            ii_async_compat::spawn(handle_connection(conn, self.stratum_addr));
             Ok(peer_addr)
         };
 

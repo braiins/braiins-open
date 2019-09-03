@@ -11,7 +11,6 @@ use ctrlc;
 use ii_logging::macros::*;
 use ii_stratum_proxy::server;
 use ii_wire::tokio;
-use ii_wire::utils::CompatFix;
 
 // TODO: defaults for listen & remote addrs?
 // static V2_ADDR: &'static str = "127.0.0.1:3334";
@@ -60,5 +59,5 @@ fn main() {
     })
     .expect("Could not set SIGINT handler");
 
-    tokio::run(server.run().compat_fix());
+    ii_async_compat::run(server.run());
 }
