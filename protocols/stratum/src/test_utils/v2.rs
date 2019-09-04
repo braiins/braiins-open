@@ -111,7 +111,7 @@ pub const SETUP_MINING_CONNECTION_SERIALIZED: &'static [u8] =
 pub fn build_setup_mining_connection() -> SetupMiningConnection {
     SetupMiningConnection {
         protocol_version: 0,
-        connection_url: String255::from_str(POOL_URL),
+        connection_url: Str0_255::from_str(POOL_URL),
         required_extranonce_size: 0,
     }
 }

@@ -77,22 +77,23 @@ impl From<Uint256Bytes> for ii_bitcoin::Target {
 }
 
 macro_rules! sized_string_type {
-    ($name:ident, $max_len:expr) => {
+    ($name:ident, $min_len:expr, $max_len:expr) => {
         #[derive(PartialEq, Eq, Serialize, Deserialize, Default, Clone, Debug)]
         pub struct $name(std::string::String);
 
         impl $name {
+            const MIN_LEN: usize = $min_len;
             const MAX_LEN: usize = $max_len;
 
             #[inline]
             pub fn new() -> Self {
-                Self(std::string::String::new())
+                Self::default()
             }
 
-            pub fn from_string(s: String) -> Self {
+            pub fn from_string(s: std::string::String) -> Self {
                 Self::try_from(s).expect(concat!(
                     "Could not convert String to ",
-                    "$name",
+                    stringify!($name),
                     " - string length out of range."
                 ))
             }
@@ -100,19 +101,9 @@ macro_rules! sized_string_type {
             pub fn from_str(s: &str) -> Self {
                 Self::try_from(s).expect(concat!(
                     "Could not convert &'str to ",
-                    "$name",
+                    stringify!($name),
                     " - string length out of range."
                 ))
-            }
-
-            #[inline]
-            pub fn as_str(&self) -> &str {
-                self.0.as_str()
-            }
-
-            #[inline]
-            pub fn as_bytes(&self) -> &[u8] {
-                self.0.as_bytes()
             }
         }
 
@@ -121,7 +112,7 @@ macro_rules! sized_string_type {
 
             #[inline]
             fn try_from(s: std::string::String) -> std::result::Result<Self, ()> {
-                if (1..=Self::MAX_LEN).contains(&s.len()) {
+                if (Self::MIN_LEN..=Self::MAX_LEN).contains(&s.len()) {
                     Ok(Self(s))
                 } else {
                     Err(())
@@ -134,8 +125,8 @@ macro_rules! sized_string_type {
 
             #[inline]
             fn try_from(s: &'a str) -> std::result::Result<Self, ()> {
-                if (1..=Self::MAX_LEN).contains(&s.len()) {
-                    Ok(Self(String::from(s)))
+                if (Self::MIN_LEN..=Self::MAX_LEN).contains(&s.len()) {
+                    Ok(Self(s.into()))
                 } else {
                     Err(())
                 }
@@ -164,14 +155,111 @@ macro_rules! sized_string_type {
         }
 
         impl std::ops::Deref for $name {
-            type Target = str;
+            type Target = std::string::String;
 
-            fn deref(&self) -> &str {
-                self.0.as_str()
+            fn deref(&self) -> &std::string::String {
+                &self.0
             }
         }
     };
 }
 
-sized_string_type!(String31, 31);
-sized_string_type!(String255, 255);
+macro_rules! sized_bytes_type {
+    ($name:ident, $min_len:expr, $max_len:expr) => {
+        #[derive(PartialEq, Eq, Serialize, Deserialize, Default, Clone, Debug)]
+        pub struct $name(std::boxed::Box<[u8]>);
+
+        impl $name {
+            const MIN_LEN: usize = $min_len;
+            const MAX_LEN: usize = $max_len;
+
+            #[inline]
+            pub fn new() -> Self {
+                Self::default()
+            }
+
+            pub fn from_vec(v: std::vec::Vec<u8>) -> Self {
+                Self::try_from(v).expect(concat!(
+                    "Could not convert Vec to ",
+                    stringify!($name),
+                    " - Vec length out of range."
+                ))
+            }
+
+            pub fn from_slice(s: &[u8]) -> Self {
+                Self::try_from(s).expect(concat!(
+                    "Could not convert &[u8] to ",
+                    stringify!($name),
+                    " - slice length out of range."
+                ))
+            }
+        }
+
+        impl std::convert::TryFrom<std::vec::Vec<u8>> for $name {
+            type Error = ();
+
+            #[inline]
+            fn try_from(v: std::vec::Vec<u8>) -> std::result::Result<Self, ()> {
+                if (Self::MIN_LEN..=Self::MAX_LEN).contains(&v.len()) {
+                    Ok(Self(v.into_boxed_slice()))
+                } else {
+                    Err(())
+                }
+            }
+        }
+
+        impl<'a> std::convert::TryFrom<&'a [u8]> for $name {
+            type Error = ();
+
+            #[inline]
+            fn try_from(s: &'a [u8]) -> std::result::Result<Self, ()> {
+                if (Self::MIN_LEN..=Self::MAX_LEN).contains(&s.len()) {
+                    Ok(Self(s.into()))
+                } else {
+                    Err(())
+                }
+            }
+        }
+
+        impl AsRef<[u8]> for $name {
+            #[inline]
+            fn as_ref(&self) -> &[u8] {
+                &*self.0
+            }
+        }
+
+        impl From<$name> for std::vec::Vec<u8> {
+            #[inline]
+            fn from(s: $name) -> std::vec::Vec<u8> {
+                s.0.into_vec()
+            }
+        }
+
+        impl From<$name> for std::boxed::Box<[u8]> {
+            #[inline]
+            fn from(s: $name) -> std::boxed::Box<[u8]> {
+                s.0
+            }
+        }
+
+        impl std::ops::Deref for $name {
+            type Target = [u8];
+
+            fn deref(&self) -> &[u8] {
+                &*self.0
+            }
+        }
+    };
+}
+
+sized_string_type!(Str0_32, 0, 32);
+sized_string_type!(Str1_32, 1, 32);
+sized_string_type!(Str0_255, 0, 255);
+sized_string_type!(Str1_255, 1, 255);
+
+sized_bytes_type!(Bytes0_32, 0, 32);
+sized_bytes_type!(Bytes1_32, 1, 32);
+sized_bytes_type!(Bytes0_255, 0, 255);
+sized_bytes_type!(Bytes1_255, 1, 255);
+sized_bytes_type!(Bytes0_64k, 0, 65535);
+sized_bytes_type!(Bytes1_64k, 1, 65535);

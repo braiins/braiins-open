@@ -98,7 +98,7 @@ macro_rules! impl_conversion {
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SetupMiningConnection {
     pub protocol_version: u16,
-    pub connection_url: String255,
+    pub connection_url: Str0_255,
     /// for header only mining, this fields stays at 0
     pub required_extranonce_size: u16,
 }

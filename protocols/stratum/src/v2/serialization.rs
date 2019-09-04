@@ -16,8 +16,10 @@ use serde::{de, ser, Deserialize, Serialize};
 
 #[derive(Debug)]
 pub enum Error {
-    /// When Stirng or byte sequence being serialized is too long
+    /// When String or byte sequence being (de)serialized is too long
     Overlong,
+    /// When String or byte sequence being (de)serialized is too short
+    TooShort,
     /// Type unsupported by the protocol
     Unsupported,
     /// Invalid Unicode string/character data
@@ -26,9 +28,7 @@ pub enum Error {
     EOF,
     /// Trailing data left after deserialization
     TrailingBytes,
-    /// Zero size for a type that should never contain empty value (ie. sized strings)
-    ZeroSize,
-    /// Bool needs to be either 0u8 or 1u8, other values are invalid
+    // /// Zero size for a type that should never contain empty value (ie. sized strings)
     BadBool,
     /// Custom error, TODO: more context
     Custom,
@@ -149,14 +149,12 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
         self.serialize_u32(v as u32)
     }
 
-    fn serialize_str(self, v: &str) -> Result<()> {
-        // XXX: is u32 appropriate here?
-        v.serialize(SizedSeqEmitter::<W, u32>::new(self))
+    fn serialize_str(self, _v: &str) -> Result<()> {
+        Err(Error::Unsupported)
     }
 
-    fn serialize_bytes(self, v: &[u8]) -> Result<()> {
-        // XXX: is u32 appropriate here?
-        v.serialize(SizedSeqEmitter::<W, u32>::new(self))
+    fn serialize_bytes(self, _v: &[u8]) -> Result<()> {
+        Err(Error::Unsupported)
     }
 
     fn serialize_none(self) -> Result<()> {
@@ -191,8 +189,18 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
         value: &T,
     ) -> Result<()> {
         match name {
-            "String31" => value.serialize(SizedSeqEmitter::<W, u8>::new(self)),
-            "String255" => value.serialize(SizedSeqEmitter::<W, u8>::new(self)),
+            "Str1_32" => value.serialize(SizedSeqEmitter::<W, u8>::new(self)),
+            "Str0_32" => value.serialize(SizedSeqEmitter::<W, u8>::new(self)),
+            "Str1_255" => value.serialize(SizedSeqEmitter::<W, u8>::new(self)),
+            "Str0_255" => value.serialize(SizedSeqEmitter::<W, u8>::new(self)),
+
+            "Bytes0_32" => value.serialize(SizedSeqEmitter::<W, u8>::new(self)),
+            "Bytes1_32" => value.serialize(SizedSeqEmitter::<W, u8>::new(self)),
+            "Bytes0_255" => value.serialize(SizedSeqEmitter::<W, u8>::new(self)),
+            "Bytes1_255" => value.serialize(SizedSeqEmitter::<W, u8>::new(self)),
+            "Bytes0_64k" => value.serialize(SizedSeqEmitter::<W, u16>::new(self)),
+            "Bytes1_64k" => value.serialize(SizedSeqEmitter::<W, u16>::new(self)),
+
             _ => value.serialize(self),
         }
     }
@@ -208,13 +216,8 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
         value.serialize(self)
     }
 
-    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
-        let len: u32 = len
-            .ok_or(Error::Unsupported)?
-            .try_into()
-            .map_err(|_| Error::Overlong)?;
-        self.serialize_u32(len)?;
-        Ok(self)
+    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
+        Err(Error::Unsupported)
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
@@ -224,9 +227,9 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
     fn serialize_tuple_struct(
         self,
         _name: &'static str,
-        len: usize,
+        _len: usize,
     ) -> Result<Self::SerializeTupleStruct> {
-        self.serialize_seq(Some(len))
+        Ok(self)
     }
 
     fn serialize_tuple_variant(
@@ -367,7 +370,7 @@ where
 {
     type Ok = ();
     type Error = Error;
-    type SerializeSeq = Impossible<(), Error>;
+    type SerializeSeq = Self;
     type SerializeTuple = Impossible<(), Error>;
     type SerializeTupleStruct = Impossible<(), Error>;
     type SerializeTupleVariant = Impossible<(), Error>;
@@ -429,10 +432,8 @@ where
         self.serializer.write(value.as_bytes())
     }
 
-    fn serialize_bytes(self, value: &[u8]) -> Result<()> {
-        let len = I::try_from(value.len()).map_err(|_| Error::Overlong)?;
-        len.serialize(&mut *self.serializer)?;
-        self.serializer.write(value)
+    fn serialize_bytes(self, _value: &[u8]) -> Result<()> {
+        unreachable!()
     }
 
     fn serialize_none(self) -> Result<()> {
@@ -469,8 +470,11 @@ where
         unreachable!()
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        unreachable!()
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+        let len = len.ok_or(Error::Unsupported)?;
+        let len = I::try_from(len).map_err(|_| Error::Overlong)?;
+        len.serialize(&mut *self.serializer)?;
+        Ok(self)
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
@@ -511,6 +515,23 @@ where
         _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
         unreachable!()
+    }
+}
+
+impl<'a, W, I> ser::SerializeSeq for SizedSeqEmitter<'a, W, I>
+where
+    W: io::Write,
+    I: TryFrom<usize> + Serialize,
+{
+    type Ok = ();
+    type Error = Error;
+
+    fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
+        value.serialize(&mut *self.serializer)
+    }
+
+    fn end(self) -> Result<()> {
+        Ok(())
     }
 }
 
@@ -581,7 +602,9 @@ impl<'de> Deserializer<'de> {
     #[inline]
     fn read_bytes(&mut self, size: usize) -> Result<&'de [u8]> {
         let res = self.input.as_slice().get(..size).ok_or(Error::EOF)?;
-        let _ = self.input.nth(size - 1);
+        if size > 0 {
+            let _ = self.input.nth(size - 1);
+        }
         Ok(res)
     }
 
@@ -592,17 +615,25 @@ impl<'de> Deserializer<'de> {
     }
 
     #[inline]
-    fn deserialize_sized_str<V: de::Visitor<'de>>(
+    fn deserialize_sized_seq<S, V>(
         &mut self,
+        min_size: usize,
         max_size: usize,
+        size_read_fn: fn(&mut Self) -> Result<S>,
         visitor: V,
-    ) -> Result<V::Value> {
-        let size = self.read_u8()? as usize;
+    ) -> Result<V::Value>
+    where
+        S: TryInto<usize>,
+        V: de::Visitor<'de>,
+    {
+        let size = size_read_fn(self)?
+            .try_into()
+            .map_err(|_| Error::Overlong)?;
 
         match size {
-            0 => Err(Error::ZeroSize),
+            size if size < min_size => Err(Error::TooShort),
             size if size > max_size => Err(Error::Overlong),
-            size => visitor.visit_newtype_struct(SizedStrDeserializer::new(self, size)),
+            size => visitor.visit_newtype_struct(SizedSeqDeserializer::new(self, size)),
         }
     }
 
@@ -689,28 +720,20 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_char(c)
     }
 
-    fn deserialize_str<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let size = self.read_u32()?;
-        let s = self.read_str(size as usize)?;
-        visitor.visit_str(s)
+    fn deserialize_str<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
+        Err(Error::Unsupported)
     }
 
-    fn deserialize_string<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let size = self.read_u32()?;
-        let s = self.read_str(size as usize)?;
-        visitor.visit_string(s.into())
+    fn deserialize_string<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
+        Err(Error::Unsupported)
     }
 
-    fn deserialize_bytes<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let size = self.read_u32()?;
-        let bytes = self.read_bytes(size as usize)?;
-        visitor.visit_bytes(bytes)
+    fn deserialize_bytes<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
+        Err(Error::Unsupported)
     }
 
-    fn deserialize_byte_buf<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let size = self.read_u32()?;
-        let bytes = self.read_bytes(size as usize)?;
-        visitor.visit_byte_buf(bytes.into())
+    fn deserialize_byte_buf<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
+        Err(Error::Unsupported)
     }
 
     fn deserialize_option<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
@@ -740,15 +763,24 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor: V,
     ) -> Result<V::Value> {
         match name {
-            "String31" => self.deserialize_sized_str(31, visitor),
-            "String255" => self.deserialize_sized_str(255, visitor),
+            "Str0_32" => self.deserialize_sized_seq(0, 32, Deserializer::read_u8, visitor),
+            "Str1_32" => self.deserialize_sized_seq(1, 32, Deserializer::read_u8, visitor),
+            "Str0_255" => self.deserialize_sized_seq(0, 255, Deserializer::read_u8, visitor),
+            "Str1_255" => self.deserialize_sized_seq(1, 255, Deserializer::read_u8, visitor),
+
+            "Bytes0_32" => self.deserialize_sized_seq(0, 32, Deserializer::read_u8, visitor),
+            "Bytes1_32" => self.deserialize_sized_seq(1, 32, Deserializer::read_u8, visitor),
+            "Bytes0_255" => self.deserialize_sized_seq(0, 255, Deserializer::read_u8, visitor),
+            "Bytes1_255" => self.deserialize_sized_seq(1, 255, Deserializer::read_u8, visitor),
+            "Bytes0_64k" => self.deserialize_sized_seq(0, 65535, Deserializer::read_u16, visitor),
+            "Bytes1_64k" => self.deserialize_sized_seq(1, 65535, Deserializer::read_u16, visitor),
+
             _ => visitor.visit_newtype_struct(self),
         }
     }
 
-    fn deserialize_seq<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let len = self.read_u32()? as usize;
-        self.deserialize_tuple(len, visitor)
+    fn deserialize_seq<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
+        Err(Error::Unsupported)
     }
 
     fn deserialize_tuple<V: de::Visitor<'de>>(self, len: usize, visitor: V) -> Result<V::Value> {
@@ -867,18 +899,18 @@ impl<'a, 'de> VariantAccess<'de> for &'a mut Deserializer<'de> {
     }
 }
 
-struct SizedStrDeserializer<'a, 'de> {
+struct SizedSeqDeserializer<'a, 'de> {
     deserializer: &'a mut Deserializer<'de>,
     size: usize,
 }
 
-impl<'a, 'de> SizedStrDeserializer<'a, 'de> {
+impl<'a, 'de> SizedSeqDeserializer<'a, 'de> {
     fn new(deserializer: &'a mut Deserializer<'de>, size: usize) -> Self {
         Self { deserializer, size }
     }
 }
 
-impl<'a, 'de> de::Deserializer<'de> for SizedStrDeserializer<'a, 'de> {
+impl<'a, 'de> de::Deserializer<'de> for SizedSeqDeserializer<'a, 'de> {
     type Error = Error;
 
     fn deserialize_any<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
@@ -974,8 +1006,37 @@ impl<'a, 'de> de::Deserializer<'de> for SizedStrDeserializer<'a, 'de> {
         visitor.visit_newtype_struct(self)
     }
 
-    fn deserialize_seq<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        unreachable!()
+    fn deserialize_seq<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        struct Access<'a, 'de> {
+            deserializer: &'a mut Deserializer<'de>,
+            len: usize,
+        }
+
+        impl<'a, 'de> SeqAccess<'de> for Access<'a, 'de> {
+            type Error = Error;
+
+            fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
+            where
+                T: DeserializeSeed<'de>,
+            {
+                if self.len > 0 {
+                    self.len -= 1;
+                    let value = DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
+                    Ok(Some(value))
+                } else {
+                    Ok(None)
+                }
+            }
+
+            fn size_hint(&self) -> Option<usize> {
+                Some(self.len)
+            }
+        }
+
+        visitor.visit_seq(Access {
+            deserializer: self.deserializer,
+            len: self.size,
+        })
     }
 
     fn deserialize_tuple<V: de::Visitor<'de>>(self, _len: usize, _visitor: V) -> Result<V::Value> {
@@ -1053,46 +1114,49 @@ mod test {
 
     #[test]
     fn v2_serialize_string() {
-        let s: String31 = "abc".try_into().expect("String31 constructor failure");
+        let s: Str1_32 = "abc".try_into().expect("Str1_32 constructor failure");
         let bytes = to_vec(&s).expect("Serialization failure");
         assert_eq!(&bytes, &[3, 0x61, 0x62, 0x63]);
 
-        let s: String255 = "abc".try_into().expect("String255 constructor failure");
+        let s: Str1_255 = "abc".try_into().expect("Str1_255 constructor failure");
         let bytes = to_vec(&s).expect("Serialization failure");
         assert_eq!(&bytes, &[3, 0x61, 0x62, 0x63]);
+
+        // Zero-sized string
+        let s = Str0_32::new();
+        let bytes = to_vec(&s).expect("Serialization failure");
+        assert_eq!(&bytes, &[0]);
 
         // Overlong strings
         let s_long: String = iter::repeat('_').take(256).collect();
-        String31::try_from(&s_long[..31]).expect("String31 constructor failure");
-        String31::try_from(&s_long[..32])
+        Str1_32::try_from(&s_long[..32]).expect("Str1_32 constructor failure");
+        Str1_32::try_from(&s_long[..33])
             .err()
-            .expect("String31 constructor didn't fail but should have");
+            .expect("Str1_32 constructor didn't fail but should have");
 
-        String255::try_from(&s_long[..255]).expect("String255 constructor failure");
-        String255::try_from(s_long)
+        Str1_255::try_from(&s_long[..255]).expect("Str1_255 constructor failure");
+        Str1_255::try_from(s_long)
             .err()
-            .expect("String255 constructor didn't fail but should have");
-
-        // Test with a non-StringX newtype too to make sure they're handled correctly
-        #[derive(Serialize)]
-        struct MyNewtype(String);
-        let s = MyNewtype("abc".into());
-        let bytes = to_vec(&s).expect("Serialization failed");
-        assert_eq!(&bytes, &[3, 0, 0, 0, 0x61, 0x62, 0x63]);
+            .expect("Str1_255 constructor didn't fail but should have");
     }
 
     #[test]
     fn v2_deserialize_string() {
         let bytes = [3, 0x61, 0x62, 0x63];
-        let s: String31 = from_slice(&bytes).expect("Deserialization failure");
+        let s: Str1_32 = from_slice(&bytes).expect("Deserialization failure");
         assert_eq!(s.as_str(), "abc");
 
-        let s: String255 = from_slice(&bytes).expect("Deserialization failure");
+        let s: Str1_255 = from_slice(&bytes).expect("Deserialization failure");
         assert_eq!(s.as_str(), "abc");
+
+        // Zero-sized string
+        let bytes = [0];
+        let s: Str0_255 = from_slice(&bytes).expect("Deserialization failure");
+        assert_eq!(s.as_str(), "");
 
         // Overlong string
-        let bytes = [32];
-        match from_slice::<String31>(&bytes) {
+        let bytes = [33];
+        match from_slice::<Str1_32>(&bytes) {
             Err(Error::Overlong) => {}
             Err(err) => panic!(
                 "Deserialization failed with unexpected error value: {:?}",
@@ -1101,10 +1165,70 @@ mod test {
             Ok(_) => panic!("Deserialization didn't fail but should have"),
         }
 
-        // Unecpected zero size
+        // Unexpected zero size
         let bytes = [0];
-        match from_slice::<String255>(&bytes) {
-            Err(Error::ZeroSize) => {}
+        match from_slice::<Str1_255>(&bytes) {
+            Err(Error::TooShort) => {}
+            Err(err) => panic!(
+                "Deserialization failed with unexpected error value: {:?}",
+                err
+            ),
+            Ok(_) => panic!("Deserialization didn't fail but should have"),
+        }
+    }
+
+    #[test]
+    fn v2_serialize_bytes() {
+        let bytes: Bytes0_32 = vec![1, 2, 3]
+            .try_into()
+            .expect("Bytes0_32 constructor failure");
+        let bytes = to_vec(&bytes).expect("Serialization failure");
+        assert_eq!(&bytes, &[3, 1, 2, 3]);
+
+        let bytes: Bytes1_64k = vec![1, 2, 3]
+            .try_into()
+            .expect("Bytes1_64k constructor failure");
+        let bytes = to_vec(&bytes).expect("Serialization failure");
+        assert_eq!(&bytes, &[3, 0, 1, 2, 3]);
+
+        // Zero-sized byte buffer
+        let bytes = Bytes0_255::new();
+        let bytes = to_vec(&bytes).expect("Serialization failure");
+        assert_eq!(&bytes, &[0]);
+
+        // Overlong buffer
+        let bytes: Vec<u8> = iter::repeat(1).take(256).collect();
+        Bytes1_32::try_from(&bytes[..32]).expect("Bytes1_32 constructor failure");
+        Bytes1_32::try_from(&bytes[..33])
+            .err()
+            .expect("Bytes1_32 constructor didn't fail but should have");
+
+        // Large buffer
+        let bytes: Vec<u8> = iter::repeat(1).take(64 * 1024 - 1).collect();
+        let bytes: Bytes0_64k = bytes.try_into().expect("Bytes1_64k constructor failure");
+        let bytes = to_vec(&bytes).expect("Serialization failure");
+        assert_eq!(&bytes[..2], &[0xff, 0xff]);
+    }
+
+    #[test]
+    fn v2_deserialize_bytes() {
+        let bytes = [3, 1, 2, 3];
+        let bytes: Bytes0_32 = from_slice(&bytes).expect("Deserialization failure");
+        assert_eq!(&*bytes, &[1, 2, 3]);
+
+        let bytes = [3, 0, 1, 2, 3];
+        let bytes: Bytes1_64k = from_slice(&bytes).expect("Deserialization failure");
+        assert_eq!(&*bytes, &[1, 2, 3]);
+
+        // Zero-sized buffer
+        let bytes = [0];
+        let s: Bytes0_255 = from_slice(&bytes).expect("Deserialization failure");
+        assert_eq!(s.len(), 0);
+
+        // Overlong buffer
+        let bytes = [33];
+        match from_slice::<Bytes1_32>(&bytes) {
+            Err(Error::Overlong) => {}
             Err(err) => panic!(
                 "Deserialization failed with unexpected error value: {:?}",
                 err
@@ -1112,14 +1236,19 @@ mod test {
             Ok(_) => panic!("Deserialization didn't fail but should have"),
         }
 
-        // Test with a non-StringX newtype too to make sure they're handled correctly
-        #[derive(Deserialize)]
-        struct MyNewtype(String);
-        let bytes = [3, 0, 0, 0, 0x61, 0x62, 0x63];
-        let s: MyNewtype = from_slice(&bytes).expect("Deserialization failed");
-        assert_eq!(&s.0, "abc");
+        // Unexpected zero size
+        let bytes = [0];
+        match from_slice::<Bytes1_255>(&bytes) {
+            Err(Error::TooShort) => {}
+            Err(err) => panic!(
+                "Deserialization failed with unexpected error value: {:?}",
+                err
+            ),
+            Ok(_) => panic!("Deserialization didn't fail but should have"),
+        }
     }
 
+    // FIXME: split types
     #[test]
     fn v2_serialization_roundtrip() {
         #[derive(PartialEq, Serialize, Deserialize, Debug)]
@@ -1140,9 +1269,8 @@ mod test {
             num_i32: i32,
             num_u64: u64,
             num_i64: i64,
-            s: String,
-            s_31: String31,
-            s_255: String255,
+            s_32: Str1_32,
+            s_255: Str1_255,
             e_unit: MyEnum,
             e_tuple: MyEnum,
             e_struct: MyEnum,
@@ -1158,9 +1286,8 @@ mod test {
             num_i32: -3,
             num_u64: 4,
             num_i64: -4,
-            s: String::from("Hello, World!"),
-            s_31: String31::try_from("Hello, World!").expect("String31 c-tor failed"),
-            s_255: String255::try_from("Hello, World!").expect("String255 c-tor failed"),
+            s_32: Str1_32::try_from("Hello, World!").expect("Str1_32 c-tor failed"),
+            s_255: Str1_255::try_from("Hello, World!").expect("Str1_255 c-tor failed"),
             e_unit: MyEnum::Unit,
             e_tuple: MyEnum::Tuple(3.14),
             e_struct: MyEnum::Struct { data: 1.618 },
