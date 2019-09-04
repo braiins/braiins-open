@@ -122,13 +122,15 @@ def main():
     print(
         'accepted shares:',
         pool.accepted_shares,
-        'submits accepted:',
+        'accepted submits:',
         pool.accepted_submits,
     )
     print(
-        'rejected shares:',
-        pool.rejected_shares,
-        'submits rejected:',
+        'stale shares:',
+        pool.stale_shares,
+        'stale submits:',
+        pool.stale_submits,
+        'rejected submits:',
         pool.rejected_submits,
     )
 

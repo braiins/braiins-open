@@ -116,7 +116,17 @@ class PoolV1(Pool):
             'SUBMIT: { }'.format(mining_session.state),
             msg,
         )
-        self.process_submit(msg.job_id, mining_session)
+        self.process_submit(
+            msg.job_id,
+            mining_session,
+            on_accept=lambda: self._send_msg(
+                mining_session.owner.uid, OkResult(msg.req_id)
+            ),
+            on_reject=lambda: self._send_msg(
+                mining_session.owner.uid,
+                ErrorResult(-3, 'Too low difficulty'),
+            ),
+        )
 
     def _on_vardiff_change(self, session: MiningSession):
         """Handle difficulty change for the current session.
@@ -140,12 +150,6 @@ class PoolV1(Pool):
             self._send_msg(
                 session.owner.uid, self.__build_mining_notify(session, clean_jobs=True)
             )
-
-    def _on_submit_accepted(self):
-        pass
-
-    def on_submit_rejected(self):
-        pass
 
     def _on_invalid_message(self, msg):
         self._send_msg(

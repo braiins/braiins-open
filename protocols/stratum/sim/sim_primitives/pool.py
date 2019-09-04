@@ -107,7 +107,15 @@ class MiningSession:
     @property
     def curr_target(self):
         """Derives target from current difficulty on the session"""
-        return self.diff_1_target // self.curr_diff
+        return self.diff2target(self.curr_diff)
+
+    def target2diff(self, target):
+        """Converts target to difficulty at the network where this session is running."""
+        return self.diff_1_target // target
+
+    def diff2target(self, diff):
+        """Converts difficu to target at the network where this session is running."""
+        return self.diff_1_target // diff
 
     def run(self):
         """Explicit activation starts any simulation processes associated with the session"""
@@ -146,6 +154,18 @@ class MiningSession:
 
 
 class Pool(AcceptingConnection):
+    """Represents a generic mining pool.
+
+    The pool keeps statistics about:
+
+    - accepted submits and shares: submit count and difficulty sum (shares) for valid
+    solutions
+    - stale submits and shares: submit count and difficulty sum (shares) for solutions
+    that have been sent after new block is found
+    - rejected submits: submit count of invalid submit attempts that don't refer any
+    particular job
+    """
+
     meter_period = 60
 
     def __init__(
@@ -180,7 +200,7 @@ class Pool(AcceptingConnection):
         self.pow_update_process = env.process(self.__pow_update())
 
         self.meter_accepted = HashrateMeter(self.env)
-        self.meter_rejected = HashrateMeter(self.env)
+        self.meter_rejected_stale = HashrateMeter(self.env)
         self.meter_process = env.process(self.__pool_speed_meter())
         self.enable_vardiff = enable_vardiff
         self.desired_submits_per_sec = desired_submits_per_sec
@@ -189,15 +209,18 @@ class Pool(AcceptingConnection):
         self.extra_meters = []
 
         self.accepted_submits = 0
+        self.stale_submits = 0
         self.rejected_submits = 0
+
         self.accepted_shares = 0
-        self.rejected_shares = 0
+        self.stale_shares = 0
 
     def reset_stats(self):
         self.accepted_submits = 0
+        self.stale_submits = 0
         self.rejected_submits = 0
         self.accepted_shares = 0
-        self.rejected_shares = 0
+        self.stale_shares = 0
 
     def connect_in(self, connection: Connection):
         if connection.port != 'stratum':
@@ -234,37 +257,38 @@ class Pool(AcceptingConnection):
     def add_extra_meter(self, meter: HashrateMeter):
         self.extra_meters.append(meter)
 
-    def process_submit(self, submit_job_uid, session: MiningSession):
+    def process_submit(
+        self, submit_job_uid, session: MiningSession, on_accept, on_reject
+    ):
+        if not session.job_registry.contains(submit_job_uid):
+            diff = None
+        else:
+            diff = session.target2diff(
+                session.job_registry.get_job_diff_target(submit_job_uid)
+            )
 
-        diff = session.job_registry.get_job_diff(job_uid)
         # Accept all jobs with valid UID
         if session.job_registry.is_job_uid_valid(submit_job_uid):
             self.accepted_submits += 1
             self.accepted_shares += diff
             self.meter_accepted.measure(diff)
-
             session.meter.measure(diff)
-
-            self._on_submit_accepted(session)
+            on_accept(diff)
         else:
-            self.rejected_submits += 1
-            self.rejected_shares += diff
-            self.meter_rejected.measure(diff)
-            self._on_submit_rejected(session)
+            # Account for stale submits and shares (but job exists in the registry)
+            if diff is not None:
+                self.stale_submits += 1
+                self.stale_shares += diff
+                self.meter_rejected_stale.measure(diff)
+            else:
+                self.rejected_submits += 1
+            on_reject(diff)
 
     def _send_msg(self, conn_uid, msg):
         self.connections[conn_uid].incoming.put(msg)
 
     @abstractmethod
     def _on_new_block(self):
-        pass
-
-    @abstractmethod
-    def _on_submit_accepted(self):
-        pass
-
-    @abstractmethod
-    def _on_submit_rejected(self):
         pass
 
     @abstractmethod
