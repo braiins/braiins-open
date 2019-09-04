@@ -1,4 +1,5 @@
 """Generic mining protocol primitives"""
+import stringcase
 
 
 class Message:
@@ -10,4 +11,6 @@ class Message:
 
     def accept(self, visitor):
         """Call visitor method based on the actual message type."""
-        getattr(visitor, 'visit_{}'.format(type(self).__name__.lower()))(self)
+        getattr(visitor, 'visit_{}'.format(stringcase.snakecase(type(self).__name__)))(
+            self
+        )
