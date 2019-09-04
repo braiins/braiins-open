@@ -30,32 +30,40 @@ class MiningJobRegistry:
 
     def __init__(self):
         # Tracking mininum valid job ID
-        self.min_valid_job_uid = self.curr_job_uid = 0
+        self.min_valid_job_uid = self.next_job_uid = 0
         # Registered jobs based on their uid
         self.jobs = dict()
 
-    def append(self, job: MiningJob):
-        self.jobs[job.uid] = job
+    def new_mining_job(self, diff_target):
+        """Prepares new mining job and registers it internally"""
+        new_job = MiningJob(diff_target, self.__next_job_uid())
+        self.jobs[new_job.uid] = new_job
+        return new_job
 
-    def new_mining_job(self, diff_target, retire_old_jobs):
-        """Prepares new mining job optionally marking old jobs stale"""
-        return MiningJob(diff_target, self.__next_job_uid(retire_old_jobs))
+    def get_job_diff_target(self, job_uid):
+        return self.jobs[job_uid].diff_target
 
-    def get_job_diff(self, job_uid):
-        return self.jobs[job_uid].uid
+    def contains(self, job_uid):
+        """Job ID presence check
+        :return True when when such Job ID exists in the registry (it may still not
+        be valid)"""
+        return job_uid in self.jobs
 
     def is_job_uid_valid(self, job_uid):
         """A valid job """
         return self.jobs[job_uid] >= self.min_valid_job_uid
 
-    def __next_job_uid(self, retire_old_jobs):
+    def retire_all_jobs(self):
+        """Make all jobs invalid"""
+        self.min_valid_job_uid = self.next_job_uid
+
+    def __next_job_uid(self):
         """Initializes a new job ID for this session.
-        The minimum valid is optionally adjusted when old jobs are to be marked as stale
         """
-        self.curr_job_uid += 1
-        if retire_old_jobs:
-            self.min_valid_job_uid = self.curr_job_uid
-        return self.curr_job_uid
+        curr_job_uid = self.next_job_uid
+        self.next_job_uid += 1
+
+        return curr_job_uid
 
 
 class MiningSession:
