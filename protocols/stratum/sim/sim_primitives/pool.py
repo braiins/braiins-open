@@ -260,7 +260,7 @@ class Pool(AcceptingConnection):
         pass
 
     @abstractmethod
-    def _on_invalid_message(self):
+    def _on_invalid_message(self, msg):
         pass
 
     def __receive_loop(self, conn_uid: str):
