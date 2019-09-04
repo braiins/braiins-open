@@ -3,43 +3,49 @@ from ..protocol import Message
 
 
 class Configure(Message):
-    def __init__(self, extensions, extension_params):
+    def __init__(self, req_id, extensions, extension_params):
         self.extensions = extensions
         self.extension_params = extension_params
+        super().__init__(req_id)
 
 
 class Authorize(Message):
-    def __init__(self, user_name, password):
+    def __init__(self, req_id, user_name, password):
         self.user_name = user_name
         self.password = password
+        super().__init__(req_id)
 
 
 class Subscribe(Message):
-    def __init__(self, signature, extranonce1, url):
+    def __init__(self, req_id, signature, extranonce1, url):
         self.signature = signature
         self.extranonce1 = extranonce1
         self.url = url
+        super().__init__(req_id)
 
 
 class SubscribeResponse(Message):
-    def __init__(self, subscription_ids, extranonce1, extranonce2_size):
+    def __init__(self, req_id, subscription_ids, extranonce1, extranonce2_size):
         self.subscription_ids = subscription_ids
         self.extranonce1 = extranonce1
         self.extranonce2_size = extranonce2_size
+        super().__init__(req_id)
 
 
 class SetDifficulty(Message):
     def __init__(self, diff):
         self.diff = diff
+        super().__init__()
 
 
 class Submit(Message):
-    def __init__(self, user_name, job_id, extranonce2, time, nonce):
+    def __init__(self, req_id, user_name, job_id, extranonce2, time, nonce):
         self.user_name = user_name
         self.job_id = job_id
         self.extranonce2 = extranonce2
         self.time = time
         self.nonce = nonce
+        super().__init__(req_id)
 
 
 class Notify(Message):
@@ -64,6 +70,7 @@ class Notify(Message):
         self.bits = bits
         self.time = time
         self.clean_jobs = clean_jobs
+        super().__init__()
 
 
 class OkResult(Message):
@@ -71,6 +78,7 @@ class OkResult(Message):
 
 
 class ErrorResult(Message):
-    def __init__(self, code, msg):
+    def __init__(self, req_id, code, msg):
         self.code = code
         self.msg = msg
+        super().__init__(req_id)

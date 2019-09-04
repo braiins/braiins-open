@@ -5,9 +5,8 @@ import stringcase
 class Message:
     """Generic message """
 
-    def __init__(self):
-        pass
-        # self.conn_uid = conn_uid
+    def __init__(self, req_id=None):
+        self.req_id = req_id
 
     def accept(self, visitor):
         """Call visitor method based on the actual message type."""

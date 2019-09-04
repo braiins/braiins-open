@@ -106,6 +106,8 @@ class PoolV1(Pool):
             'AUTHORIZE: {}'.format(mining_session.state),
             msg,
         )
+        # TODO: Implement username validation and fail to authorize for unknown usernames
+        self._send_msg(mining_session.owner.uid, OkResult(msg.req_id))
 
     def visit_submit(self, msg: Submit):
         mining_session = self._current_mining_session()
@@ -124,7 +126,7 @@ class PoolV1(Pool):
             ),
             on_reject=lambda: self._send_msg(
                 mining_session.owner.uid,
-                ErrorResult(-3, 'Too low difficulty'),
+                ErrorResult(msg.req_id, -3, 'Too low difficulty'),
             ),
         )
 
@@ -154,7 +156,7 @@ class PoolV1(Pool):
     def _on_invalid_message(self, msg):
         self._send_msg(
             self.active_conn_uid,
-            ErrorResult(-2, 'Unrecognized message: {}'.format(msg)),
+            ErrorResult(None, -2, 'Unrecognized message: {}'.format(msg)),
         )
 
     def _current_mining_session(self):
