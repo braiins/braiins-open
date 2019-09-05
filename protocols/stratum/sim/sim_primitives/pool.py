@@ -1,11 +1,10 @@
 from .network import Connection, AcceptingConnection, gen_uid
-
+from .protocol import ConnectionProcessor
 import hashlib
 import numpy as np
 import simpy
 from event_bus import EventBus
 from sim_primitives.hashrate_meter import HashrateMeter
-from abc import abstractmethod
 
 
 class MiningJob:
@@ -173,6 +172,7 @@ class Pool(AcceptingConnection):
         name: str,
         env: simpy.Environment,
         bus: EventBus,
+        connection_processor_clz,
         default_difficulty: int = 100000,
         diff_1_target: int = 0xFFFF << 208,
         extranonce2_size: int = 8,
@@ -181,6 +181,10 @@ class Pool(AcceptingConnection):
         desired_submits_per_sec: float = 0.3,
         simulate_luck: bool = True,
     ):
+        """
+
+        :type connection_processor_clz: MessageProcessor or its ancestor class
+        """
         self.name = name
         self.env = env
         self.bus = bus
@@ -189,14 +193,12 @@ class Pool(AcceptingConnection):
         self.extranonce2_size = extranonce2_size
         self.avg_pool_block_time = avg_pool_block_time
 
-        self.connections = dict()
         # Prepare initial prevhash for the very first
         self.__generate_new_prev_hash()
-        # TODO: review alternatives for current connection processing
-        # Connection that is currently being processed
-        self.active_conn_uid = None
+        # Per connection message processors
+        self.connection_processors = dict()
+        self.connection_processor_clz = connection_processor_clz
 
-        self.recv_loop_processes = dict()
         self.pow_update_process = env.process(self.__pow_update())
 
         self.meter_accepted = HashrateMeter(self.env)
@@ -225,17 +227,14 @@ class Pool(AcceptingConnection):
     def connect_in(self, connection: Connection):
         if connection.port != 'stratum':
             raise ValueError('{} port is not supported'.format(connection.port))
-        self.connections[connection.uid] = connection
-        self.recv_loop_processes[connection.uid] = self.env.process(
-            self.__receive_loop(connection.uid)
-        )
+        # Build message processor for the new connection
+        self.connection_processors[connection.uid] = self.connection_processor_clz(self, connection)
 
     def disconnect(self, connection: Connection):
-        if connection.uid not in self.connections:
+        if connection.uid not in self.connection_processors:
             return
-        self.recv_loop_processes[connection.uid].interrupt()
-        del self.connections[connection.uid]
-        del self.recv_loop_processes[connection.uid]
+        self.connection_processors[connection.uid].terminate()
+        del self.connection_processors[connection.uid]
 
     def new_mining_session(self, owner, on_vardiff_change, clz=MiningSession):
         """Creates a new mining session"""
@@ -257,6 +256,19 @@ class Pool(AcceptingConnection):
     def add_extra_meter(self, meter: HashrateMeter):
         self.extra_meters.append(meter)
 
+    def account_accepted_shares(self, diff):
+        self.accepted_submits += 1
+        self.accepted_shares += diff
+        self.meter_accepted.measure(diff)
+
+    def account_stale_shares(self, diff):
+        self.stale_submits += 1
+        self.stale_shares += diff
+        self.meter_rejected_stale.measure(diff)
+
+    def account_rejected_submits(self):
+        self.rejected_submits += 1
+
     def process_submit(
         self, submit_job_uid, session: MiningSession, on_accept, on_reject
     ):
@@ -269,54 +281,16 @@ class Pool(AcceptingConnection):
 
         # Accept all jobs with valid UID
         if session.job_registry.is_job_uid_valid(submit_job_uid):
-            self.accepted_submits += 1
-            self.accepted_shares += diff
-            self.meter_accepted.measure(diff)
+            self.account_accepted_shares(diff)
             session.meter.measure(diff)
             on_accept(diff)
         else:
             # Account for stale submits and shares (but job exists in the registry)
             if diff is not None:
-                self.stale_submits += 1
-                self.stale_shares += diff
-                self.meter_rejected_stale.measure(diff)
+                self.account_stale_shares(diff)
             else:
-                self.rejected_submits += 1
+                self.account_rejected_submits()
             on_reject(diff)
-
-    def _send_msg(self, conn_uid, msg):
-        self.connections[conn_uid].incoming.put(msg)
-
-    @abstractmethod
-    def _on_new_block(self):
-        pass
-
-    @abstractmethod
-    def _on_invalid_message(self, msg):
-        pass
-
-    def __receive_loop(self, conn_uid: str):
-        """
-        :param conn_uid:
-        """
-        while True:
-            try:
-                msg = yield self.connections[conn_uid].outgoing.get()
-                self.bus.emit(
-                    self.name, self.env.now, conn_uid, 'INCOMING: {}'.format(msg)
-                )
-                try:
-                    # Set the connection UID for later processing in the
-                    # visitor method
-                    self.active_conn_uid = conn_uid
-                    msg.accept(self)
-                except AttributeError as e:
-                    self._on_invalid_message(msg)
-                self.active_conn_uid = None
-
-            except simpy.Interrupt:
-                self.bus.emit(self.name, self.env.now, conn_uid, 'DISCONNECTED')
-                break  # terminate the event loop
 
     def __pow_update(self):
         """This process simulates finding new blocks based on pool's hashrate"""
@@ -336,7 +310,8 @@ class Pool(AcceptingConnection):
                 None,
                 'NEW_BLOCK: {}'.format(self.prev_hash.hex()),
             )
-            self._on_new_block()
+            for connection_processor in self.connection_processors:
+                connection_processor.on_new_block()
 
     def __generate_new_prev_hash(self):
         """Generates a new prevhash based on current time.
