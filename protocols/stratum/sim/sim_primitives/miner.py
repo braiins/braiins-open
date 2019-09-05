@@ -1,8 +1,10 @@
 import numpy as np
 import simpy
-from .network import Connection, gen_uid
 from event_bus import EventBus
-from sim_primitives.stratum_v1.messages import Notify, Submit
+import sim_primitives.coins as coins
+from .pool import MiningSession, MiningJob
+from .hashrate_meter import HashrateMeter
+from .network import Connection
 
 
 class Miner(object):
@@ -11,15 +13,19 @@ class Miner(object):
         name: str,
         env: simpy.Environment,
         bus: EventBus,
-        speed_gh: float,
-        connection: Connection,
+        diff_1_target: int,
+        miner_protocol_type,
+        speed_ghps: float,
         simulate_luck=True,
     ):
         self.name = name
         self.env = env
         self.bus = bus
-        self.speed_gh = speed_gh
-        self.connection = connection
+        self.diff_1_target = diff_1_target
+        self.miner_protocol_type = miner_protocol_type
+        self.connection_processor = None
+        self.speed_ghps = speed_ghps
+        self.work_meter = HashrateMeter(env)
         self.mine_proc = None
         self.job_uid = None
         self.share_diff = None
@@ -27,93 +33,94 @@ class Miner(object):
         self.is_mining = True
         self.simulate_luck = simulate_luck
 
-    def receive_loop(self):
-        while True:
-            try:
-                x = yield self.connection.incoming.get()
-                if isinstance(x, Notify):
-                    self.job_uid = x.job_id
-                    # Share difficulty comes separately
-                    # self.share_diff = x.share_diff
-                    if self.mine_proc is None:
-                        self.bus.emit(self.name, self.env.now, 'starting miner')
-                        self.mine_proc = self.env.process(self.mine())
-                    else:
-                        self.mine_proc.interrupt()  # force restart
-                #
-                # elif isinstance(x, SubmitAccepted):
-                #     self.bus.emit(self.name, self.env.now, 'submit accepted')
-                # elif isinstance(x, SubmitRejected):
-                #     self.bus.emit(self.name, self.env.now, 'submit rejected')
-            except simpy.Interrupt:
-                self.bus.emit(self.name, self.env.now, 'terminating recv loop')
-                break
-
     def get_actual_speed(self):
-        return self.speed_gh if self.is_mining else 0
+        return self.speed_ghps if self.is_mining else 0
 
-    def mine(self):
-        avg_time = self.share_diff * 4.294967296 / self.speed_gh
-        self.bus.emit(
-            self.name,
-            self.env.now,
-            'mining with diff {} / speed {} GHs / avg block time {} / job uid {}'.format(
-                self.share_diff, self.speed_gh, avg_time, self.job_uid
-            ),
-        )
+    def mine(self, job: MiningJob):
+        share_diff = job.diff_target.to_difficulty()
+        avg_time = share_diff * 4.294967296 / self.speed_ghps
+
+        # Report the current hashrate at the beginning when of mining
+        self.__emit_hashrate_msg_on_bus(job, avg_time)
+
         while True:
             try:
                 yield self.env.timeout(
                     np.random.exponential(avg_time) if self.simulate_luck else avg_time
                 )
             except simpy.Interrupt:
-                if not self.connection.is_connected():
-                    self.bus.emit(
-                        self.name, self.env.now, 'mining stopped (not connected)'
-                    )
-                    break
+                self.__emit_aux_msg_on_bus('Mining aborted (external signal)')
+                break
 
-                self.bus.emit(
-                    self.name, self.env.now, 'job/diff changed, restarting miner'
-                )
-                avg_time = self.share_diff * 4.294967296 / self.speed_gh
-                self.bus.emit(
-                    self.name,
-                    self.env.now,
-                    'mining with diff {} / speed {} GHs / avg block time {} / job uid {}'.format(
-                        self.share_diff, self.speed_gh, avg_time, self.job_uid
-                    ),
-                )
-                continue
+            # To simulate miner failures we can disable mining
             if self.is_mining:
-                submit_uid = gen_uid(self.env)
-                self.bus.emit(
-                    self.name,
-                    self.env.now,
-                    'solution {} found for job {}'.format(submit_uid, self.job_uid),
-                )
+                self.work_meter.measure(share_diff)
+                self.__emit_hashrate_msg_on_bus(job, avg_time)
+                self.__emit_aux_msg_on_bus('solution found for job {}'.format(job.uid))
 
-                self.connection.outgoing.put(
-                    Submit(
-                        self.name, self.job_uid, 'extranonce2', self.env.now, 'nonce'
-                    )
-                )
+                self.connection_processor.submit_mining_solution(job)
 
-    def connect_to_pool(self, target):
-        self.bus.emit(
-            self.name, self.env.now, 'connecting to pool {}'.format(target.name)
-        )
-        self.connection.connect_to(target)
-        self.recv_loop_process = self.env.process(self.receive_loop())
+    def connect_to_pool(self, connection: Connection, target):
+        assert self.connection_processor is None, 'BUG: miner is already connected'
+        connection.connect_to(target)
+
+        self.connection_processor = self.miner_protocol_type(self, connection)
+        self.__emit_aux_msg_on_bus('Connecting to pool {}'.format(target.name))
 
     def disconnect(self):
-        if not self.connection.is_connected():
-            raise ValueError('Not connected')
-        self.bus.emit(self.name, self.env.now, 'disconnecting')
+        self.__emit_aux_msg_on_bus('Disconnecting from pool')
         if self.mine_proc:
             self.mine_proc.interrupt()
-        self.recv_loop_process.interrupt()
-        self.connection.disconnect()
+        # Mining is shutdown, terminate any protocol message processing
+        self.connection_processor.terminate()
+        self.connection_processor.disconnect()
+        self.connection_processor = None
+
+    def new_mining_session(self, diff_target: coins.Target):
+        """Creates a new mining session"""
+        session = MiningSession(
+            name=self.name,
+            env=self.env,
+            bus=self.bus,
+            # TODO remove once the backlinks are not needed
+            owner=None,
+            diff_target=diff_target,
+            enable_vardiff=False,
+        )
+        self.__emit_aux_msg_on_bus('NEW MINING SESSION ()'.format(session))
+        return session
+
+    def mine_on_new_job(self, job: MiningJob, flush_any_pending_work=True):
+        """Start working on a new job
+
+         TODO implement more advanced flush policy handling (e.g. wait for the current
+          job to finish if flush_flush_any_pending_work is not required)
+        """
+        # Interrupt the mining process for now
+        if self.mine_proc is not None:
+            self.mine_proc.interrupt()
+        # Restart the process with a new job
+        self.mine_proc = self.env.process(self.mine(job))
 
     def set_is_mining(self, is_mining):
         self.is_mining = is_mining
+
+    def __emit_aux_msg_on_bus(self, msg: str):
+        self.bus.emit(
+            self.name, self.env.now, self.connection_processor.connection.uid, msg
+        )
+
+    def __emit_hashrate_msg_on_bus(self, job: MiningJob, avg_share_time):
+        """Reports hashrate statistics on the message bus
+
+        :param job: current job that is being mined
+        :return:
+        """
+        self.__emit_aux_msg_on_bus(
+            'mining with diff {} | speed {} Gh/s | avg share time {} | job uid {}'.format(
+                job.diff_target.to_difficulty(),
+                self.work_meter.get_speed(),
+                avg_share_time,
+                job.uid,
+            )
+        )

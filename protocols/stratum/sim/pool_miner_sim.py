@@ -1,8 +1,14 @@
 import simpy
 import numpy as np
 from sim_primitives.stratum_v1.pool import PoolV1
+from sim_primitives.stratum_v2.pool import PoolV2
+from sim_primitives.stratum_v2.miner import MinerV2
 from sim_primitives.network import Connection
 from sim_primitives.miner import Miner
+from sim_primitives.pool import Pool
+import sim_primitives.mining_params as mining_params
+import sim_primitives.coins as coins
+
 from event_bus import EventBus
 from colorama import init, Fore
 import argparse
@@ -78,27 +84,37 @@ def main():
             )
 
         @bus.on('miner1')
-        def subscribe_m1(ts, message):
+        def subscribe_m1(ts, conn_uid, message):
             print(
                 Fore.LIGHTRED_EX,
                 'T+{0:.3f}:'.format(ts),
                 '(miner1)',
+                conn_uid if conn_uid is not None else '',
                 message,
                 Fore.RESET,
             )
 
         @bus.on('miner2')
-        def subscribe_m2(ts, message):
+        def subscribe_m2(ts, conn_uid, message):
             print(
                 Fore.LIGHTGREEN_EX,
                 'T+{0:.3f}:'.format(ts),
                 '(miner2)',
+                conn_uid if conn_uid is not None else '',
                 message,
                 Fore.RESET,
             )
 
-    pool = PoolV1(
-        'pool1', env, bus, enable_vardiff=True, simulate_luck=not args.no_luck
+    pool = Pool(
+        'pool1',
+        env,
+        bus,
+        pool_protocol_type=PoolV2,
+        default_target=coins.Target.from_difficulty(
+            100000, mining_params.diff_1_target
+        ),
+        enable_vardiff=True,
+        simulate_luck=not args.no_luck,
     )
     conn1 = Connection(
         env,
@@ -106,16 +122,32 @@ def main():
         mean_latency=args.latency,
         latency_stddev_percent=0 if args.no_luck else 10,
     )
-    m1 = Miner('miner1', env, bus, 10000, conn1, simulate_luck=not args.no_luck)
-    m1.connect_to_pool(pool)
+    m1 = Miner(
+        'miner1',
+        env,
+        bus,
+        diff_1_target=mining_params.diff_1_target,
+        miner_protocol_type=MinerV2,
+        speed_ghps=10000,
+        simulate_luck=not args.no_luck,
+    )
+    m1.connect_to_pool(conn1, pool)
     conn2 = Connection(
         env,
         'stratum',
         mean_latency=args.latency,
         latency_stddev_percent=0 if args.no_luck else 10,
     )
-    m2 = Miner('miner2', env, bus, 8000, conn2, simulate_luck=not args.no_luck)
-    m2.connect_to_pool(pool)
+    m2 = Miner(
+        'miner2',
+        env,
+        bus,
+        diff_1_target=mining_params.diff_1_target,
+        miner_protocol_type=MinerV2,
+        speed_ghps=8000,
+        simulate_luck=not args.no_luck,
+    )
+    m2.connect_to_pool(conn2, pool)
 
     env.run(until=args.limit)
     print('simulation finished!')
