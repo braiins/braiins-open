@@ -234,7 +234,7 @@ impl V2ToV1Translation {
                 let msg = v2::messages::OpenChannelSuccess {
                     req_id: v2_channel_details.req_id,
                     channel_id: Self::CHANNEL_ID,
-                    dev_id: None,
+                    dev_id: Default::default(),
                     init_target: init_target.clone(),
                     group_channel_id: 0,
                 };
@@ -282,7 +282,7 @@ impl V2ToV1Translation {
             .and_then(|v2_channel_details| {
                 let msg = v2::messages::OpenChannelError {
                     req_id: v2_channel_details.req_id,
-                    code: err_msg.to_string(),
+                    code: err_msg.try_into().unwrap(), // FIXME: error handling
                 };
                 Self::submit_message(&mut self.v2_tx, msg);
                 Some(())
@@ -329,14 +329,16 @@ impl V2ToV1Translation {
                     used_protocol_version: Self::PROTOCOL_VERSION as u16,
                     max_extranonce_size: Self::MAX_EXTRANONCE_SIZE as u16,
                     // TODO provide public key for TOFU
-                    pub_key: vec![0xde, 0xad, 0xbe, 0xef],
+                    pub_key: vec![0xde, 0xad, 0xbe, 0xef].try_into().unwrap(),
                 };
                 Self::submit_message(&mut self.v2_tx, success);
             } else {
                 // TODO consolidate into abort_connection() + communicate shutdown of this
                 // connection similarly everywhere in the code
                 let response = v2::messages::SetupMiningConnectionError {
-                    code: "Cannot negotiate upstream V1 version mask".to_string(),
+                    code: "Cannot negotiate upstream V1 version mask"
+                        .try_into()
+                        .unwrap(),
                 };
                 Self::submit_message(&mut self.v2_tx, response);
             }
@@ -358,7 +360,9 @@ impl V2ToV1Translation {
         // TODO consolidate into abort_connection() + communicate shutdown of this
         // connection similarly everywhere in the code
         let response = v2::messages::SetupMiningConnectionError {
-            code: "Cannot negotiate upstream V1 version mask".to_string(),
+            code: "Cannot negotiate upstream V1 version mask"
+                .try_into()
+                .unwrap(),
         };
         Self::submit_message(&mut self.v2_tx, response);
         Ok(())
@@ -505,7 +509,7 @@ impl V2ToV1Translation {
                         // TODO the sequence number needs to be determined from the failed submit, currently,
                         // there is no infrastructure to get this
                         seq_num: 0,
-                        code: format!("Share rejected: {:?}", payload).to_string(),
+                        code: format!("ShareRjct:{:?}", payload)[..32].try_into().unwrap(), // FIXME: error code
                     };
                     Self::submit_message(&mut self.v2_tx, err_msg);
                 }
@@ -535,7 +539,7 @@ impl V2ToV1Translation {
             // TODO the sequence number needs to be determined from the failed submit, currently,
             // there is no infrastructure to get this
             seq_num: 0,
-            code: format!("Share rejected: {:?}", payload).to_string(),
+            code: format!("ShareRjct:{:?}", payload)[..32].try_into().unwrap(), // FIXME: error code
         };
 
         Self::submit_message(&mut self.v2_tx, err_msg);
@@ -667,7 +671,7 @@ impl V2ToV1Translation {
             v2::messages::SubmitSharesError {
                 channel_id: payload.channel_id,
                 seq_num: payload.seq_num,
-                code: err_msg,
+                code: err_msg[..32].try_into().unwrap(), // FIXME: error code,
             },
         );
     }
@@ -853,7 +857,7 @@ impl v2::Handler for V2ToV1Translation {
             Self::submit_message(
                 &mut self.v2_tx,
                 v2::messages::SetupMiningConnectionError {
-                    code: "Connection can be setup only once".to_string(),
+                    code: "Connection can be setup only once".try_into().unwrap(),
                 },
             );
             return;
@@ -905,7 +909,7 @@ impl v2::Handler for V2ToV1Translation {
                 &mut self.v2_tx,
                 v2::messages::OpenChannelError {
                     req_id: payload.req_id,
-                    code: "Out of sequence OpenChannel message".to_string(),
+                    code: "Out of sequence OpenChannel msg".try_into().unwrap(),
                 },
             );
             return;
@@ -917,9 +921,9 @@ impl v2::Handler for V2ToV1Translation {
             self.state = V2ToV1TranslationState::OpenChannelPending;
 
             let subscribe = v1::messages::Subscribe(
-                Some(payload.device.fw_ver.clone()),
+                Some(payload.device.fw_ver.to_string()),
                 None,
-                Some(conn_details.connection_url.try_into().unwrap()),   // FIXME: error handling
+                Some(conn_details.connection_url.try_into().unwrap()), // FIXME: error handling
                 None,
             );
 
@@ -931,7 +935,7 @@ impl v2::Handler for V2ToV1Translation {
 
             Self::submit_message(&mut self.v1_tx, v1_subscribe_message);
 
-            let authorize = v1::messages::Authorize(payload.user.clone(), "".to_string());
+            let authorize = v1::messages::Authorize(payload.user.to_string(), "".to_string());
             let v1_authorize_message = self.v1_method_into_message(
                 authorize,
                 Self::handle_authorize_result,
@@ -995,7 +999,7 @@ impl v2::Handler for V2ToV1Translation {
         match v1_submit_template {
             Ok(v1_submit_template) => {
                 let submit = v1::messages::Submit::new(
-                    v2_channel_details.user.clone(),
+                    v2_channel_details.user.to_string(),
                     v1_submit_template.job_id.clone(),
                     Self::channel_to_extra_nonce2_bytes(Self::CHANNEL_ID, v1_extra_nonce2_size)
                         .as_ref(),

@@ -123,20 +123,20 @@ pub fn build_setup_mining_connection_success() -> SetupMiningConnectionSuccess {
     SetupMiningConnectionSuccess {
         used_protocol_version: 0,
         max_extranonce_size: 0,
-        pub_key: vec![0xde, 0xad, 0xbe, 0xef],
+        pub_key: vec![0xde, 0xad, 0xbe, 0xef].try_into().unwrap(),
     }
 }
 
 pub fn build_open_channel() -> OpenChannel {
     OpenChannel {
         req_id: 10,
-        user: USER_CREDENTIALS.to_string(),
+        user: USER_CREDENTIALS.try_into().unwrap(),
         extended: false,
         device: DeviceInfo {
-            vendor: "Braiins".to_string(),
-            hw_rev: "1".to_string(),
-            fw_ver: MINER_SW_SIGNATURE.to_string(),
-            dev_id: "xyz".to_string(),
+            vendor: "Braiins".try_into().unwrap(),
+            hw_rev: "1".try_into().unwrap(),
+            fw_ver: MINER_SW_SIGNATURE.try_into().unwrap(),
+            dev_id: "xyz".try_into().unwrap(),
         },
         nominal_hashrate: 1e9,
         // Maximum bitcoin target is 0xffff << 208 (= difficulty 1 share)
@@ -158,7 +158,7 @@ pub fn build_open_channel_success() -> OpenChannelSuccess {
         req_id: 10,
         channel_id: 0,
         // don't provide device ID as the sample OpenChannel already provides one
-        dev_id: None,
+        dev_id: Default::default(),
         // Represents difficulty 4
         init_target: Uint256Bytes(init_target_le),
         group_channel_id: 0,

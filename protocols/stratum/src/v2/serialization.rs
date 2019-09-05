@@ -21,7 +21,7 @@ pub enum Error {
     /// When String or byte sequence being (de)serialized is too short
     TooShort,
     /// Type unsupported by the protocol
-    Unsupported,
+    Unsupported(&'static str),
     /// Invalid Unicode string/character data
     Unicode,
     /// Incomplete message - reched end of input data
@@ -150,11 +150,11 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
     }
 
     fn serialize_str(self, _v: &str) -> Result<()> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("str"))
     }
 
     fn serialize_bytes(self, _v: &[u8]) -> Result<()> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("bytes"))
     }
 
     fn serialize_none(self) -> Result<()> {
@@ -217,7 +217,7 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("seq"))
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
@@ -244,7 +244,7 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("map"))
     }
 
     fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
@@ -471,7 +471,7 @@ where
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
-        let len = len.ok_or(Error::Unsupported)?;
+        let len = len.ok_or(Error::Unsupported("seq with no len"))?;
         let len = I::try_from(len).map_err(|_| Error::Overlong)?;
         len.serialize(&mut *self.serializer)?;
         Ok(self)
@@ -656,7 +656,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
 
     fn deserialize_any<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("any"))
     }
 
     fn deserialize_bool<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
@@ -721,19 +721,19 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     fn deserialize_str<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("str"))
     }
 
     fn deserialize_string<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("string"))
     }
 
     fn deserialize_bytes<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("bytes"))
     }
 
     fn deserialize_byte_buf<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("byte_buf"))
     }
 
     fn deserialize_option<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
@@ -780,7 +780,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     fn deserialize_seq<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("seq"))
     }
 
     fn deserialize_tuple<V: de::Visitor<'de>>(self, len: usize, visitor: V) -> Result<V::Value> {
@@ -826,7 +826,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     fn deserialize_map<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("map"))
     }
 
     fn deserialize_struct<V: de::Visitor<'de>>(
@@ -852,7 +852,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     fn deserialize_ignored_any<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        Err(Error::Unsupported)
+        Err(Error::Unsupported("any"))
     }
 }
 

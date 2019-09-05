@@ -22,19 +22,10 @@
 
 //! This module provides custom types used in Stratum V2 messages
 
-use std::convert::TryFrom;
+pub use std::convert::{TryFrom, TryInto};
 
 use serde;
 use serde::{Deserialize, Serialize};
-
-/// Device specific information - all parts are optional and could be empty strings
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct DeviceInfo {
-    pub vendor: String,
-    pub hw_rev: String,
-    pub fw_ver: String,
-    pub dev_id: String,
-}
 
 // TODO consolidate the u8;32 copied all over the place into an alias
 //type Uint256Inner = [u8; 32];
@@ -104,6 +95,10 @@ macro_rules! sized_string_type {
                     stringify!($name),
                     " - string length out of range."
                 ))
+            }
+
+            pub fn to_string(&self) -> std::string::String {
+                std::string::String::from(&*self.0)
             }
         }
 
@@ -263,3 +258,12 @@ sized_bytes_type!(Bytes0_255, 0, 255);
 sized_bytes_type!(Bytes1_255, 1, 255);
 sized_bytes_type!(Bytes0_64k, 0, 65535);
 sized_bytes_type!(Bytes1_64k, 1, 65535);
+
+/// Device specific information - all parts are optional and could be empty strings
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct DeviceInfo {
+    pub vendor: Str1_255,
+    pub hw_rev: Str1_255,
+    pub fw_ver: Str1_255,
+    pub dev_id: Str0_255,
+}

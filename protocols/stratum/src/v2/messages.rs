@@ -107,18 +107,18 @@ pub struct SetupMiningConnection {
 pub struct SetupMiningConnectionSuccess {
     pub used_protocol_version: u16,
     pub max_extranonce_size: u16,
-    pub pub_key: Vec<u8>,
+    pub pub_key: Bytes0_255,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SetupMiningConnectionError {
-    pub code: String,
+    pub code: Str0_255,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenChannel {
     pub req_id: u32,
-    pub user: String,
+    pub user: Str1_255,
     pub extended: bool,
     pub device: DeviceInfo,
     pub nominal_hashrate: f32,
@@ -131,7 +131,7 @@ pub struct OpenChannelSuccess {
     pub req_id: u32,
     pub channel_id: u32,
     /// Optional device ID provided by the upstream if none was sent as part of DeviceInfo
-    pub dev_id: Option<String>,
+    pub dev_id: Str0_255,
     /// Initial target for mining
     pub init_target: Uint256Bytes,
     /// See SetGroupChannel for details
@@ -143,7 +143,7 @@ pub struct OpenChannelSuccess {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenChannelError {
     pub req_id: u32,
-    pub code: String,
+    pub code: Str1_32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -177,7 +177,7 @@ pub struct SubmitSharesSuccess {
 pub struct SubmitSharesError {
     pub channel_id: u32,
     pub seq_num: u32,
-    pub code: String,
+    pub code: Str1_32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
