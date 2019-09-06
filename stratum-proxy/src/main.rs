@@ -46,7 +46,7 @@ fn main() {
             Arg::with_name("listen")
                 .short("l")
                 .long("listen")
-                .value_name("ADDR")
+                .value_name("HOSTNAME:PORT")
                 .help("Address the V2 end listen on")
                 .required(true)
                 .takes_value(true),
@@ -55,7 +55,7 @@ fn main() {
             Arg::with_name("remote")
                 .short("r")
                 .long("remote")
-                .value_name("ADDR")
+                .value_name("HOSTNAME:PORT")
                 .help("Address the V1 end connects to")
                 .required(true)
                 .takes_value(true),

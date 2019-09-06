@@ -21,6 +21,7 @@
 // contact us at opensource@braiins.com.
 
 use std::net::SocketAddr;
+use std::net::ToSocketAddrs;
 
 use futures::channel::mpsc;
 use futures::future::{self, Either};
@@ -160,12 +161,16 @@ impl ProxyServer {
     /// Constructor, binds the listening socket
     pub fn listen(listen_addr: String, stratum_addr: String) -> Result<ProxyServer> {
         let listen_addr = listen_addr
-            .parse::<SocketAddr>()
-            .context(ErrorKind::BadIp(listen_addr))?;
+            .to_socket_addrs()
+            .context(ErrorKind::BadIp(listen_addr))?
+            .next()
+            .expect("Cannot resolve any IP address");
 
         let stratum_addr = stratum_addr
-            .parse::<SocketAddr>()
-            .context(ErrorKind::BadIp(stratum_addr))?;
+            .to_socket_addrs()
+            .context(ErrorKind::BadIp(stratum_addr))?
+            .next()
+            .expect("Cannot resolve any IP address");
 
         let server = Server::<v2::Framing>::bind(&listen_addr)?;
 
