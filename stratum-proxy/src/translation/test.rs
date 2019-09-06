@@ -101,87 +101,85 @@ async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<TxFrame
 /// TODO we need a way to detect that translation is not responding and the entire test should fail
 #[test]
 fn test_setup_mining_connection_translate() {
-    ii_async_compat::run(
-        async {
-            let (v1_tx, mut v1_rx) = mpsc::channel(1);
-            let (v2_tx, mut v2_rx) = mpsc::channel(1);
-            let mut translation = V2ToV1Translation::new(v1_tx, v2_tx);
+    ii_async_compat::run(async {
+        let (v1_tx, mut v1_rx) = mpsc::channel(1);
+        let (v2_tx, mut v2_rx) = mpsc::channel(1);
+        let mut translation = V2ToV1Translation::new(v1_tx, v2_tx);
 
-            v2_simulate_incoming_message(
-                &mut translation,
-                test_utils::v2::build_setup_mining_connection(),
-            );
-            // Setup mining connection should result into: mining.configure
-            await!(v1_verify_generated_response_message(&mut v1_rx));
-            v1_simulate_incoming_message(
-                &mut translation,
-                test_utils::v1::build_configure_ok_response_message(),
-            );
-            await!(v2_verify_generated_response_message(&mut v2_rx));
+        v2_simulate_incoming_message(
+            &mut translation,
+            test_utils::v2::build_setup_mining_connection(),
+        );
+        // Setup mining connection should result into: mining.configure
+        await!(v1_verify_generated_response_message(&mut v1_rx));
+        v1_simulate_incoming_message(
+            &mut translation,
+            test_utils::v1::build_configure_ok_response_message(),
+        );
+        await!(v2_verify_generated_response_message(&mut v2_rx));
 
-            // Opening a channel should result into: V1 generating a subscribe request
-            v2_simulate_incoming_message(&mut translation, test_utils::v2::build_open_channel());
-            // Opening a channel should result into: V1 generating a subscribe and authorize requests
-            await!(v1_verify_generated_response_message(&mut v1_rx));
-            await!(v1_verify_generated_response_message(&mut v1_rx));
+        // Opening a channel should result into: V1 generating a subscribe request
+        v2_simulate_incoming_message(&mut translation, test_utils::v2::build_open_channel());
+        // Opening a channel should result into: V1 generating a subscribe and authorize requests
+        await!(v1_verify_generated_response_message(&mut v1_rx));
+        await!(v1_verify_generated_response_message(&mut v1_rx));
 
-            // Subscribe response
-            v1_simulate_incoming_message(
-                &mut translation,
-                test_utils::v1::build_subscribe_ok_response_frame(),
-            );
-            // Authorize response
-            v1_simulate_incoming_message(
-                &mut translation,
-                test_utils::v1::build_authorize_ok_response_message(),
-            );
+        // Subscribe response
+        v1_simulate_incoming_message(
+            &mut translation,
+            test_utils::v1::build_subscribe_ok_response_frame(),
+        );
+        // Authorize response
+        v1_simulate_incoming_message(
+            &mut translation,
+            test_utils::v1::build_authorize_ok_response_message(),
+        );
 
-            // SetDifficulty notification before completion
-            v1_simulate_incoming_message(
-                &mut translation,
-                test_utils::v1::build_set_difficulty_request_message(),
-            );
-            // Now we should have a successfully open channel
-            await!(v2_verify_generated_response_message(&mut v2_rx));
+        // SetDifficulty notification before completion
+        v1_simulate_incoming_message(
+            &mut translation,
+            test_utils::v1::build_set_difficulty_request_message(),
+        );
+        // Now we should have a successfully open channel
+        await!(v2_verify_generated_response_message(&mut v2_rx));
 
-            v1_simulate_incoming_message(
-                &mut translation,
-                test_utils::v1::build_mining_notify_request_message(),
-            );
-            // Expect NewMiningJob
-            await!(v2_verify_generated_response_message(&mut v2_rx));
-            // Expect SetNewPrevHash
-            await!(v2_verify_generated_response_message(&mut v2_rx));
-            // Ensure that the V1 job has been registered
-            let submit_template = V1SubmitTemplate {
-                job_id: v1::messages::JobId::from_slice(&test_utils::v1::MINING_NOTIFY_JOB_ID),
-                time: test_utils::common::MINING_WORK_NTIME,
-                version: test_utils::common::MINING_WORK_VERSION,
-            };
+        v1_simulate_incoming_message(
+            &mut translation,
+            test_utils::v1::build_mining_notify_request_message(),
+        );
+        // Expect NewMiningJob
+        await!(v2_verify_generated_response_message(&mut v2_rx));
+        // Expect SetNewPrevHash
+        await!(v2_verify_generated_response_message(&mut v2_rx));
+        // Ensure that the V1 job has been registered
+        let submit_template = V1SubmitTemplate {
+            job_id: v1::messages::JobId::from_slice(&test_utils::v1::MINING_NOTIFY_JOB_ID),
+            time: test_utils::common::MINING_WORK_NTIME,
+            version: test_utils::common::MINING_WORK_VERSION,
+        };
 
-            let registered_submit_template = translation
-                .v2_to_v1_job_map
-                .get(&0)
-                .expect("No mining job with V2 ID 0");
-            assert_eq!(
-                submit_template,
-                registered_submit_template.clone(),
-                "New Mining Job ID not registered!"
-            );
+        let registered_submit_template = translation
+            .v2_to_v1_job_map
+            .get(&0)
+            .expect("No mining job with V2 ID 0");
+        assert_eq!(
+            submit_template,
+            registered_submit_template.clone(),
+            "New Mining Job ID not registered!"
+        );
 
-            // Send SubmitShares
-            v2_simulate_incoming_message(&mut translation, test_utils::v2::build_submit_shares());
-            // Expect mining.submit to be generated
-            await!(v1_verify_generated_response_message(&mut v1_rx));
-            // Simulate mining.submit response (true)
-            v1_simulate_incoming_message(
-                &mut translation,
-                test_utils::v1::build_mining_submit_ok_response_message(),
-            );
-            // Expect SubmitSharesSuccess to be generated
-            await!(v2_verify_generated_response_message(&mut v2_rx));
-        }
-    );
+        // Send SubmitShares
+        v2_simulate_incoming_message(&mut translation, test_utils::v2::build_submit_shares());
+        // Expect mining.submit to be generated
+        await!(v1_verify_generated_response_message(&mut v1_rx));
+        // Simulate mining.submit response (true)
+        v1_simulate_incoming_message(
+            &mut translation,
+            test_utils::v1::build_mining_submit_ok_response_message(),
+        );
+        // Expect SubmitSharesSuccess to be generated
+        await!(v2_verify_generated_response_message(&mut v2_rx));
+    });
 }
 
 #[test]
