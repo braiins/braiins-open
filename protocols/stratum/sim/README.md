@@ -15,25 +15,12 @@ Last but not least, the idea is to have a reference implementation of both proto
 
 ## Install
 
-The easiest way to run the simulation is to use python `virtualenv` and
- `virtualenvwrapper`
-
+The easiest way to run the simulation is to use python `virtualenvwrapper`
 
 ### The `virtualenvwrapper` way
 
 ```
-apt install virtualenvwrapper
-source /usr/share/virtualenvwrapper/virtualenvwrapper.sh
 mkvirtualenv --python=/usr/bin/python3.7 stratum-sim
-pip install -r ./requirements.txt
-```
-
-
-### Pure `virtualenv`
-
-```
-virtualenv --python=/usr/bin/python3.7 .stratum-sim
-. .stratum-sim/bin/activate
 pip install -r ./requirements.txt
 ```
 
