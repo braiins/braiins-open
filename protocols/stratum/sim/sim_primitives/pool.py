@@ -127,15 +127,21 @@ class MiningSession:
 
     def run(self):
         """Explicit activation starts any simulation processes associated with the session"""
+        self.meter = HashrateMeter(self.env)
         if self.enable_vardiff:
-            self.meter = HashrateMeter(self.env)
             self.vardiff_process = self.env.process(self.__vardiff_loop())
+
+    def account_diff_shares(self, diff: int):
+        assert (
+            self.meter is not None
+        ), 'BUG: session not running yet, cannot account shares'
+        self.meter.measure(diff)
 
     def terminate(self):
         """Complete shutdown of the session"""
+        self.meter.terminate()
         if self.enable_vardiff:
             self.vardiff_process.interrupt()
-            self.meter.terminate()
 
     def __vardiff_loop(self):
         while True:
