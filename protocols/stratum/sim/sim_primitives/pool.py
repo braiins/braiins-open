@@ -77,23 +77,19 @@ class MiningSession:
         env: simpy.Environment,
         bus: EventBus,
         owner,
-        diff,
-        diff_1_target,
+        diff_target: coins.Target,
         enable_vardiff,
         vardiff_time_window=None,
         vardiff_desired_submits_per_sec=None,
         on_vardiff_change=None,
     ):
         """
-        :param diff_1_target: Difficulty 1 target to calculate current maximum target
-        based on current difficulty. This value is network/coin specific.
         """
         self.name = name
         self.env = env
         self.bus = bus
         self.owner = owner
-        self.curr_diff = diff
-        self.diff_1_target = diff_1_target
+        self.curr_diff_target = diff_target
         self.enable_vardiff = enable_vardiff
         self.meter = None
         self.vardiff_process = None
@@ -106,15 +102,11 @@ class MiningSession:
     @property
     def curr_target(self):
         """Derives target from current difficulty on the session"""
-        return self.diff2target(self.curr_diff)
+        return self.curr_diff_target
 
-    def target2diff(self, target):
-        """Converts target to difficulty at the network where this session is running."""
-        return self.diff_1_target // target
+    def set_target(self, target):
+        self.curr_diff_target = target
 
-    def diff2target(self, diff):
-        """Converts difficu to target at the network where this session is running."""
-        return self.diff_1_target // diff
 
     def run(self):
         """Explicit activation starts any simulation processes associated with the session"""
@@ -172,9 +164,8 @@ class Pool(AcceptingConnection):
         name: str,
         env: simpy.Environment,
         bus: EventBus,
-        connection_processor_clz,
-        default_difficulty: int = 100000,
-        diff_1_target: int = 0xFFFF << 208,
+        pool_protocol_type,
+        default_target: coins.Target,
         extranonce2_size: int = 8,
         avg_pool_block_time: float = 60,
         enable_vardiff: bool = False,
@@ -188,8 +179,7 @@ class Pool(AcceptingConnection):
         self.name = name
         self.env = env
         self.bus = bus
-        self.default_difficulty = default_difficulty
-        self.diff_1_target = diff_1_target
+        self.default_target = default_target
         self.extranonce2_size = extranonce2_size
         self.avg_pool_block_time = avg_pool_block_time
 
@@ -197,7 +187,7 @@ class Pool(AcceptingConnection):
         self.__generate_new_prev_hash()
         # Per connection message processors
         self.connection_processors = dict()
-        self.connection_processor_clz = connection_processor_clz
+        self.connection_processor_clz = pool_protocol_type
 
         self.pow_update_process = env.process(self.__pow_update())
 
