@@ -147,7 +147,7 @@ class MiningSession:
         while True:
             try:
                 submits_per_sec = self.meter.get_submit_per_secs()
-                if submits_per_sec == 0:
+                if submits_per_sec is None:
                     # no accepted shares, we will halve the diff
                     factor = 0.5
                 else:
