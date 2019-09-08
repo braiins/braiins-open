@@ -60,6 +60,10 @@ class HashrateMeter(object):
             pass  # do nothing
 
     def measure(self, share_diff: int):
+        """Account for the shares
+
+        TODO: consider changing the interface to accept the difficulty target directly
+        """
         self.pow_buffer[0] += share_diff
         self.submit_buffer[0] += 1
         self.on_hold = False  # reset frozen status whenever a share is submitted
