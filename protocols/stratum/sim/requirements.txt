@@ -4,3 +4,4 @@ hashids
 event_bus
 colorama
 stringcase
+git+ssh://git@github.com/braiins/black.git@braiins-codestyle#egg=black
