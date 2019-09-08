@@ -98,7 +98,7 @@ class ConnectionProcessor:
         """
         while True:
             try:
-                msg = yield self._recv_msg()
+                msg = yield self.env.process(self._recv_msg())
                 self._emit_protocol_msg_on_bus('INCOMING', msg)
 
                 try:

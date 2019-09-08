@@ -31,19 +31,20 @@ class ConnectionStore:
         self.latency_stddev = 0.01 * latency_stddev_percent * mean_latency
         self.store = simpy.Store(env)
 
-    def latency(self, value):
+    def latency(self):
         if self.latency_stddev < 0.00001:
             delay = self.mean_latency
         else:
             delay = np.random.normal(self.mean_latency, self.latency_stddev)
         yield self.env.timeout(delay)
-        self.store.put(value)
 
     def put(self, value):
-        self.env.process(self.latency(value))
+        self.store.put(value)
 
     def get(self):
-        return self.store.get()
+        value = yield self.store.get()
+        yield self.env.process(self.latency())
+        return value
 
 
 class Connection:
@@ -66,6 +67,7 @@ class Connection:
         self.conn_target = conn_target
 
     def disconnect(self):
+        # TODO: Review whether to use assert's or RuntimeErrors in simulation
         if self.conn_target is None:
             raise RuntimeError('Not connected')
         self.conn_target.disconnect(self)
