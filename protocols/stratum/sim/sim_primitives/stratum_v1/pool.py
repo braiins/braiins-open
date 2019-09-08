@@ -105,9 +105,11 @@ class PoolV1(UpstreamConnectionProcessor):
 
         self.pool.process_submit(
             msg.job_id,
-            mining_session,
-            on_accept=lambda: self._send_msg(OkResult(msg.req_id)),
-            on_reject=lambda: self._send_msg(ErrorResult(msg.req_id, -3, 'Too low difficulty')),
+            self.__mining_session,
+            on_accept=lambda diff_target: self._send_msg(OkResult(msg.req_id)),
+            on_reject=lambda diff_target: self._send_msg(
+                ErrorResult(msg.req_id, -3, 'Too low difficulty')
+            ),
         )
 
     def on_new_block(self):
@@ -124,7 +126,7 @@ class PoolV1(UpstreamConnectionProcessor):
         Note that to enforce difficulty change as soon as possible,
         the message is accompanied by generating new mining job
         """
-        self._send_msg(SetDifficulty(session.curr_diff))
+        self._send_msg(SetDifficulty(session.curr_diff_target))
 
         self._send_msg(self.__build_mining_notify(clean_jobs=False))
 

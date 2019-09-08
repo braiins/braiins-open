@@ -258,8 +258,7 @@ class Pool(AcceptingConnection):
             env=self.env,
             bus=self.bus,
             owner=owner,
-            diff=self.default_difficulty,
-            diff_1_target=self.diff_1_target,
+            diff_target=self.default_target,
             enable_vardiff=self.enable_vardiff,
             vardiff_time_window=self.meter_accepted.window_size,
             vardiff_desired_submits_per_sec=self.desired_submits_per_sec,
@@ -272,15 +271,15 @@ class Pool(AcceptingConnection):
     def add_extra_meter(self, meter: HashrateMeter):
         self.extra_meters.append(meter)
 
-    def account_accepted_shares(self, diff):
+    def account_accepted_shares(self, diff_target: coins.Target):
         self.accepted_submits += 1
-        self.accepted_shares += diff
-        self.meter_accepted.measure(diff)
+        self.accepted_shares += diff_target.to_difficulty()
+        self.meter_accepted.measure(diff_target.to_difficulty())
 
-    def account_stale_shares(self, diff):
+    def account_stale_shares(self, diff_target: coins.Target):
         self.stale_submits += 1
-        self.stale_shares += diff
-        self.meter_rejected_stale.measure(diff)
+        self.stale_shares += diff_target.to_difficulty()
+        self.meter_rejected_stale.measure(diff_target.to_difficulty())
 
     def account_rejected_submits(self):
         self.rejected_submits += 1
@@ -295,16 +294,18 @@ class Pool(AcceptingConnection):
 
         # Accept all jobs with valid UID
         if session.job_registry.is_job_uid_valid(submit_job_uid):
-            self.account_accepted_shares(diff)
-            session.meter.measure(diff)
-            on_accept(diff)
+            # Global accounting
+            self.account_accepted_shares(diff_target)
+            # Per session accounting
+            session.account_diff_shares(diff_target.to_difficulty())
+            on_accept(diff_target)
         else:
             # Account for stale submits and shares (but job exists in the registry)
-            if diff is not None:
-                self.account_stale_shares(diff)
+            if diff_target is not None:
+                self.account_stale_shares(diff_target)
             else:
                 self.account_rejected_submits()
-            on_reject(diff)
+            on_reject(diff_target)
 
     def __pow_update(self):
         """This process simulates finding new blocks based on pool's hashrate"""
