@@ -110,8 +110,8 @@ class PoolV1(UpstreamConnectionProcessor):
         self.pool.process_submit(
             msg.job_id,
             self.mining_session,
-            on_accept=lambda diff_target: self._send_msg(OkResult(msg.req_id)),
-            on_reject=lambda diff_target: self._send_msg(
+            on_accept=lambda _diff_target: self._send_msg(OkResult(msg.req_id)),
+            on_reject=lambda _diff_target: self._send_msg(
                 ErrorResult(msg.req_id, -3, 'Too low difficulty')
             ),
         )
