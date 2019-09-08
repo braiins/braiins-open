@@ -262,6 +262,7 @@ class PoolV2(UpstreamConnectionProcessor):
                 channel.id, future_job.uid
             )
             channel.session.job_registry.retire_all_jobs()
+            channel.session.job_registry.add_job(future_job)
             # Now, we can send out the new prev hash, since all jobs are
             # invalidated. Any further submits for the invalidated jobs will be
             # rejected

@@ -30,10 +30,12 @@ class MiningJobRegistry:
     the __next_job_uid() can be adjusted accordingly"""
 
     def __init__(self):
-        # Tracking mininum valid job ID
-        self.min_valid_job_uid = self.next_job_uid = 0
+        # Tracking minimum valid job ID
+        self.next_job_uid = 0
         # Registered jobs based on their uid
         self.jobs = dict()
+        # Invalidated jobs just for accounting reasons
+        self.invalid_jobs = dict()
 
     def new_mining_job(self, diff_target: coins.Target, job_id=None):
         """Prepares new mining job and registers it internally.
@@ -53,10 +55,17 @@ class MiningJobRegistry:
         return new_job
 
     def get_job(self, job_uid):
-        return self.jobs[job_uid]
+        """
+        :param job_uid: job_uid to look for
+        :return: Returns the job or None
+        """
+        return self.jobs.get(job_uid)
 
     def get_job_diff_target(self, job_uid):
         return self.jobs[job_uid].diff_target
+
+    def get_invalid_job_diff_target(self, job_uid):
+        return self.invalid_jobs[job_uid].diff_target
 
     def contains(self, job_uid):
         """Job ID presence check
@@ -64,13 +73,27 @@ class MiningJobRegistry:
         be valid)"""
         return job_uid in self.jobs
 
-    def is_job_uid_valid(self, job_uid):
-        """A valid job """
-        return self.jobs[job_uid] >= self.min_valid_job_uid
+    def contains_invalid(self, job_uid):
+        """Check the invalidated job registry
+        :return True when when such Job ID exists in the registry (it may still not
+        be valid)"""
+        return job_uid in self.invalid_jobs
 
     def retire_all_jobs(self):
-        """Make all jobs invalid"""
-        self.min_valid_job_uid = self.next_job_uid
+        """Make all jobs invalid, while storing their copy for accounting reasons"""
+        self.invalid_jobs.update(self.jobs)
+        self.jobs = dict()
+
+    def add_job(self, job: MiningJob):
+        """
+        Appends a job with an assigned ID into the registry
+        :param job:
+        :return:
+        """
+        assert (
+            self.get_job(job.uid) is None
+        ), 'Job {} already exists in the registry'.format(job)
+        self.jobs[job.uid] = job
 
     def __next_job_uid(self):
         """Initializes a new job ID for this session.
@@ -293,25 +316,22 @@ class Pool(AcceptingConnection):
     def process_submit(
         self, submit_job_uid, session: MiningSession, on_accept, on_reject
     ):
-        if not session.job_registry.contains(submit_job_uid):
-            diff_target = None
-        else:
+        if session.job_registry.contains(submit_job_uid):
             diff_target = session.job_registry.get_job_diff_target(submit_job_uid)
-
-        # Accept all jobs with valid UID
-        if session.job_registry.is_job_uid_valid(submit_job_uid):
             # Global accounting
             self.account_accepted_shares(diff_target)
             # Per session accounting
             session.account_diff_shares(diff_target.to_difficulty())
             on_accept(diff_target)
-        else:
-            # Account for stale submits and shares (but job exists in the registry)
-            if diff_target is not None:
-                self.account_stale_shares(diff_target)
-            else:
-                self.account_rejected_submits()
+        elif session.job_registry.contains_invalid(submit_job_uid):
+            diff_target = session.job_registry.get_invalid_job_diff_target(
+                submit_job_uid
+            )
+            self.account_stale_shares(diff_target)
             on_reject(diff_target)
+        else:
+            self.account_rejected_submits()
+            on_reject(None)
 
     def __pow_update(self):
         """This process simulates finding new blocks based on pool's hashrate"""
