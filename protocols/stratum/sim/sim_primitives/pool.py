@@ -289,11 +289,9 @@ class Pool(AcceptingConnection):
         self, submit_job_uid, session: MiningSession, on_accept, on_reject
     ):
         if not session.job_registry.contains(submit_job_uid):
-            diff = None
+            diff_target = None
         else:
-            diff = session.target2diff(
-                session.job_registry.get_job_diff_target(submit_job_uid)
-            )
+            diff_target = session.job_registry.get_job_diff_target(submit_job_uid)
 
         # Accept all jobs with valid UID
         if session.job_registry.is_job_uid_valid(submit_job_uid):
