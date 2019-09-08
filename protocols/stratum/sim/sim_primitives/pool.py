@@ -26,8 +26,8 @@ class MiningJobRegistry:
     """Registry of jobs that have been assigned for mining.
 
     The registry intentionally doesn't remove any jobs from the simulation so that we
-    can explicitely account for 'stale' hashrate. When this requirement is not needed,
-    the __next_job_uid() can be adjusted accordingly"""
+    can explicitly account for 'stale' hashrate. When this requirement is not needed,
+    the retire_all_jobs() can be adjusted accordingly"""
 
     def __init__(self):
         # Tracking minimum valid job ID
@@ -43,7 +43,7 @@ class MiningJobRegistry:
         :param diff_target: difficulty target of the job to be constructed
         :param job_id: optional identifier of a job. If not specified, the registry
         chooses its own identifier.
-        :return new mining job or None if job with the specified ID alredy exists
+        :return new mining job or None if job with the specified ID already exists
         """
         if job_id is None:
             job_id = self.__next_job_uid()
