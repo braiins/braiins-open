@@ -46,24 +46,27 @@ class ConnectionProcessor:
     def _on_invalid_message(self, msg):
         pass
 
-    def __receive_loop(self, conn_uid: str):
-        """Receive process for a particular connection dispatches each received message
+    def _emit_aux_msg_on_bus(self, log_msg: str):
+        self.bus.emit(self.name, self.env.now, self.connection.uid, log_msg)
 
-        :param conn_uid:
+    def _emit_protocol_msg_on_bus(self, log_msg: str, msg: Message):
+        self._emit_aux_msg_on_bus('{}: {}'.format(log_msg, msg))
+
+    def __receive_loop(self):
+        """Receive process for a particular connection dispatches each received message
         """
         while True:
             try:
                 msg = yield self._recv_msg()
-                self.bus.emit(
-                    self.name, self.env.now, conn_uid, 'INCOMING: {}'.format(msg)
-                )
+                self._emit_protocol_msg_on_bus('INCOMING', msg)
+
                 try:
                     msg.accept(self)
                 except AttributeError as e:
                     self._on_invalid_message(msg)
 
             except simpy.Interrupt:
-                self.bus.emit(self.name, self.env.now, conn_uid, 'DISCONNECTED')
+                self._emit_aux_msg_on_bus('DISCONNECTED')
                 break  # terminate the event loop
 
     def terminate(self):

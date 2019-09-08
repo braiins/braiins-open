@@ -61,13 +61,7 @@ class PoolV1(UpstreamConnectionProcessor):
         """
         mining_session = self.__mining_session
 
-        self.bus.emit(
-            self.name,
-            self.env.now,
-            self.connection.uid,
-            'SUBSCRIBE: {}'.format(mining_session.state),
-            msg,
-        )
+        self.__emit_protocol_msg_on_bus_with_state(msg)
 
         if mining_session.state in (
                 mining_session.States.INIT,
@@ -101,26 +95,14 @@ class PoolV1(UpstreamConnectionProcessor):
         Sending authorize is legal at any state of the mining session.
         """
         mining_session = self.__mining_session()
-        mining_session.append_authorize(msg)
-        self.bus.emit(
-            self.name,
-            self.env.now,
-            self.connection.uid,
-            'AUTHORIZE: {}'.format(mining_session.state),
-            msg,
-        )
+        self.__mining_session.append_authorize(msg)
+        self.__emit_protocol_msg_on_bus_with_state(msg)
         # TODO: Implement username validation and fail to authorize for unknown usernames
         self._send_msg(OkResult(msg.req_id))
 
     def visit_submit(self, msg: Submit):
-        mining_session = self.__mining_session()
-        self.bus.emit(
-            self.name,
-            self.env.now,
-            self.connection.uid,
-            'SUBMIT: {}'.format(mining_session.state),
-            msg,
-        )
+        self.__emit_protocol_msg_on_bus_with_state(msg)
+
         self.pool.process_submit(
             msg.job_id,
             mining_session,
@@ -167,4 +149,10 @@ class PoolV1(UpstreamConnectionProcessor):
             bits=None,
             time=self.env.now,
             clean_jobs=clean_jobs,
+        )
+
+    def __emit_protocol_msg_on_bus_with_state(self, msg):
+        """Common protocol message logging decorated with mining session state"""
+        self._emit_protocol_msg_on_bus(
+            '{}(state={})'.format(type(msg).__name__, self.__mining_session.state), msg
         )

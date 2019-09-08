@@ -133,15 +133,17 @@ class MiningSession:
                     factor = self.min_factor
                 elif factor > self.max_factor:
                     factor = self.max_factor
-                new_diff = self.curr_diff * factor
-                self.curr_diff = int(round(new_diff))
-                self.bus.emit(
-                    self.name, self.env.now, self.owner, 'DIFF_UPDATE', self.curr_diff
-                )
+                self.curr_diff_target.div_by_factor(factor)
+                self.__emit_aux_msg_on_bus(
+                    'DIFF_UPDATE(target={})'.format(self.curr_diff_target)
+                ),
                 self.on_vardiff_change(self)
                 yield self.env.timeout(self.vardiff_time_window_size)
             except simpy.Interrupt:
                 break
+
+    def __emit_aux_msg_on_bus(self, msg):
+        self.bus.emit(self.name, self.env.now, self.owner, msg)
 
 
 class Pool(AcceptingConnection):
@@ -240,7 +242,8 @@ class Pool(AcceptingConnection):
             vardiff_desired_submits_per_sec=self.desired_submits_per_sec,
             on_vardiff_change=on_vardiff_change,
         )
-        self.bus.emit(self.name, self.env.now, owner, 'NEW MINING SESSION', session)
+        self.__emit_aux_msg_on_bus('NEW MINING SESSION ()'.format(session))
+
         return session
 
     def add_extra_meter(self, meter: HashrateMeter):
@@ -294,13 +297,9 @@ class Pool(AcceptingConnection):
             # Simulate the new block hash by calculating sha256 of current time
             self.__generate_new_prev_hash()
 
-            self.bus.emit(
-                self.name,
-                self.env.now,
-                None,
-                'NEW_BLOCK: {}'.format(self.prev_hash.hex()),
-            )
-            for connection_processor in self.connection_processors:
+            self.__emit_aux_msg_on_bus('NEW_BLOCK: {}'.format(self.prev_hash.hex()))
+
+            for connection_processor in self.connection_processors.values():
                 connection_processor.on_new_block()
 
     def __generate_new_prev_hash(self):
@@ -317,14 +316,11 @@ class Pool(AcceptingConnection):
             speed = self.meter_accepted.get_speed()
             submit_speed = self.meter_accepted.get_submit_per_secs()
             if speed is None or submit_speed is None:
-                self.bus.emit(
-                    self.name, self.env.now, None, 'SPEED', 'N/A GH/s, N/A submits/s'
-                )
+                self.__emit_aux_msg_on_bus('SPEED: N/A Gh/s, N/A submits/s')
             else:
-                self.bus.emit(
-                    self.name,
-                    self.env.now,
-                    None,
-                    'SPEED',
-                    '{0:.2f} GH/s, {1:.4f} submits/s'.format(speed, submit_speed),
+                self.__emit_aux_msg_on_bus(
+                    'SPEED: {0:.2f} Gh/s, {1:.4f} submits/s'.format(speed, submit_speed)
                 )
+
+    def __emit_aux_msg_on_bus(self, msg):
+        self.bus.emit(self.name, self.env.now, None, msg)
