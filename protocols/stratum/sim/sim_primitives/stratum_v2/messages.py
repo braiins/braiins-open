@@ -234,6 +234,11 @@ class SetNewPrevHash(ChannelMessage):
         self.signature = signature
         super().__init__(channel_id)
 
+    def __str__(self):
+        return self._format(
+            'channel_id={}, job_id={}'.format(self.channel_id, self.job_id)
+        )
+
 
 class SetCustomMiningJob(ChannelMessage):
     pass
