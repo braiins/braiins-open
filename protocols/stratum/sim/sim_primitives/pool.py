@@ -33,11 +33,25 @@ class MiningJobRegistry:
         # Registered jobs based on their uid
         self.jobs = dict()
 
-    def new_mining_job(self, diff_target):
-        """Prepares new mining job and registers it internally"""
-        new_job = MiningJob(diff_target, self.__next_job_uid())
-        self.jobs[new_job.uid] = new_job
+    def new_mining_job(self, diff_target: coins.Target, job_id=None):
+        """Prepares new mining job and registers it internally.
+
+        :param diff_target: difficulty target of the job to be constructed
+        :param job_id: optional identifier of a job. If not specified, the registry
+        chooses its own identifier.
+        :return new mining job or None if job with the specified ID alredy exists
+        """
+        if job_id is None:
+            job_id = self.__next_job_uid()
+        if job_id not in self.jobs:
+            new_job = MiningJob(uid=job_id, diff_target=diff_target)
+            self.jobs[new_job.uid] = new_job
+        else:
+            new_job = None
         return new_job
+
+    def get_job(self, job_uid):
+        return self.jobs[job_uid]
 
     def get_job_diff_target(self, job_uid):
         return self.jobs[job_uid].diff_target
@@ -107,6 +121,9 @@ class MiningSession:
     def set_target(self, target):
         self.curr_diff_target = target
 
+    def new_mining_job(self, job_uid=None):
+        """Generates a new job using current session's target"""
+        return self.job_registry.new_mining_job(self.curr_target, job_uid)
 
     def run(self):
         """Explicit activation starts any simulation processes associated with the session"""

@@ -137,7 +137,7 @@ class PoolV1(UpstreamConnectionProcessor):
         session = self.mining_session
         if clean_jobs:
             session.job_registry.retire_all_jobs()
-        job = session.job_registry.new_mining_job(diff_target=session.curr_target)
+        job = session.new_mining_job()
 
         return Notify(
             job_id=job.uid,
