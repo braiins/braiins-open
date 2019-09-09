@@ -2,6 +2,7 @@ import simpy
 import numpy as np
 from sim_primitives.stratum_v1.pool import PoolV1
 from sim_primitives.stratum_v2.pool import PoolV2
+from sim_primitives.stratum_v1.miner import MinerV1
 from sim_primitives.stratum_v2.miner import MinerV2
 from sim_primitives.network import Connection
 from sim_primitives.miner import Miner
@@ -57,6 +58,15 @@ def main():
         '--no-luck', help='do not simulate luck', action='store_const', const=True
     )
 
+    parser.add_argument(
+        '--v1proto',
+        help='run simulation with Stratum V1 protocol instead of V2',
+        dest='protocol',
+        action='store_const',
+        const={'pool': PoolV1, 'miner': MinerV1},
+        default={'pool': PoolV2, 'miner': MinerV2},
+    )
+
     args = parser.parse_args()
     if args.realtime:
         env = simpy.rt.RealtimeEnvironment(factor=args.rt_factor)
@@ -109,7 +119,7 @@ def main():
         'pool1',
         env,
         bus,
-        pool_protocol_type=PoolV2,
+        pool_protocol_type=args.protocol['pool'],
         default_target=coins.Target.from_difficulty(
             100000, mining_params.diff_1_target
         ),
@@ -127,7 +137,7 @@ def main():
         env,
         bus,
         diff_1_target=mining_params.diff_1_target,
-        miner_protocol_type=MinerV2,
+        miner_protocol_type=args.protocol['miner'],
         speed_ghps=10000,
         simulate_luck=not args.no_luck,
     )
@@ -143,7 +153,7 @@ def main():
         env,
         bus,
         diff_1_target=mining_params.diff_1_target,
-        miner_protocol_type=MinerV2,
+        miner_protocol_type=args.protocol['miner'],
         speed_ghps=8000,
         simulate_luck=not args.no_luck,
     )
