@@ -1,17 +1,19 @@
-from .network import Connection, AcceptingConnection, gen_uid
-from .protocol import ConnectionProcessor
+"""Generic pool module"""
+from .network import Connection, AcceptingConnection
 import hashlib
 import numpy as np
 import simpy
 from event_bus import EventBus
 from sim_primitives.hashrate_meter import HashrateMeter
+import sim_primitives.mining_params as mining_params
+import sim_primitives.coins as coins
 
 
 class MiningJob:
     """This class allows the simulation to track per job difficulty target for
     correct accounting"""
 
-    def __init__(self, uid, diff_target):
+    def __init__(self, uid: int, diff_target: coins.Target):
         """
         :param uid:
         :param diff_target: difficulty target
@@ -172,6 +174,8 @@ class MiningSession:
 class Pool(AcceptingConnection):
     """Represents a generic mining pool.
 
+    It handles connections and delegates work to actual protocol specific object
+
     The pool keeps statistics about:
 
     - accepted submits and shares: submit count and difficulty sum (shares) for valid
@@ -199,7 +203,7 @@ class Pool(AcceptingConnection):
     ):
         """
 
-        :type connection_processor_clz: MessageProcessor or its ancestor class
+        :type pool_protocol_type:
         """
         self.name = name
         self.env = env
@@ -243,7 +247,9 @@ class Pool(AcceptingConnection):
         if connection.port != 'stratum':
             raise ValueError('{} port is not supported'.format(connection.port))
         # Build message processor for the new connection
-        self.connection_processors[connection.uid] = self.connection_processor_clz(self, connection)
+        self.connection_processors[connection.uid] = self.connection_processor_clz(
+            self, connection
+        )
 
     def disconnect(self, connection: Connection):
         if connection.uid not in self.connection_processors:
