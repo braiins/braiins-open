@@ -39,9 +39,12 @@ class PoolV1(UpstreamConnectionProcessor):
     """Processes all messages on 1 connection
 
     """
-    def __init__(self, pool, connection):
+
+    def __init__(self, pool: Pool, connection):
         self.pool = pool
-        self.__mining_session = pool.new_mining_session(connection, self._on_vardiff_change, clz=MiningSessionV1)
+        self.__mining_session = pool.new_mining_session(
+            connection, self._on_vardiff_change, clz=MiningSessionV1
+        )
         super().__init__(pool.name, pool.env, pool.bus, connection)
 
     @property
@@ -118,7 +121,7 @@ class PoolV1(UpstreamConnectionProcessor):
 
     def _on_invalid_message(self, msg):
         self._send_msg(
-            ErrorResult(msg.req_id, -2, 'Unrecognized message: {}'.format(msg)),
+            ErrorResult(msg.req_id, -2, 'Unrecognized message: {}'.format(msg))
         )
 
     def _on_vardiff_change(self, session: MiningSession):
