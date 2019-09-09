@@ -40,17 +40,16 @@ class Message:
 class ConnectionProcessor:
     """Receives and dispatches a message on a single connection."""
 
-    def __init__(self,
-                 name: str,
-                 env: simpy.Environment,
-                 bus: EventBus,
-                 connection: Connection
-                 ):
+    def __init__(
+        self, name: str, env: simpy.Environment, bus: EventBus, connection: Connection
+    ):
         self.name = name
         self.env = env
         self.bus = bus
         self.connection = connection
         self.receive_loop_process = self.env.process(self.__receive_loop(self.connection.uid))
+    def terminate(self):
+        self.receive_loop_process.interrupt()
 
     @abstractmethod
     def _send_msg(self, msg):
@@ -91,15 +90,13 @@ class ConnectionProcessor:
                 self._emit_aux_msg_on_bus('DISCONNECTED')
                 break  # terminate the event loop
 
-    def terminate(self):
-        self.receive_loop_process.interrupt()
-
 
 class UpstreamConnectionProcessor(ConnectionProcessor):
     """Processes messages flowing through an upstream node
 
     This class only determines the direction in which it accesses the connection.
     """
+
     def _send_msg(self, msg):
         self.connection.incoming.put(msg)
 
@@ -115,6 +112,7 @@ class DownstreamConnectionProcessor(ConnectionProcessor):
     """Processes messages flowing through a downstream node
 
     This class only determines the direction in which it accesses the connection.
+    Also, the downstream processor is able to initiate the shutdown of the connection.
     """
 
     def _send_msg(self, msg):
