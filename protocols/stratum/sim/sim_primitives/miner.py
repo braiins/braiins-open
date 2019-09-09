@@ -5,6 +5,7 @@ import sim_primitives.coins as coins
 from .pool import MiningSession, MiningJob
 from .hashrate_meter import HashrateMeter
 from .network import Connection
+from .protocol import DownstreamConnectionProcessor
 
 
 class Miner(object):
@@ -14,7 +15,7 @@ class Miner(object):
         env: simpy.Environment,
         bus: EventBus,
         diff_1_target: int,
-        miner_protocol_type,
+        protocol_type: DownstreamConnectionProcessor,
         speed_ghps: float,
         simulate_luck=True,
     ):
@@ -22,7 +23,7 @@ class Miner(object):
         self.env = env
         self.bus = bus
         self.diff_1_target = diff_1_target
-        self.miner_protocol_type = miner_protocol_type
+        self.protocol_type = protocol_type
         self.connection_processor = None
         self.speed_ghps = speed_ghps
         self.work_meter = HashrateMeter(env)
@@ -64,7 +65,7 @@ class Miner(object):
         assert self.connection_processor is None, 'BUG: miner is already connected'
         connection.connect_to(target)
 
-        self.connection_processor = self.miner_protocol_type(self, connection)
+        self.connection_processor = self.protocol_type(self, connection)
         self.__emit_aux_msg_on_bus('Connecting to pool {}'.format(target.name))
 
     def disconnect(self):

@@ -5,8 +5,8 @@ import numpy as np
 import simpy
 from event_bus import EventBus
 from sim_primitives.hashrate_meter import HashrateMeter
-import sim_primitives.mining_params as mining_params
 import sim_primitives.coins as coins
+from .protocol import UpstreamConnectionProcessor
 
 
 class MiningJob:
@@ -216,7 +216,7 @@ class Pool(AcceptingConnection):
         name: str,
         env: simpy.Environment,
         bus: EventBus,
-        pool_protocol_type,
+        protocol_type: UpstreamConnectionProcessor,
         default_target: coins.Target,
         extranonce2_size: int = 8,
         avg_pool_block_time: float = 60,
@@ -226,7 +226,7 @@ class Pool(AcceptingConnection):
     ):
         """
 
-        :type pool_protocol_type:
+        :type protocol_type:
         """
         self.name = name
         self.env = env
@@ -239,7 +239,7 @@ class Pool(AcceptingConnection):
         self.__generate_new_prev_hash()
         # Per connection message processors
         self.connection_processors = dict()
-        self.connection_processor_clz = pool_protocol_type
+        self.connection_processor_clz = protocol_type
 
         self.pow_update_process = env.process(self.__pow_update())
 

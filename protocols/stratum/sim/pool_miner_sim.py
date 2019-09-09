@@ -119,7 +119,7 @@ def main():
         'pool1',
         env,
         bus,
-        pool_protocol_type=args.protocol['pool'],
+        protocol_type=args.protocol['pool'],
         default_target=coins.Target.from_difficulty(
             100000, mining_params.diff_1_target
         ),
@@ -137,7 +137,7 @@ def main():
         env,
         bus,
         diff_1_target=mining_params.diff_1_target,
-        miner_protocol_type=args.protocol['miner'],
+        protocol_type=args.protocol['miner'],
         speed_ghps=10000,
         simulate_luck=not args.no_luck,
     )
@@ -153,7 +153,7 @@ def main():
         env,
         bus,
         diff_1_target=mining_params.diff_1_target,
-        miner_protocol_type=args.protocol['miner'],
+        protocol_type=args.protocol['miner'],
         speed_ghps=8000,
         simulate_luck=not args.no_luck,
     )
