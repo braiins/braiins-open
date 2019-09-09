@@ -35,6 +35,28 @@ class Message:
         return '{}({})'.format(type(self).__name__, content)
 
 
+class RequestRegistry:
+    """Generates unique request ID for messages and provides simple registry"""
+
+    def __init__(self):
+        self.next_req_id = 0
+        self.requests = dict()
+
+    def push(self, req: Message):
+        """Assigns a unique request ID to a message and registers it"""
+        req.req_id = self.__next_req_id()
+        assert (
+            self.requests.get(req.req_id) is None
+        ), 'BUG: request ID already present {}'.format(req.req_id)
+        self.requests[req.req_id] = req
+
+    def pop(self, req_id):
+        return self.requests.pop(req_id, None)
+
+    def __next_req_id(self):
+        curr_req_id = self.next_req_id
+        self.next_req_id += 1
+        return curr_req_id
 
 
 class ConnectionProcessor:
@@ -47,7 +69,9 @@ class ConnectionProcessor:
         self.env = env
         self.bus = bus
         self.connection = connection
-        self.receive_loop_process = self.env.process(self.__receive_loop(self.connection.uid))
+        self.request_registry = RequestRegistry()
+        self.receive_loop_process = self.env.process(self.__receive_loop())
+
     def terminate(self):
         self.receive_loop_process.interrupt()
 
