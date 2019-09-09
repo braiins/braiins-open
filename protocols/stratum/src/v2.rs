@@ -60,9 +60,9 @@ pub trait Handler: 'static {
     handler_method!(SetupConnection, visit_setup_connection);
     handler_method!(SetupConnectionSuccess, visit_setup_connection_success);
     handler_method!(SetupConnectionError, visit_setup_connection_error);
-    handler_method!(OpenChannel, visit_open_channel);
-    handler_method!(OpenChannelSuccess, visit_open_channel_success);
-    handler_method!(OpenChannelError, visit_open_channel_error);
+    handler_method!(OpenMiningChannel, visit_open_mining_channel);
+    handler_method!(OpenMiningChannelSuccess, visit_open_mining_channel_success);
+    handler_method!(OpenMiningChannelError, visit_open_mining_channel_error);
     handler_method!(UpdateChannel, visit_update_channel);
     handler_method!(UpdateChannelError, visit_update_channel_error);
     handler_method!(SubmitShares, visit_submit_shares);
@@ -110,22 +110,22 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<Protocol>> {
                     as Box<dyn Payload<Protocol>>,
             ),
         ),
-        MessageType::OpenChannel => {
-            let channel = messages::OpenChannel::try_from(msg_bytes)?;
+        MessageType::OpenMiningChannel => {
+            let channel = messages::OpenMiningChannel::try_from(msg_bytes)?;
             (
                 Some(channel.req_id),
                 Ok(Box::new(channel) as Box<dyn Payload<Protocol>>),
             )
         }
-        MessageType::OpenChannelSuccess => {
-            let channel_success = messages::OpenChannelSuccess::try_from(msg_bytes)?;
+        MessageType::OpenMiningChannelSuccess => {
+            let channel_success = messages::OpenMiningChannelSuccess::try_from(msg_bytes)?;
             (
                 Some(channel_success.req_id),
                 Ok(Box::new(channel_success) as Box<dyn Payload<Protocol>>),
             )
         }
-        MessageType::OpenChannelError => {
-            let channel_error = messages::OpenChannelSuccess::try_from(msg_bytes)?;
+        MessageType::OpenMiningChannelError => {
+            let channel_error = messages::OpenMiningChannelSuccess::try_from(msg_bytes)?;
             (
                 Some(channel_error.req_id),
                 Ok(Box::new(channel_error) as Box<dyn Payload<Protocol>>),

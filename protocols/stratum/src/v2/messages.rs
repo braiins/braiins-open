@@ -120,18 +120,21 @@ pub struct SetupConnectionError {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct OpenChannel {
+pub struct OpenMiningChannel {
     pub req_id: u32,
     pub user: Str1_255,
+    // TODO-DOC- this field will most probably become an enum as there will multiple mining
+    //  channel types
     pub extended: bool,
     pub device: DeviceInfo,
     pub nominal_hashrate: f32,
-    pub max_target_nbits: u32,
+    pub max_target: Uint256Bytes,
+    pub min_extranonce_size: u16,
     pub aggregated_device_count: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct OpenChannelSuccess {
+pub struct OpenMiningChannelSuccess {
     pub req_id: u32,
     pub channel_id: u32,
     /// Optional device ID provided by the upstream if none was sent as part of DeviceInfo
@@ -145,7 +148,7 @@ pub struct OpenChannelSuccess {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct OpenChannelError {
+pub struct OpenMiningChannelError {
     pub req_id: u32,
     pub code: Str1_32,
 }
@@ -221,9 +224,9 @@ pub struct SetGroupChannel;
 impl_conversion!(SetupConnection, visit_setup_connection);
 impl_conversion!(SetupConnectionSuccess, visit_setup_connection_success);
 impl_conversion!(SetupConnectionError, visit_setup_connection_error);
-impl_conversion!(OpenChannel, visit_open_channel);
-impl_conversion!(OpenChannelSuccess, visit_open_channel_success);
-impl_conversion!(OpenChannelError, visit_open_channel_error);
+impl_conversion!(OpenMiningChannel, visit_open_mining_channel);
+impl_conversion!(OpenMiningChannelSuccess, visit_open_mining_channel_success);
+impl_conversion!(OpenMiningChannelError, visit_open_mining_channel_error);
 impl_conversion!(UpdateChannel, visit_update_channel);
 impl_conversion!(UpdateChannelError, visit_update_channel_error);
 impl_conversion!(SubmitShares, visit_submit_shares);

@@ -70,7 +70,7 @@ pub struct V2ToV1Translation {
     /// All connection details
     v2_conn_details: Option<v2::messages::SetupConnection>,
     /// Additional information about the pending channel being open
-    v2_channel_details: Option<v2::messages::OpenChannel>,
+    v2_channel_details: Option<v2::messages::OpenMiningChannel>,
     /// Target difficulty derived from mining.set_difficulty message
     /// The channel opening is not complete until the target is determined
     v2_target: Option<uint::U256>,
@@ -90,12 +90,12 @@ enum V2ToV1TranslationState {
     Init,
     /// Stratum V1 mining.configure is in progress
     V1Configure,
-    /// Connection successfully setup, waiting for OpenChannel message
+    /// Connection successfully setup, waiting for OpenMiningChannel message
     ConnectionSetup,
     /// Channel now needs finalization of subscribe+authorize+set difficulty target with the
     /// upstream V1 server
-    OpenChannelPending,
-    /// Upstream subscribe/authorize failed state ensures sending OpenChannelError only once
+    OpenMiningChannelPending,
+    /// Upstream subscribe/authorize failed state ensures sending OpenMiningChannelError only once
     V1SubscribeOrAuthorizeFail,
     /// Channel is operational
     Operational,
@@ -215,7 +215,7 @@ impl V2ToV1Translation {
         trace!("finalize_open_channel()");
         let mut init_target: Uint256Bytes = Uint256Bytes([0; 32]);
         self.v2_target
-            .expect("Bug: initial target still not defined when attempting to finalize OpenChannel")
+            .expect("Bug: initial target still not defined when attempting to finalize OpenMiningChannel")
             .to_little_endian(init_target.as_mut());
 
         // when V1 authorization has already taken place, report channel opening success
@@ -224,7 +224,7 @@ impl V2ToV1Translation {
             .clone()
             .and_then(|v2_channel_details| {
                 self.state = V2ToV1TranslationState::Operational;
-                let msg = v2::messages::OpenChannelSuccess {
+                let msg = v2::messages::OpenMiningChannelSuccess {
                     req_id: v2_channel_details.req_id,
                     channel_id: Self::CHANNEL_ID,
                     dev_id: Default::default(),
@@ -249,7 +249,7 @@ impl V2ToV1Translation {
         trace!("send_set_target()");
         let max_target = Uint256Bytes::from(self.v2_target.expect(
             "Bug: initial target still not defined when attempting to finalize \
-             OpenChannel",
+             OpenMiningChannel",
         ));
 
         let msg = v2::messages::SetTarget {
@@ -261,7 +261,7 @@ impl V2ToV1Translation {
     }
 
     /// Reports failure to open the channel and changes the translation state
-    /// From this point on a new OpenChannel message is expected as an attempt to reopen the channel
+    /// From this point on a new OpenMiningChannel message is expected as an attempt to reopen the channel
     fn abort_open_channel(&mut self, err_msg: &str) {
         trace!(
             "abort_open_channel() - channel details: {:?}, msg: {}",
@@ -273,7 +273,7 @@ impl V2ToV1Translation {
         self.v2_channel_details
             .clone()
             .and_then(|v2_channel_details| {
-                let msg = v2::messages::OpenChannelError {
+                let msg = v2::messages::OpenMiningChannelError {
                     req_id: v2_channel_details.req_id,
                     code: err_msg.try_into().unwrap(), // FIXME: error handling
                 };
@@ -445,7 +445,7 @@ impl V2ToV1Translation {
             self.state,
             payload,
         );
-        // Only the first of authorize or subscribe error issues the OpenChannelError message
+        // Only the first of authorize or subscribe error issues the OpenMiningChannelError message
         if self.state != V2ToV1TranslationState::V1SubscribeOrAuthorizeFail {
             trace!(
                 "Upstream connection init failed, dropping channel: {:?}",
@@ -754,7 +754,7 @@ impl v1::Handler for V2ToV1Translation {
         self.v2_target = Some(Self::DIFF1_TARGET / diff);
         if self.v1_authorized && self.v1_extra_nonce1.is_some() {
             // Initial set difficulty finalizes open channel if all preconditions are met
-            if self.state == V2ToV1TranslationState::OpenChannelPending {
+            if self.state == V2ToV1TranslationState::OpenMiningChannelPending {
                 self.finalize_open_channel()
                     .map_err(|e| trace!("visit_set_difficulty: {}", e))
                     // Consume the error as there is no way to return anything from the visitor for now.
@@ -851,15 +851,15 @@ impl v2::Handler for V2ToV1Translation {
     /// - perform authorize
     ///
     /// Upon successful authorization:
-    /// - communicate OpenChannelSuccess
+    /// - communicate OpenMiningChannelSuccess
     /// - start sending Jobs downstream to V2 client
-    fn visit_open_channel(
+    fn visit_open_mining_channel(
         &mut self,
         msg: &Message<v2::Protocol>,
-        payload: &v2::messages::OpenChannel,
+        payload: &v2::messages::OpenMiningChannel,
     ) {
         trace!(
-            "visit_open_channel() msg.id={:?} state={:?} payload:{:?}",
+            "visit_open_mining_channel() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
             self.state,
             payload,
@@ -868,14 +868,14 @@ impl v2::Handler for V2ToV1Translation {
             && self.state != V2ToV1TranslationState::V1SubscribeOrAuthorizeFail
         {
             trace!(
-                "Out of sequence OpenChannel message, received: {:?}",
+                "Out of sequence OpenMiningChannel message, received: {:?}",
                 payload
             );
             Self::submit_message(
                 &mut self.v2_tx,
-                v2::messages::OpenChannelError {
+                v2::messages::OpenMiningChannelError {
                     req_id: payload.req_id,
-                    code: "Out of sequence OpenChannel msg".try_into().unwrap(),
+                    code: "Out of sequence OpenMiningChannel msg".try_into().unwrap(),
                 },
             );
             return;
@@ -884,7 +884,7 @@ impl v2::Handler for V2ToV1Translation {
         // TODO eliminate the connection details clone()
         self.v2_conn_details.clone().and_then(|conn_details| {
             self.v2_channel_details = Some(payload.clone());
-            self.state = V2ToV1TranslationState::OpenChannelPending;
+            self.state = V2ToV1TranslationState::OpenMiningChannelPending;
 
             // FIXME: error handling
             let hostname: String = conn_details.endpoint_hostname.try_into().unwrap();

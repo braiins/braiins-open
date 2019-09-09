@@ -72,14 +72,18 @@ impl Handler for TestIdentityHandler {
         self.visit_and_check(msg, payload, build_setup_connection_success);
     }
 
-    fn visit_open_channel(&mut self, msg: &ii_wire::Message<Protocol>, payload: &OpenChannel) {
+    fn visit_open_mining_channel(
+        &mut self,
+        msg: &ii_wire::Message<Protocol>,
+        payload: &OpenMiningChannel,
+    ) {
         self.visit_and_check(msg, payload, build_open_channel);
     }
 
-    fn visit_open_channel_success(
+    fn visit_open_mining_channel_success(
         &mut self,
         msg: &ii_wire::Message<Protocol>,
-        payload: &OpenChannelSuccess,
+        payload: &OpenMiningChannelSuccess,
     ) {
         self.visit_and_check(msg, payload, build_open_channel_success);
     }
@@ -130,8 +134,8 @@ pub fn build_setup_connection_success() -> SetupConnectionSuccess {
     }
 }
 
-pub fn build_open_channel() -> OpenChannel {
-    OpenChannel {
+pub fn build_open_channel() -> OpenMiningChannel {
+    OpenMiningChannel {
         req_id: 10,
         user: USER_CREDENTIALS.try_into().unwrap(),
         extended: false,
@@ -142,13 +146,13 @@ pub fn build_open_channel() -> OpenChannel {
             dev_id: "xyz".try_into().unwrap(),
         },
         nominal_hashrate: 1e9,
-        // Maximum bitcoin target is 0xffff << 208 (= difficulty 1 share)
-        max_target_nbits: 0x1d00ffff,
+        max_target: ii_bitcoin::Target::default().into(),
+        min_extranonce_size: 0,
         aggregated_device_count: 1,
     }
 }
 
-pub fn build_open_channel_success() -> OpenChannelSuccess {
+pub fn build_open_channel_success() -> OpenMiningChannelSuccess {
     let init_target_be = uint::U256::from_big_endian(&[
         0x00, 0x00, 0x00, 0x00, 0x3f, 0xff, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -157,10 +161,10 @@ pub fn build_open_channel_success() -> OpenChannelSuccess {
     let mut init_target_le = [0u8; 32];
     init_target_be.to_little_endian(&mut init_target_le);
 
-    OpenChannelSuccess {
+    OpenMiningChannelSuccess {
         req_id: 10,
         channel_id: 0,
-        // don't provide device ID as the sample OpenChannel already provides one
+        // don't provide device ID as the sample OpenMiningChannel already provides one
         dev_id: Default::default(),
         // Represents difficulty 4
         init_target: Uint256Bytes(init_target_le),

@@ -67,6 +67,12 @@ impl From<Uint256Bytes> for ii_bitcoin::Target {
     }
 }
 
+impl From<ii_bitcoin::Target> for Uint256Bytes {
+    fn from(target: ii_bitcoin::Target) -> Self {
+        target.into_inner().into()
+    }
+}
+
 macro_rules! sized_string_type {
     ($name:ident, $min_len:expr, $max_len:expr) => {
         #[derive(PartialEq, Eq, Serialize, Deserialize, Default, Clone, Debug)]
