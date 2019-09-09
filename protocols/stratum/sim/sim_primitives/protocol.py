@@ -145,6 +145,12 @@ class DownstreamConnectionProcessor(ConnectionProcessor):
     def _recv_msg(self):
         return self.connection.incoming.get()
 
+    def disconnect(self):
+        """Downstream node may initiate disconnect
+
+        """
+        self.connection.disconnect()
+
     @abstractmethod
     def _on_invalid_message(self, msg):
         pass
