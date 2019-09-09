@@ -49,27 +49,27 @@ class PoolV1(UpstreamConnectionProcessor):
         """Accessor for the current mining session cannot fail.
 
         """
-        assert self.__mining_session is not None, 'Message processor has no mining session!'
+        assert (
+            self.__mining_session is not None
+        ), 'BUG: V1 Connection processor has no mining session!'
         return self.__mining_session
 
     def terminate(self):
         super().terminate()
-        self.__mining_session.terminate()
+        self.mining_session.terminate()
 
     def visit_subscribe(self, msg: Subscribe):
         """Handle mining.subscribe.
         """
-        mining_session = self.__mining_session
-
         self.__emit_protocol_msg_on_bus_with_state(msg)
 
-        if mining_session.state in (
-                mining_session.States.INIT,
-                mining_session.States.AUTHORIZED,
+        if self.mining_session.state in (
+            self.mining_session.States.INIT,
+            self.mining_session.States.AUTHORIZED,
         ):
             # Subscribe is now complete we can activate a mining session that starts
             # generating new jobs immediately
-            mining_session.state = mining_session.States.SUBSCRIBED
+            self.mining_session.state = self.mining_session.States.SUBSCRIBED
             self._send_msg(
                 SubscribeResponse(
                     msg.req_id,
@@ -77,25 +77,26 @@ class PoolV1(UpstreamConnectionProcessor):
                     # TODO: Extra nonce 1 is 8 bytes long and hardcoded
                     extranonce1=bytes([0] * 8),
                     extranonce2_size=self.pool.extranonce2_size,
-                ),
+                )
             )
             # Run the session so that it starts supplying jobs
-            mining_session.run()
+            self.mining_session.run()
         else:
             self._send_msg(
                 ErrorResult(
                     msg.req_id,
                     -1,
-                    'Subscribe not expected when in: {}'.format(mining_session.state),
-                ),
+                    'Subscribe not expected when in: {}'.format(
+                        self.mining_session.state
+                    ),
+                )
             )
 
     def visit_authorize(self, msg: Authorize):
         """Parse authorize.
         Sending authorize is legal at any state of the mining session.
         """
-        mining_session = self.__mining_session()
-        self.__mining_session.append_authorize(msg)
+        self.mining_session.append_authorize(msg)
         self.__emit_protocol_msg_on_bus_with_state(msg)
         # TODO: Implement username validation and fail to authorize for unknown usernames
         self._send_msg(OkResult(msg.req_id))
@@ -105,7 +106,7 @@ class PoolV1(UpstreamConnectionProcessor):
 
         self.pool.process_submit(
             msg.job_id,
-            self.__mining_session,
+            self.mining_session,
             on_accept=lambda diff_target: self._send_msg(OkResult(msg.req_id)),
             on_reject=lambda diff_target: self._send_msg(
                 ErrorResult(msg.req_id, -3, 'Too low difficulty')
@@ -156,5 +157,5 @@ class PoolV1(UpstreamConnectionProcessor):
     def __emit_protocol_msg_on_bus_with_state(self, msg):
         """Common protocol message logging decorated with mining session state"""
         self._emit_protocol_msg_on_bus(
-            '{}(state={})'.format(type(msg).__name__, self.__mining_session.state), msg
+            '{}(state={})'.format(type(msg).__name__, self.mining_session.state), msg
         )
