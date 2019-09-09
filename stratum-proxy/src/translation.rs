@@ -434,18 +434,6 @@ impl V2ToV1Translation {
             })
     }
 
-    // TODO: unused?
-    fn handle_ok_result(
-        &mut self,
-        _msg: &ii_wire::Message<v1::Protocol>,
-        payload: &v1::framing::StratumResult,
-    ) -> ii_stratum::error::Result<()> {
-        let bool_result = v1::messages::BooleanResult::try_from(payload)?;
-        trace!("Received: {:?}", bool_result);
-
-        Ok(())
-    }
-
     fn handle_authorize_or_subscribe_error(
         &mut self,
         msg: &ii_wire::Message<v1::Protocol>,
@@ -537,21 +525,6 @@ impl V2ToV1Translation {
 
         Self::submit_message(&mut self.v2_tx, err_msg);
         Ok(())
-    }
-
-    // TODO: unused?
-    fn handle_any_stratum_error(
-        &mut self,
-        msg: &ii_wire::Message<v1::Protocol>,
-        payload: &v1::framing::StratumError,
-    ) -> ii_stratum::error::Result<()> {
-        trace!(
-            "handle_any_stratum_error() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
-            self.state,
-            payload,
-        );
-        unimplemented!();
     }
 
     /// Iterates the merkle branches and calculates block merkle root using the extra nonce 1.
