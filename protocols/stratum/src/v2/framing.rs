@@ -55,9 +55,9 @@ impl Header {
 //#[derive(PrimitiveEnum_u8, Clone, Copy, Debug, PartialEq)]
 #[derive(PrimitiveEnum_u8, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MessageType {
-    SetupMiningConnection = 0x00,
-    SetupMiningConnectionSuccess = 0x01,
-    SetupMiningConnectionError = 0x02,
+    SetupConnection = 0x00,
+    SetupConnectionSuccess = 0x01,
+    SetupConnectionError = 0x02,
     OpenChannel = 0x03,
     OpenChannelSuccess = 0x04,
     OpenChannelError = 0x05,
@@ -78,7 +78,7 @@ mod test {
     #[test]
     fn test_header_pack() {
         let expected_bytes = [0x00u8, 0xcc, 0xbb, 0xaa];
-        let header = Header::new(MessageType::SetupMiningConnection, 0xaabbcc);
+        let header = Header::new(MessageType::SetupConnection, 0xaabbcc);
         let header_bytes = header.pack();
         assert_eq!(
             expected_bytes, header_bytes,

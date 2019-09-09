@@ -56,20 +56,20 @@ impl TestIdentityHandler {
 }
 
 impl Handler for TestIdentityHandler {
-    fn visit_setup_mining_connection(
+    fn visit_setup_connection(
         &mut self,
         msg: &ii_wire::Message<Protocol>,
-        payload: &SetupMiningConnection,
+        payload: &SetupConnection,
     ) {
-        self.visit_and_check(msg, payload, build_setup_mining_connection);
+        self.visit_and_check(msg, payload, build_setup_connection);
     }
 
-    fn visit_setup_mining_connection_success(
+    fn visit_setup_connection_success(
         &mut self,
         msg: &ii_wire::Message<Protocol>,
-        payload: &SetupMiningConnectionSuccess,
+        payload: &SetupConnectionSuccess,
     ) {
-        self.visit_and_check(msg, payload, build_setup_mining_connection_success);
+        self.visit_and_check(msg, payload, build_setup_connection_success);
     }
 
     fn visit_open_channel(&mut self, msg: &ii_wire::Message<Protocol>, payload: &OpenChannel) {
@@ -102,28 +102,31 @@ impl Handler for TestIdentityHandler {
 }
 
 #[cfg(not(feature = "v2json"))]
-pub const SETUP_MINING_CONNECTION_SERIALIZED: &'static [u8] =
-    b"\x00\x00\x15stratum.slushpool.com\x00\x00";
+pub const SETUP_CONNECTION_SERIALIZED: &'static [u8] =
+    b"\x00\x00\x00\x00\x00\x00\x00\x00\x15stratum.slushpool.com\x05\x0d";
 #[cfg(feature = "v2json")]
-pub const SETUP_MINING_CONNECTION_SERIALIZED: &'static [u8] =
-    br#"{"protocol_version":0,"connection_url":"stratum.slushpool.com","required_extranonce_size":0}"#;
+pub const SETUP_CONNECTION_SERIALIZED: &'static [u8] =
+    br#"{"max_version":0,"min_version":0,"flags":0,"expected_pubkey":[],"endpoint_hostname":"stratum.slushpool.com","endpoint_port":3333}"#;
 
-pub fn build_setup_mining_connection() -> SetupMiningConnection {
-    SetupMiningConnection {
-        protocol_version: 0,
-        connection_url: Str0_255::from_str(POOL_URL),
-        required_extranonce_size: 0,
+pub fn build_setup_connection() -> SetupConnection {
+    SetupConnection {
+        max_version: 0,
+        min_version: 0,
+        flags: 0,
+        expected_pubkey: PubKey::new(),
+        endpoint_hostname: Str0_255::from_str(POOL_URL),
+        endpoint_port: POOL_PORT as u16,
     }
 }
 
-pub const SETUP_MINING_CONNECTION_SUCCESS_SERIALIZED: &'static [u8] =
+pub const SETUP_CONNECTION_SUCCESS_SERIALIZED: &'static [u8] =
     br#"{"protocol_version":0,"connection_url":"stratum.slushpool.com","required_extranonce_size":0}"#;
 
-pub fn build_setup_mining_connection_success() -> SetupMiningConnectionSuccess {
-    SetupMiningConnectionSuccess {
-        used_protocol_version: 0,
-        max_extranonce_size: 0,
-        pub_key: vec![0xde, 0xad, 0xbe, 0xef].try_into().unwrap(),
+pub fn build_setup_connection_success() -> SetupConnectionSuccess {
+    SetupConnectionSuccess {
+        used_version: 0,
+        flags: 0,
+        pub_key: PubKey::new(),
     }
 }
 

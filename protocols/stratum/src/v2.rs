@@ -57,15 +57,9 @@ macro_rules! handler_method {
 /// Specifies all messages to be visited
 /// TODO document why anything implementing the Handler must be static
 pub trait Handler: 'static {
-    handler_method!(SetupMiningConnection, visit_setup_mining_connection);
-    handler_method!(
-        SetupMiningConnectionSuccess,
-        visit_setup_mining_connection_success
-    );
-    handler_method!(
-        SetupMiningConnectionError,
-        visit_setup_mining_connection_error
-    );
+    handler_method!(SetupConnection, visit_setup_connection);
+    handler_method!(SetupConnectionSuccess, visit_setup_connection_success);
+    handler_method!(SetupConnectionError, visit_setup_connection_error);
     handler_method!(OpenChannel, visit_open_channel);
     handler_method!(OpenChannelSuccess, visit_open_channel_success);
     handler_method!(OpenChannelError, visit_open_channel_error);
@@ -97,24 +91,22 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<Protocol>> {
 
     // Build message based on its type specified in the header
     let (id, payload) = match header.msg_type {
-        MessageType::SetupMiningConnection => (
+        MessageType::SetupConnection => (
+            None,
+            Ok(Box::new(messages::SetupConnection::try_from(msg_bytes)?)
+                as Box<dyn Payload<Protocol>>),
+        ),
+        MessageType::SetupConnectionSuccess => (
             None,
             Ok(
-                Box::new(messages::SetupMiningConnection::try_from(msg_bytes)?)
+                Box::new(messages::SetupConnectionSuccess::try_from(msg_bytes)?)
                     as Box<dyn Payload<Protocol>>,
             ),
         ),
-        MessageType::SetupMiningConnectionSuccess => (
+        MessageType::SetupConnectionError => (
             None,
             Ok(
-                Box::new(messages::SetupMiningConnectionSuccess::try_from(msg_bytes)?)
-                    as Box<dyn Payload<Protocol>>,
-            ),
-        ),
-        MessageType::SetupMiningConnectionError => (
-            None,
-            Ok(
-                Box::new(messages::SetupMiningConnectionError::try_from(msg_bytes)?)
+                Box::new(messages::SetupConnectionError::try_from(msg_bytes)?)
                     as Box<dyn Payload<Protocol>>,
             ),
         ),
@@ -202,12 +194,12 @@ pub mod test {
     fn test_deserialize_message() {
         // build serialized message
         let header = framing::Header::new(
-            framing::MessageType::SetupMiningConnection,
-            SETUP_MINING_CONNECTION_SERIALIZED.len(),
+            framing::MessageType::SetupConnection,
+            SETUP_CONNECTION_SERIALIZED.len(),
         );
         let mut serialized_msg = BytesMut::with_capacity(64);
         serialized_msg.extend_from_slice(&header.pack());
-        serialized_msg.extend_from_slice(SETUP_MINING_CONNECTION_SERIALIZED);
+        serialized_msg.extend_from_slice(SETUP_CONNECTION_SERIALIZED);
 
         let msg = deserialize_message(&serialized_msg).expect("Deserialization failed");
         msg.accept(&mut TestIdentityHandler);

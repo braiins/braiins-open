@@ -72,7 +72,7 @@ pub fn build_configure_ok_response_message() -> Frame {
 /// Testing subscribe request in a dense form without any spaces
 pub const MINING_SUBSCRIBE_REQ_JSON: &str = concat!(
     r#"{"id":1,"method":"mining.subscribe","#,
-    r#""params":["Braiins OS 2019-06-05",null,"stratum.slushpool.com",null]}"#
+    r#""params":["Braiins OS 2019-06-05",null,"stratum.slushpool.com:3333",null]}"#
 );
 
 const EXTRA_NONCE_1: &str = "6c6f010000000c";
@@ -94,10 +94,11 @@ pub fn build_subscribe_request_frame() -> Frame {
 }
 
 pub fn build_subscribe() -> Subscribe {
+    let hostname_port: String = format!("{}:{}", String::from(POOL_URL), POOL_PORT);
     Subscribe(
         Some(MINER_SW_SIGNATURE.into()), // agent_signature
         None,                            // extra_nonce1
-        Some(POOL_URL.into()),           // url
+        Some(hostname_port),             // url
         None,                            // port
     )
 }

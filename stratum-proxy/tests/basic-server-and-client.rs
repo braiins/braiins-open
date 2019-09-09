@@ -62,7 +62,7 @@ fn test_v2server() {
         let mut server = Server::<v2::Framing>::bind(&addr).unwrap();
 
         // Spawn server task that reacts to any incoming message and responds
-        // with SetupMiningConnectionSuccess
+        // with SetupConnectionSuccess
         tokio::spawn_async(async move {
             let mut conn = await!(server.next()).unwrap().unwrap();
             let msg = await!(conn.next()).unwrap().unwrap();
@@ -70,14 +70,14 @@ fn test_v2server() {
             msg.accept(&mut test_utils::v2::TestIdentityHandler);
 
             // test response frame
-            await!(conn.send(test_utils::v2::build_setup_mining_connection_success()))
+            await!(conn.send(test_utils::v2::build_setup_connection_success()))
                 .expect("Could not send message");
         });
 
         // Testing client
         let mut connection = await!(Connection::<v2::Framing>::connect(&addr))
             .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
-        await!(connection.send(test_utils::v2::build_setup_mining_connection()))
+        await!(connection.send(test_utils::v2::build_setup_connection()))
             .expect("Could not send message");
 
         let response = await!(connection.next()).unwrap().unwrap();
@@ -160,7 +160,7 @@ fn test_v1server() {
         let addr = format!("{}:{}", ADDR, PORT_V1).parse().unwrap();
 
         // Spawn server task that reacts to any incoming message and responds
-        // with SetupMiningConnectionSuccess
+        // with SetupConnectionSuccess
         ii_async_compat::spawn(v1server_task(addr));
 
         // Testing client
@@ -182,7 +182,7 @@ async fn test_v2_client(server_addr: String) {
         let mut conn = await!(Connection::<v2::Framing>::connect(&sock_server_addr))?;
 
         // Initialize server connection
-        await!(conn.send(test_utils::v2::build_setup_mining_connection()))
+        await!(conn.send(test_utils::v2::build_setup_connection()))
             .expect("Could not send message");
 
         // let response = await!(conn.next()).unwrap().unwrap();

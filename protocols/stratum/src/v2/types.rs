@@ -267,3 +267,15 @@ pub struct DeviceInfo {
     pub fw_ver: Str1_255,
     pub dev_id: Str0_255,
 }
+
+/// PubKey for authenticating some protocol messages
+/// TODO: Preliminary as exact signing algorithm has not been chosen, we may even have this as
+/// dynamic field Bytes0_255
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct PubKey([u8; 0]);
+
+impl PubKey {
+    pub fn new() -> Self {
+        PubKey([0; 0])
+    }
+}

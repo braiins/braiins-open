@@ -96,22 +96,26 @@ macro_rules! impl_conversion {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct SetupMiningConnection {
-    pub protocol_version: u16,
-    pub connection_url: Str0_255,
-    /// for header only mining, this fields stays at 0
-    pub required_extranonce_size: u16,
+pub struct SetupConnection {
+    pub max_version: u16,
+    pub min_version: u16,
+    /// TODO: specify an enum for flags
+    pub flags: u32,
+    pub expected_pubkey: PubKey,
+    pub endpoint_hostname: Str0_255,
+    pub endpoint_port: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct SetupMiningConnectionSuccess {
-    pub used_protocol_version: u16,
-    pub max_extranonce_size: u16,
-    pub pub_key: Bytes0_255,
+pub struct SetupConnectionSuccess {
+    pub used_version: u16,
+    /// TODO: specify an enum for flags
+    pub flags: u32,
+    pub pub_key: PubKey,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SetupMiningConnectionError {
+pub struct SetupConnectionError {
     pub code: Str0_255,
 }
 
@@ -214,15 +218,9 @@ pub struct SetTarget {
 
 pub struct SetGroupChannel;
 
-impl_conversion!(SetupMiningConnection, visit_setup_mining_connection);
-impl_conversion!(
-    SetupMiningConnectionSuccess,
-    visit_setup_mining_connection_success
-);
-impl_conversion!(
-    SetupMiningConnectionError,
-    visit_setup_mining_connection_error
-);
+impl_conversion!(SetupConnection, visit_setup_connection);
+impl_conversion!(SetupConnectionSuccess, visit_setup_connection_success);
+impl_conversion!(SetupConnectionError, visit_setup_connection_error);
 impl_conversion!(OpenChannel, visit_open_channel);
 impl_conversion!(OpenChannelSuccess, visit_open_channel_success);
 impl_conversion!(OpenChannelError, visit_open_channel_error);

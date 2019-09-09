@@ -98,16 +98,13 @@ async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<TxFrame
 /// emits corresponding V1 or V2 messages
 /// TODO we need a way to detect that translation is not responding and the entire test should fail
 #[test]
-fn test_setup_mining_connection_translate() {
+fn test_setup_connection_translate() {
     ii_async_compat::run(async {
         let (v1_tx, mut v1_rx) = mpsc::channel(1);
         let (v2_tx, mut v2_rx) = mpsc::channel(1);
         let mut translation = V2ToV1Translation::new(v1_tx, v2_tx);
 
-        v2_simulate_incoming_message(
-            &mut translation,
-            test_utils::v2::build_setup_mining_connection(),
-        );
+        v2_simulate_incoming_message(&mut translation, test_utils::v2::build_setup_connection());
         // Setup mining connection should result into: mining.configure
         await!(v1_verify_generated_response_message(&mut v1_rx));
         v1_simulate_incoming_message(

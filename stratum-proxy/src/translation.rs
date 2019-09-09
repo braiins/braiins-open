@@ -34,7 +34,7 @@ use std::mem::size_of;
 
 use ii_stratum::v1;
 use ii_stratum::v2;
-use ii_stratum::v2::types::Uint256Bytes;
+use ii_stratum::v2::types::{PubKey, Uint256Bytes};
 
 use ii_logging::macros::*;
 use ii_wire::{Message, MessageId, TxFrame};
@@ -68,7 +68,7 @@ pub struct V2ToV1Translation {
     v2_tx: mpsc::Sender<TxFrame>,
     v2_req_id: MessageId,
     /// All connection details
-    v2_conn_details: Option<v2::messages::SetupMiningConnection>,
+    v2_conn_details: Option<v2::messages::SetupConnection>,
     /// Additional information about the pending channel being open
     v2_channel_details: Option<v2::messages::OpenChannel>,
     /// Target difficulty derived from mining.set_difficulty message
@@ -287,7 +287,7 @@ impl V2ToV1Translation {
         self.v2_channel_details = None;
     }
 
-    /// Finalizes a pending SetupMiningConnection upon successful negotiation of
+    /// Finalizes a pending SetupConnection upon successful negotiation of
     /// mining configuration of version rolling bits
     fn handle_configure_result(
         &mut self,
@@ -318,17 +318,17 @@ impl V2ToV1Translation {
             {
                 self.state = V2ToV1TranslationState::ConnectionSetup;
 
-                let success = v2::messages::SetupMiningConnectionSuccess {
-                    used_protocol_version: Self::PROTOCOL_VERSION as u16,
-                    max_extranonce_size: Self::MAX_EXTRANONCE_SIZE as u16,
+                let success = v2::messages::SetupConnectionSuccess {
+                    used_version: Self::PROTOCOL_VERSION as u16,
+                    flags: 0,
                     // TODO provide public key for TOFU
-                    pub_key: vec![0xde, 0xad, 0xbe, 0xef].try_into().unwrap(),
+                    pub_key: PubKey::new(),
                 };
                 Self::submit_message(&mut self.v2_tx, success);
             } else {
                 // TODO consolidate into abort_connection() + communicate shutdown of this
                 // connection similarly everywhere in the code
-                let response = v2::messages::SetupMiningConnectionError {
+                let response = v2::messages::SetupConnectionError {
                     code: "Cannot negotiate upstream V1 version mask"
                         .try_into()
                         .unwrap(),
@@ -352,7 +352,7 @@ impl V2ToV1Translation {
         );
         // TODO consolidate into abort_connection() + communicate shutdown of this
         // connection similarly everywhere in the code
-        let response = v2::messages::SetupMiningConnectionError {
+        let response = v2::messages::SetupConnectionError {
             code: "Cannot negotiate upstream V1 version mask"
                 .try_into()
                 .unwrap(),
@@ -807,13 +807,13 @@ impl v1::Handler for V2ToV1Translation {
 /// the rest of the methods have default implementation that only reports error in the log and to the client, dropping a connection?
 /// Connection dropping is to be clarified
 impl v2::Handler for V2ToV1Translation {
-    fn visit_setup_mining_connection(
+    fn visit_setup_connection(
         &mut self,
         msg: &Message<v2::Protocol>,
-        payload: &v2::messages::SetupMiningConnection,
+        payload: &v2::messages::SetupConnection,
     ) {
         trace!(
-            "visit_setup_mining_connection() msg.id={:?} state={:?} payload:{:?}",
+            "visit_mining_connection() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
             self.state,
             payload,
@@ -822,7 +822,7 @@ impl v2::Handler for V2ToV1Translation {
             trace!("Cannot setup connection again, received: {:?}", payload);
             Self::submit_message(
                 &mut self.v2_tx,
-                v2::messages::SetupMiningConnectionError {
+                v2::messages::SetupConnectionError {
                     code: "Connection can be setup only once".try_into().unwrap(),
                 },
             );
@@ -886,10 +886,13 @@ impl v2::Handler for V2ToV1Translation {
             self.v2_channel_details = Some(payload.clone());
             self.state = V2ToV1TranslationState::OpenChannelPending;
 
+            // FIXME: error handling
+            let hostname: String = conn_details.endpoint_hostname.try_into().unwrap();
+            let hostname_port = format!("{}:{}", hostname, conn_details.endpoint_port);
             let subscribe = v1::messages::Subscribe(
                 Some(payload.device.fw_ver.to_string()),
                 None,
-                Some(conn_details.connection_url.try_into().unwrap()), // FIXME: error handling
+                Some(hostname_port),
                 None,
             );
 
