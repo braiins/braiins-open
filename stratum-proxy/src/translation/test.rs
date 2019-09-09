@@ -21,13 +21,11 @@
 // contact us at opensource@braiins.com.
 
 use futures::stream::StreamExt;
-use tokio::runtime::current_thread as runtime;
 
 use super::*;
 use ii_stratum::test_utils;
 use ii_stratum::v1;
 use ii_stratum::v2;
-use ii_wire::tokio;
 
 //       F::Error: From<E>,
 //        M: TryInto<F::Tx, Error = E>,
