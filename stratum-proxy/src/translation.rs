@@ -78,9 +78,6 @@ pub struct V2ToV1Translation {
     v2_job_id: MessageId,
     /// Translates V2 job ID to V1 job ID
     v2_to_v1_job_map: JobMap,
-
-    /// TODO: Temporary local blockheight. We will extract the value from coinbase part 1.
-    block_height: MessageId,
 }
 
 /// States of the Translation setup
@@ -160,7 +157,6 @@ impl V2ToV1Translation {
             v2_req_id: MessageId::new(),
             v2_job_id: MessageId::new(),
             v2_to_v1_job_map: JobMap::default(),
-            block_height: MessageId::new(),
         }
     }
 
@@ -577,13 +573,10 @@ impl V2ToV1Translation {
         }
     }
 
-    /// TODO temporary workaround that provides locally tracked block height (from start of the
-    /// mining session. This is yet to be implemented
-    fn extract_block_height_from_notify(&self, _payload: &v1::messages::Notify) -> u32 {
-        self.block_height.get()
-    }
-
     /// Builds SetNewPrevHash for the specified v1 Notify `payload`
+    ///
+    /// The SetNewPrevHash has to reference the future job that the V2 downstream has
+    /// previously received from us.
     ///
     /// TODO: how to and if at all shall we determine the ntime offset? The proxy, unless
     /// it has access to the bitcoin network, cannot determine precisly determine the median
@@ -595,6 +588,7 @@ impl V2ToV1Translation {
     /// interval
     fn build_set_new_prev_hash(
         &self,
+        job_id: u32,
         payload: &v1::messages::Notify,
     ) -> crate::error::Result<v2::messages::SetNewPrevHash> {
         let max_ntime_offset = (7200 - 0/*min(0, sys_time - payload.time())*/) / 4;
@@ -605,11 +599,12 @@ impl V2ToV1Translation {
         let prev_hash = Uint256Bytes(prev_hash.into_inner());
 
         Ok(v2::messages::SetNewPrevHash {
-            block_height: self.extract_block_height_from_notify(payload),
+            channel_id: Self::CHANNEL_ID,
             prev_hash,
             min_ntime: payload.time(),
             max_ntime_offset,
             nbits: payload.bits(),
+            job_id,
         })
     }
 
@@ -648,7 +643,7 @@ impl V2ToV1Translation {
                 let v2_job = v2::messages::NewMiningJob {
                     channel_id: Self::CHANNEL_ID,
                     job_id: self.v2_job_id.next(),
-                    block_height: self.extract_block_height_from_notify(payload),
+                    future_job: payload.clean_jobs(),
                     merkle_root: Uint256Bytes(merkle_root.into_inner()),
                     version: payload.version(),
                 };
@@ -662,7 +657,7 @@ impl V2ToV1Translation {
                         self.v2_to_v1_job_map.clear();
                         // Any error means immediate termination
                         // TODO write a unit test for such scenario, too
-                        Some(self.build_set_new_prev_hash(payload)?)
+                        Some(self.build_set_new_prev_hash(v2_job.job_id, payload)?)
                     } else {
                         None
                     };

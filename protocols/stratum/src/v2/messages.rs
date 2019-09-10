@@ -191,7 +191,7 @@ pub struct SubmitSharesError {
 pub struct NewMiningJob {
     pub channel_id: u32,
     pub job_id: u32,
-    pub block_height: u32,
+    pub future_job: bool,
     pub merkle_root: Uint256Bytes,
     pub version: u32,
 }
@@ -200,11 +200,12 @@ pub struct NewExtendedMiningJob;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetNewPrevHash {
-    pub block_height: u32,
+    pub channel_id: u32,
     pub prev_hash: Uint256Bytes,
     pub min_ntime: u32,
     pub max_ntime_offset: u16,
     pub nbits: u32,
+    pub job_id: u32,
     // TODO specify signature type
     //pub signature: ??,
 }

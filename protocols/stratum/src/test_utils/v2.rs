@@ -181,7 +181,7 @@ pub fn build_new_mining_job() -> NewMiningJob {
     NewMiningJob {
         channel_id: 0,
         job_id: 0,
-        block_height: 0,
+        future_job: false,
         merkle_root: Uint256Bytes(expected_merkle_root.into_inner()),
         version: MINING_WORK_VERSION,
     }
@@ -193,12 +193,13 @@ pub fn build_set_new_prev_hash() -> SetNewPrevHash {
     let prev_hash = sha256d::Hash::from_slice(v1_req.prev_hash()).expect("Cannot build Prev Hash");
 
     SetNewPrevHash {
-        block_height: 0,
+        channel_id: 0,
         prev_hash: Uint256Bytes(prev_hash.into_inner()),
         min_ntime: v1_req.time(),
         // TODO: this needs to be reviewed and system time should be deterministically involved,
         // too?
         max_ntime_offset: 1800,
+        job_id: 0,
         nbits: v1_req.bits(),
     }
 }
