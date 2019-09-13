@@ -15,7 +15,10 @@ Last but not least, the idea is to have a reference implementation of both proto
 
 ## Install
 
+Simulation requires Python 3.7.
+
 The easiest way to run the simulation is to use python `virtualenvwrapper`
+
 
 ### The `virtualenvwrapper` way
 
@@ -23,16 +26,6 @@ The easiest way to run the simulation is to use python `virtualenvwrapper`
 mkvirtualenv --python=/usr/bin/python3.7 stratum-sim
 pip install -r ./requirements.txt
 ```
-
-
-### Python < 3.7
-If you happen to have at least python 3.5 on your machine, remove the
- following line from the `requirements.txt` - it is the code formatter:
-
- ```
-git+ssh://git@github.com/braiins/black.git@braiins-codestyle#egg=black
-```
-
 
 ## Running Stratum V2 Simulation
 

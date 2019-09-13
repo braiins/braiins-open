@@ -22,29 +22,32 @@
 
 """V2 header only miner"""
 
-from ..miner import Miner
-from ..protocol import DownstreamConnectionProcessor
-from .messages import (
+import enum
+
+import sim_primitives.coins as coins
+from sim_primitives.miner import Miner
+from sim_primitives.network import Connection
+from sim_primitives.pool import MiningJob
+from sim_primitives.protocol import DownstreamConnectionProcessor
+from sim_primitives.stratum_v2.messages import (
     SetupConnection,
     SetupConnectionSuccess,
     SetupConnectionError,
     OpenStandardMiningChannel,
     OpenStandardMiningChannelSuccess,
-    OpenStandardMiningChannelError,
+    OpenMiningChannelError,
     SetNewPrevHash,
     SetTarget,
     NewMiningJob,
-    SubmitShares,
+    SubmitSharesStandard,
     SubmitSharesSuccess,
     SubmitSharesError,
 )
-from ..network import Connection
-from .types import *
-import sim_primitives.coins as coins
+from sim_primitives.stratum_v2.pool import PoolMiningChannel
+from sim_primitives.stratum_v2.types import ProtocolType, DownstreamConnectionFlags
+
 
 # TODO: Move MiningChannel and session from Pool
-from .pool import PoolMiningChannel
-from ..pool import MiningJob
 
 
 class MinerV2(DownstreamConnectionProcessor):
@@ -72,13 +75,18 @@ class MinerV2(DownstreamConnectionProcessor):
         #  PubKey handling is also not precisely defined yet
         self._send_msg(
             SetupConnection(
+                protocol=ProtocolType.MINING_PROTOCOL,
                 max_version=2,
                 min_version=2,
-                flags=[DownstreamConnectionFlags.NONE],
-                endpoint_host='v2pool',
+                flags={DownstreamConnectionFlags.REQUIRES_STANDARD_JOBS},  # TODO:
+                endpoint_host=connection.conn_target.name,
                 endpoint_port=connection.port,
-                expected_pubkey=PubKey(),
-                device_info=DeviceInfo(),
+                vendor=self.miner.device_information.get('vendor', 'unknown'),
+                hardware_version=self.miner.device_information.get(
+                    'hardware_version', 'unknown'
+                ),
+                firmware=self.miner.device_information.get('firmware', 'unknown'),
+                device_id=self.miner.device_information.get('device_id', ''),
             )
         )
         self.connection_config = None
@@ -90,8 +98,8 @@ class MinerV2(DownstreamConnectionProcessor):
 
         req = OpenStandardMiningChannel(
             req_id=None,
-            user=self.name,
-            nominal_hashrate=self.miner.speed_ghps * 1e9,
+            user_identity=self.name,
+            nominal_hashrate=self.miner.device_information.get('speed_ghps') * 1e9,
             max_target=self.miner.diff_1_target,
             # Header only mining, now extranonce 2 size required
         )
@@ -113,10 +121,10 @@ class MinerV2(DownstreamConnectionProcessor):
 
         if req is not None:
             session = self.miner.new_mining_session(
-                coins.Target(msg.init_target, self.miner.diff_1_target)
+                coins.Target(msg.target, self.miner.diff_1_target)
             )
             # TODO find some reasonable extraction of the channel configuration, for now,
-            #  we just retain the OpenStandardMiningChannel and OpenMiningChannelSuccess message
+            #  we just retain the OpenMiningChannel and OpenMiningChannelSuccess message
             #  pair that provides complete information
             self.channel = PoolMiningChannel(
                 session=session,
@@ -127,12 +135,15 @@ class MinerV2(DownstreamConnectionProcessor):
             session.run()
         else:
             self._emit_protocol_msg_on_bus(
-                'Cannot find matching OpenStandardMiningChannel request', msg
+                'Cannot find matching OpenMiningChannel request', msg
             )
 
-    def visit_open_standard_mining_channel_error(
-        self, msg: OpenStandardMiningChannelError
+    def visit_open_extended_mining_channel_success(
+        self, msg: OpenStandardMiningChannelSuccess
     ):
+        pass
+
+    def visit_open_mining_channel_error(self, msg: OpenMiningChannelError):
         req = self.request_registry.pop(msg.req_id)
         self._emit_protocol_msg_on_bus(
             'Open mining channel failed (orig request: {})'.format(req), msg
@@ -176,13 +187,13 @@ class MinerV2(DownstreamConnectionProcessor):
         # TODO: seq_num is currently unused, we should use it for tracking
         #  accepted/rejected shares
         self._send_msg(
-            SubmitShares(
+            SubmitSharesStandard(
                 channel_id=self.channel.id,
-                seq_num=0,
+                sequence_number=0,  # unique sequential identifier within the channel.
                 job_id=job.uid,
-                nonce=None,
-                ntime=None,
-                version=None,
+                nonce=0,
+                ntime=self.env.now,
+                version=0,  # full nVersion field
             )
         )
 

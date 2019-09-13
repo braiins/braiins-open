@@ -23,11 +23,12 @@
 import numpy as np
 import simpy
 from event_bus import EventBus
+
 import sim_primitives.coins as coins
-from .pool import MiningSession, MiningJob
-from .hashrate_meter import HashrateMeter
-from .network import Connection
-from .protocol import DownstreamConnectionProcessor
+from sim_primitives.hashrate_meter import HashrateMeter
+from sim_primitives.network import Connection
+from sim_primitives.pool import MiningSession, MiningJob
+from sim_primitives.protocol import DownstreamConnectionProcessor
 
 
 class Miner(object):
@@ -38,16 +39,18 @@ class Miner(object):
         bus: EventBus,
         diff_1_target: int,
         protocol_type: DownstreamConnectionProcessor,
-        speed_ghps: float,
+        device_information: dict,
         simulate_luck=True,
+        *args,
+        **kwargs
     ):
         self.name = name
         self.env = env
         self.bus = bus
         self.diff_1_target = diff_1_target
         self.protocol_type = protocol_type
+        self.device_information = device_information
         self.connection_processor = None
-        self.speed_ghps = speed_ghps
         self.work_meter = HashrateMeter(env)
         self.mine_proc = None
         self.job_uid = None
@@ -57,11 +60,11 @@ class Miner(object):
         self.simulate_luck = simulate_luck
 
     def get_actual_speed(self):
-        return self.speed_ghps if self.is_mining else 0
+        return self.device_information.get('speed_ghps') if self.is_mining else 0
 
     def mine(self, job: MiningJob):
         share_diff = job.diff_target.to_difficulty()
-        avg_time = share_diff * 4.294967296 / self.speed_ghps
+        avg_time = share_diff * 4.294967296 / self.device_information.get('speed_ghps')
 
         # Report the current hashrate at the beginning when of mining
         self.__emit_hashrate_msg_on_bus(job, avg_time)
@@ -130,7 +133,12 @@ class Miner(object):
 
     def __emit_aux_msg_on_bus(self, msg: str):
         self.bus.emit(
-            self.name, self.env.now, self.connection_processor.connection.uid, msg
+            self.name,
+            self.env.now,
+            self.connection_processor.connection.uid
+            if self.connection_processor
+            else None,
+            msg,
         )
 
     def __emit_hashrate_msg_on_bus(self, job: MiningJob, avg_share_time):

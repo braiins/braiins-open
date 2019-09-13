@@ -21,14 +21,16 @@
 # contact us at opensource@braiins.com.
 
 """Generic pool module"""
-from .network import Connection, AcceptingConnection
 import hashlib
+
 import numpy as np
 import simpy
 from event_bus import EventBus
-from sim_primitives.hashrate_meter import HashrateMeter
+
 import sim_primitives.coins as coins
-from .protocol import UpstreamConnectionProcessor
+from sim_primitives.hashrate_meter import HashrateMeter
+from sim_primitives.protocol import UpstreamConnectionProcessor
+from sim_primitives.network import Connection, AcceptingConnection
 
 
 class MiningJob:

@@ -23,11 +23,14 @@
 """Stratum V2 pool implementation
 
 """
-from sim_primitives.pool import MiningSession, Pool
-from .messages import *
-from ..protocol import UpstreamConnectionProcessor
-from .types import PubKey, Signature, DownstreamConnectionFlags
 import sim_primitives.coins as coins
+from sim_primitives.pool import MiningSession, Pool
+from sim_primitives.protocol import UpstreamConnectionProcessor
+from sim_primitives.stratum_v2.messages import *
+from sim_primitives.stratum_v2.types import (
+    DownstreamConnectionFlags,
+    UpstreamConnectionFlags,
+)
 
 
 class MiningChannel:
@@ -112,6 +115,12 @@ class ConnectionConfig:
     def __init__(self, msg: SetupConnection):
         self.setup_msg = msg
 
+    @property
+    def requires_version_rolling(self):
+        return (
+            DownstreamConnectionFlags.REQUIRES_VERSION_ROLLING in self.setup_msg.flags
+        )
+
 
 class PoolV2(UpstreamConnectionProcessor):
     """Processes all messages on 1 connection
@@ -137,14 +146,20 @@ class PoolV2(UpstreamConnectionProcessor):
         pass
 
     def visit_setup_connection(self, msg: SetupConnection):
+
+        response_flags = set()
+
+        # arbitrary for now
+        if DownstreamConnectionFlags.REQUIRES_VERSION_ROLLING not in msg.flags:
+            response_flags.add(UpstreamConnectionFlags.REQUIRES_FIXED_VERSION)
+
         if self.connection_config is None:
             self.connection_config = ConnectionConfig(msg)
             # TODO: implement version and flag handling
             self._send_msg(
                 SetupConnectionSuccess(
                     used_version=min(msg.min_version, msg.max_version),
-                    flags=[DownstreamConnectionFlags.SUPPORTS_EXTENDED_CHANNELS],
-                    pubkey=PubKey(),
+                    flags=response_flags,
                 )
             )
         else:
@@ -173,7 +188,8 @@ class PoolV2(UpstreamConnectionProcessor):
                     req_id=msg.req_id,
                     channel_id=mining_channel.id,
                     target=session.curr_target.target,
-                    group_channel_id=0,
+                    extranonce_prefix=b'',
+                    group_channel_id=0,  # pool currently doesn't support grouping
                 )
             )
 
@@ -207,12 +223,12 @@ class PoolV2(UpstreamConnectionProcessor):
 
         else:
             self._send_msg(
-                OpenStandardMiningChannelError(
+                OpenMiningChannelError(
                     msg.req_id, 'Cannot open mining channel: {}'.format(msg)
                 )
             )
 
-    def visit_submit_shares(self, msg: SubmitShares):
+    def visit_submit_shares_standard(self, msg: SubmitSharesStandard):
         """
         TODO: implement aggregation of sending SubmitSharesSuccess for a batch of successful submits
         """
@@ -228,7 +244,7 @@ class PoolV2(UpstreamConnectionProcessor):
         def on_accept(diff_target: coins.Target):
             resp_msg = SubmitSharesSuccess(
                 channel.id,
-                last_seq_num=msg.seq_num,
+                last_sequence_number=msg.sequence_number,
                 new_submits_accepted_count=1,
                 new_shares_sum=diff_target.to_difficulty(),
             )
@@ -237,7 +253,9 @@ class PoolV2(UpstreamConnectionProcessor):
 
         def on_reject(_diff_target: coins.Target):
             resp_msg = SubmitSharesError(
-                channel.id, seq_num=msg.seq_num, error_code='Share rejected'
+                channel.id,
+                sequence_number=msg.sequence_number,
+                error_code='Share rejected',
             )
             self._send_msg(resp_msg)
             self.__emit_channel_msg_on_bus(resp_msg)
@@ -245,6 +263,9 @@ class PoolV2(UpstreamConnectionProcessor):
         self.pool.process_submit(
             msg.job_id, channel.session, on_accept=on_accept, on_reject=on_reject
         )
+
+    def visit_submit_shares_extended(self, msg: SubmitSharesStandard):
+        pass
 
     def _on_vardiff_change(self, session: MiningSession):
         """Handle difficulty change for the current session.
@@ -294,18 +315,16 @@ class PoolV2(UpstreamConnectionProcessor):
 
     def __build_set_new_prev_hash_msg(self, channel_id, future_job_id):
         return SetNewPrevHash(
-            channel_id,
-            self.pool.prev_hash,
-            min_ntime=self.env.now,
-            max_ntime_offset=7200,
-            nbits=None,
+            channel_id=channel_id,
             job_id=future_job_id,
-            signature=Signature(),
+            prev_hash=self.pool.prev_hash,
+            min_ntime=self.env.now,
+            nbits=None,
         )
 
     @staticmethod
     def __build_new_job_msg(mining_channel: PoolMiningChannel, is_future_job: bool):
-        """Builds NewMiningJob depending on channel type.
+        """Builds NewMiningJob or NewExtendedMiningJob depending on channel type.
 
         The method also builds the actual job and registers it as 'future' job within
         the channel if requested.
@@ -314,29 +333,36 @@ class PoolV2(UpstreamConnectionProcessor):
         :param is_future_job: when true, the job won't be considered for the current prev
          hash known to the downstream node but for any future prev hash that explicitly
          selects it
-        :return NewMiningJob
+        :return New{Extended}MiningJob
         """
         new_job = mining_channel.session.new_mining_job()
         if is_future_job:
             mining_channel.add_future_job(new_job)
 
-        msg = NewMiningJob(
-            channel_id=mining_channel.id,
-            job_id=new_job.uid,
-            future_job=is_future_job,
-            merkle_root=Hash(),
-            version=None,
-        )
-        # Support building extended jobs
-        # msg = NewExtendedMiningJob(
-        #     channel_id=mining_channel.id,
-        #     job_id=new_job.uid,
-        #     future_job=is_future_job,
-        #     merkle_path=MerklePath(),
-        #     custom_id=None,
-        #     cb_prefix=CoinBasePrefix(),
-        #     cb_suffix=CoinBaseSuffix(),
-        # )
+        # Compose the protocol message based on actual channel type
+        if isinstance(mining_channel.cfg, OpenStandardMiningChannel):
+            msg = NewMiningJob(
+                channel_id=mining_channel.id,
+                job_id=new_job.uid,
+                future_job=is_future_job,
+                version=None,
+                merkle_root=Hash(),
+            )
+        elif isinstance(mining_channel.cfg, OpenExtendedMiningChannel):
+            msg = NewExtendedMiningJob(
+                channel_id=mining_channel.id,
+                job_id=new_job.uid,
+                future_job=is_future_job,
+                version=None,
+                version_rolling_allowed=True,  # TODO
+                merkle_path=MerklePath(),
+                cb_prefix=CoinBasePrefix(),
+                cb_suffix=CoinBaseSuffix(),
+            )
+        else:
+            assert False, 'Unsupported channel type: {}'.format(
+                mining_channel.cfg.channel_type
+            )
 
         return msg
 

@@ -20,12 +20,11 @@
 # of such proprietary license or if you have any other questions, please
 # contact us at opensource@braiins.com.
 
+import random
+from abc import ABC, abstractmethod
+
 import numpy as np
 import simpy
-from abc import ABC
-from abc import abstractmethod
-
-import random
 from hashids import Hashids
 
 

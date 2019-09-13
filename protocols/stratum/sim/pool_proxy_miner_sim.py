@@ -29,12 +29,15 @@ from event_bus import EventBus
 import sim_primitives.coins as coins
 import sim_primitives.mining_params as mining_params
 from sim_primitives.miner import Miner
-from sim_primitives.network import Connection
+from sim_primitives.network import Connection, ConnectionFactory
 from sim_primitives.pool import Pool
-from sim_primitives.stratum_v1.pool import PoolV1
-from sim_primitives.stratum_v2.pool import PoolV2
+from sim_primitives.proxy import Proxy
 from sim_primitives.stratum_v1.miner import MinerV1
+from sim_primitives.stratum_v1.pool import PoolV1
+from sim_primitives.stratum_v1.proxy import V1ToV2Translation
 from sim_primitives.stratum_v2.miner import MinerV2
+from sim_primitives.stratum_v2.pool import PoolV2
+from sim_primitives.stratum_v2.proxy import V2ToV1Translation
 
 init()
 bus = EventBus()
@@ -43,7 +46,7 @@ bus = EventBus()
 def main():
     np.random.seed(123)
     parser = argparse.ArgumentParser(
-        prog='pool_miner_sim.py',
+        prog='pool_proxy_miner_sim.py',
         description='Simulates interaction of a mining pool and two miners',
     )
     parser.add_argument(
@@ -81,12 +84,12 @@ def main():
     )
 
     parser.add_argument(
-        '--v1proto',
+        '--v1tov2',
         help='run simulation with Stratum V1 protocol instead of V2',
-        dest='protocol',
+        dest='translation',
         action='store_const',
-        const={'pool': PoolV1, 'miner': MinerV1},
-        default={'pool': PoolV2, 'miner': MinerV2},
+        default={'pool': PoolV1, 'miner': MinerV2, 'proxy': V2ToV1Translation},
+        const={'pool': PoolV2, 'miner': MinerV1, 'proxy': V1ToV2Translation},
     )
 
     args = parser.parse_args()
@@ -141,7 +144,7 @@ def main():
         'pool1',
         env,
         bus,
-        protocol_type=args.protocol['pool'],
+        protocol_type=args.translation['pool'],
         default_target=coins.Target.from_difficulty(
             100000, mining_params.diff_1_target
         ),
@@ -154,12 +157,18 @@ def main():
         mean_latency=args.latency,
         latency_stddev_percent=0 if args.no_luck else 10,
     )
+    conn2 = Connection(
+        env,
+        'stratum',
+        mean_latency=args.latency,
+        latency_stddev_percent=0 if args.no_luck else 10,
+    )
     m1 = Miner(
         'miner1',
         env,
         bus,
         diff_1_target=mining_params.diff_1_target,
-        protocol_type=args.protocol['miner'],
+        protocol_type=args.translation['miner'],
         device_information=dict(
             speed_ghps=10000,
             vendor='Bitmain',
@@ -169,19 +178,12 @@ def main():
         ),
         simulate_luck=not args.no_luck,
     )
-    m1.connect_to_pool(conn1, pool)
-    conn2 = Connection(
-        env,
-        'stratum',
-        mean_latency=args.latency,
-        latency_stddev_percent=0 if args.no_luck else 10,
-    )
     m2 = Miner(
         'miner2',
         env,
         bus,
         diff_1_target=mining_params.diff_1_target,
-        protocol_type=args.protocol['miner'],
+        protocol_type=args.translation['miner'],
         device_information=dict(
             speed_ghps=13000,
             vendor='Bitmain',
@@ -191,7 +193,17 @@ def main():
         ),
         simulate_luck=not args.no_luck,
     )
-    m2.connect_to_pool(conn2, pool)
+    proxy = Proxy(
+        'proxy',
+        env,
+        bus,
+        translation_type=args.translation['proxy'],
+        upstream_connection_factory=ConnectionFactory(env, port='stratum'),
+        upstream_node=pool,
+        default_target=pool.default_target,
+    )
+    m1.connect_to_pool(conn1, proxy)
+    m2.connect_to_pool(conn2, proxy)
 
     env.run(until=args.limit)
     print('simulation finished!')

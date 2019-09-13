@@ -20,13 +20,26 @@
 # of such proprietary license or if you have any other questions, please
 # contact us at opensource@braiins.com.
 
-"""Stratum V1 pool implementation
+"""
+Stratum V1 pool implementation
 
 """
-from sim_primitives.pool import MiningSession, Pool
-from .messages import *
-from ..protocol import UpstreamConnectionProcessor
 import enum
+
+from sim_primitives.pool import MiningSession, Pool
+from sim_primitives.protocol import UpstreamConnectionProcessor
+from sim_primitives.stratum_v1.messages import (
+    Configure,
+    Authorize,
+    Subscribe,
+    SubscribeResponse,
+    SetDifficulty,
+    Submit,
+    Notify,
+    OkResult,
+    ErrorResult,
+    ConfigureResponse,
+)
 
 
 class MiningSessionV1(MiningSession):
@@ -82,6 +95,16 @@ class PoolV1(UpstreamConnectionProcessor):
     def terminate(self):
         super().terminate()
         self.mining_session.terminate()
+
+    def visit_configure(self, msg: Configure):
+        # dummy: just return the same
+        self.send_request(
+            ConfigureResponse(
+                req_id=msg.req_id,
+                extensions=msg.extensions,
+                extension_params=msg.extension_params,
+            )
+        )
 
     def visit_subscribe(self, msg: Subscribe):
         """Handle mining.subscribe.

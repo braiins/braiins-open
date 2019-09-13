@@ -21,11 +21,18 @@
 # contact us at opensource@braiins.com.
 
 """Stratum V1 messages."""
-from ..protocol import Message
+from sim_primitives.protocol import Message
 
 
 class Configure(Message):
     def __init__(self, req_id, extensions, extension_params):
+        self.extensions = extensions
+        self.extension_params = extension_params
+        super().__init__(req_id)
+
+
+class ConfigureResponse(Message):
+    def __init__(self, req_id, extensions: list, extension_params: dict):
         self.extensions = extensions
         self.extension_params = extension_params
         super().__init__(req_id)

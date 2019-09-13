@@ -28,6 +28,13 @@ class DeviceInfo:
     pass
 
 
+class ProtocolType:
+    MINING_PROTOCOL = 0
+    JOB_NEGOTIATION_PROTOCOL = 1
+    TEMPLATE_DISTRIBUTION_PROTOCOL = 2
+    JOB_DISTRIBUTION_PROTOCOL = 3
+
+
 class MiningChannelType(enum.Enum):
     """Stratum V1 mining session follows the state machine below."""
 
@@ -39,21 +46,28 @@ class MiningChannelType(enum.Enum):
 class DownstreamConnectionFlags(enum.Enum):
     """Flags provided by downstream node"""
 
-    NONE = 0
-    SUPPORTS_EXTENDED_CHANNELS = 1
+    #: The downstream node requires standard jobs. It doesn’t understand group channels - it is unable to process
+    #: extended jobs sent to standard channels thru a group channel.
+    REQUIRES_STANDARD_JOBS = 0
+
+    #: If set, the client notifies the server that it will send SetCustomMiningJob on this connection
+    REQUIRES_WORK_SELECTION = 1
+
+    #: The client requires version rolling for efficiency or correct operation and the server MUST NOT send jobs
+    #: which do not allow version rolling.
+    REQUIRES_VERSION_ROLLING = 2
 
 
 class UpstreamConnectionFlags(enum.Enum):
     """Flags provided by upstream node"""
 
-    NONE = 0
-    DOESNT_SUPPORT_VERSION_ROLLING = 1
+    #: Upstream node will not accept any changes to the version field. Note that if REQUIRES_VERSION_ROLLING was set
+    #: in the SetupConnection::flags field, this bit MUST NOT be set. Further, if this bit is set, extended jobs MUST
+    #: NOT indicate support for version rolling.
+    REQUIRES_FIXED_VERSION = 0
 
-
-class Signature:
-    """Message signature doesn't need specific representation within the simulation."""
-
-    pass
+    #: Upstream node will not accept opening of a standard channel.
+    REQUIRES_EXTENDED_CHANNELS = 1
 
 
 class Hash:
@@ -64,12 +78,6 @@ class Hash:
 
 class MerklePath:
     """Merkle path doesn't need specific representation within the simulation"""
-
-    pass
-
-
-class PubKey:
-    """Public key doesn't need specific representation within the simulation"""
 
     pass
 

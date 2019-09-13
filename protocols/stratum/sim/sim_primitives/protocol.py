@@ -22,10 +22,12 @@
 
 """Generic protocol primitives"""
 import stringcase
+from abc import abstractmethod
+
 import simpy
 from event_bus import EventBus
-from abc import abstractmethod
-from .network import Connection
+
+from sim_primitives.network import Connection
 
 
 class Message:
