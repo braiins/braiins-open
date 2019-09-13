@@ -47,14 +47,12 @@ class MinerV1(DownstreamConnectionProcessor):
 
     def setup(self):
         auth_req = Authorize(req_id=None, user_name='some_miner', password='x')
-        self.request_registry.push(auth_req)
-        self._send_msg(auth_req)
+        self.send_request(auth_req)
 
         sbscr_req = Subscribe(
             req_id=None, signature='some_signature', extranonce1=None, url='some_url'
         )
-        self.request_registry.push(sbscr_req)
-        self._send_msg(sbscr_req)
+        self.send_request(sbscr_req)
 
     def submit_mining_solution(self, job: MiningJob):
         submit_req = Submit(
@@ -65,8 +63,7 @@ class MinerV1(DownstreamConnectionProcessor):
             time=self.miner.env.now,
             nonce=None,
         )
-        self.request_registry.push(submit_req)
-        self._send_msg(submit_req)
+        self.send_request(submit_req)
 
     def visit_ok_result(self, msg):
         req = self.request_registry.pop(msg.req_id)

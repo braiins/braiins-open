@@ -96,8 +96,7 @@ class MinerV2(DownstreamConnectionProcessor):
             # Header only mining, now extranonce 2 size required
         )
         # We expect a paired response to our open channel request
-        self.request_registry.push(req)
-        self._send_msg(req)
+        self.send_request(req)
 
     def visit_setup_connection_error(self, msg: SetupConnectionError):
         """Setup connection has failed.

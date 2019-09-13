@@ -97,6 +97,11 @@ class ConnectionProcessor:
     def terminate(self):
         self.receive_loop_process.interrupt()
 
+    def send_request(self, req):
+        """Register the request and send it down the line"""
+        self.request_registry.push(req)
+        self._send_msg(req)
+
     @abstractmethod
     def _send_msg(self, msg):
         pass
