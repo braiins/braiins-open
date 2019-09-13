@@ -115,13 +115,11 @@ class OpenMiningChannelSuccess(ChannelMessage):
         self,
         req_id,
         channel_id: int,
-        init_target: int,
+        target: int,
         group_channel_id: int,
-        extranonce2_size: int,
     ):
-        self.init_target = init_target
+        self.init_target = target
         self.group_channel_id = group_channel_id
-        self.extranonce2_size = extranonce2_size
         super().__init__(channel_id=channel_id, req_id=req_id)
 
 

@@ -174,9 +174,8 @@ class PoolV2(UpstreamConnectionProcessor):
                 OpenMiningChannelSuccess(
                     req_id=msg.req_id,
                     channel_id=mining_channel.id,
-                    init_target=session.curr_target.target,
+                    target=session.curr_target.target,
                     group_channel_id=0,
-                    extranonce2_size=msg.min_extranonce_size,
                 )
             )
 

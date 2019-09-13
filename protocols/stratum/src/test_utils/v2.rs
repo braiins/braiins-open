@@ -164,10 +164,8 @@ pub fn build_open_channel_success() -> OpenMiningChannelSuccess {
     OpenMiningChannelSuccess {
         req_id: 10,
         channel_id: 0,
-        // don't provide device ID as the sample OpenMiningChannel already provides one
-        dev_id: Default::default(),
         // Represents difficulty 4
-        init_target: Uint256Bytes(init_target_le),
+        target: Uint256Bytes(init_target_le),
         group_channel_id: 0,
     }
 }

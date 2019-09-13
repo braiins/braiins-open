@@ -223,8 +223,7 @@ impl V2ToV1Translation {
                 let msg = v2::messages::OpenMiningChannelSuccess {
                     req_id: v2_channel_details.req_id,
                     channel_id: Self::CHANNEL_ID,
-                    dev_id: Default::default(),
-                    init_target: init_target.clone(),
+                    target: init_target.clone(),
                     group_channel_id: 0,
                 };
                 Self::submit_message(&mut self.v2_tx, msg);

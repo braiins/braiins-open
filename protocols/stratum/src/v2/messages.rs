@@ -137,14 +137,10 @@ pub struct OpenMiningChannel {
 pub struct OpenMiningChannelSuccess {
     pub req_id: u32,
     pub channel_id: u32,
-    /// Optional device ID provided by the upstream if none was sent as part of DeviceInfo
-    pub dev_id: Str0_255,
     /// Initial target for mining
-    pub init_target: Uint256Bytes,
+    pub target: Uint256Bytes,
     /// See SetGroupChannel for details
     pub group_channel_id: u32,
-    // TODO specify signature type
-    // pub signature:???
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
