@@ -197,8 +197,7 @@ pub struct SetNewPrevHash {
     pub max_ntime_offset: u16,
     pub nbits: u32,
     pub job_id: u32,
-    // TODO specify signature type and timestamp
-    //pub timestamp: u32,
+    // TODO specify signature type
     //pub signature: ??,
 }
 
