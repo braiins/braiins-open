@@ -102,8 +102,9 @@ pub struct SetupConnection {
     /// TODO: specify an enum for flags
     pub flags: u32,
     pub expected_pubkey: PubKey,
-    pub endpoint_hostname: Str0_255,
+    pub endpoint_host: Str0_255,
     pub endpoint_port: u16,
+    pub device: DeviceInfo,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -120,21 +121,15 @@ pub struct SetupConnectionError {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct OpenMiningChannel {
+pub struct OpenStandardMiningChannel {
     pub req_id: u32,
     pub user: Str1_255,
-    // TODO-DOC- this field will most probably become an enum as there will multiple mining
-    //  channel types
-    pub extended: bool,
-    pub device: DeviceInfo,
     pub nominal_hashrate: f32,
     pub max_target: Uint256Bytes,
-    pub min_extranonce_size: u16,
-    pub aggregated_device_count: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct OpenMiningChannelSuccess {
+pub struct OpenStandardMiningChannelSuccess {
     pub req_id: u32,
     pub channel_id: u32,
     /// Initial target for mining
@@ -144,7 +139,7 @@ pub struct OpenMiningChannelSuccess {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct OpenMiningChannelError {
+pub struct OpenStandardMiningChannelError {
     pub req_id: u32,
     pub code: Str1_32,
 }
@@ -202,7 +197,8 @@ pub struct SetNewPrevHash {
     pub max_ntime_offset: u16,
     pub nbits: u32,
     pub job_id: u32,
-    // TODO specify signature type
+    // TODO specify signature type and timestamp
+    //pub timestamp: u32,
     //pub signature: ??,
 }
 
@@ -221,9 +217,9 @@ pub struct SetGroupChannel;
 impl_conversion!(SetupConnection, visit_setup_connection);
 impl_conversion!(SetupConnectionSuccess, visit_setup_connection_success);
 impl_conversion!(SetupConnectionError, visit_setup_connection_error);
-impl_conversion!(OpenMiningChannel, visit_open_mining_channel);
-impl_conversion!(OpenMiningChannelSuccess, visit_open_mining_channel_success);
-impl_conversion!(OpenMiningChannelError, visit_open_mining_channel_error);
+impl_conversion!(OpenStandardMiningChannel, visit_open_standard_mining_channel);
+impl_conversion!(OpenStandardMiningChannelSuccess, visit_open_standard_mining_channel_success);
+impl_conversion!(OpenStandardMiningChannelError, visit_open_standard_mining_channel_error);
 impl_conversion!(UpdateChannel, visit_update_channel);
 impl_conversion!(UpdateChannelError, visit_update_channel_error);
 impl_conversion!(SubmitShares, visit_submit_shares);

@@ -72,18 +72,18 @@ impl Handler for TestIdentityHandler {
         self.visit_and_check(msg, payload, build_setup_connection_success);
     }
 
-    fn visit_open_mining_channel(
+    fn visit_open_standard_mining_channel(
         &mut self,
         msg: &ii_wire::Message<Protocol>,
-        payload: &OpenMiningChannel,
+        payload: &OpenStandardMiningChannel,
     ) {
         self.visit_and_check(msg, payload, build_open_channel);
     }
 
-    fn visit_open_mining_channel_success(
+    fn visit_open_standard_mining_channel_success(
         &mut self,
         msg: &ii_wire::Message<Protocol>,
-        payload: &OpenMiningChannelSuccess,
+        payload: &OpenStandardMiningChannelSuccess,
     ) {
         self.visit_and_check(msg, payload, build_open_channel_success);
     }
@@ -107,10 +107,10 @@ impl Handler for TestIdentityHandler {
 
 #[cfg(not(feature = "v2json"))]
 pub const SETUP_CONNECTION_SERIALIZED: &'static [u8] =
-    b"\x00\x00\x00\x00\x00\x00\x00\x00\x15stratum.slushpool.com\x05\x0d";
+    b"\x00\x00\x00\x00\x00\x00\x00\x00\x15stratum.slushpool.com\x05\x0d\x07Braiins\x011\x15Braiins OS 2019-06-05\x03xyz";
 #[cfg(feature = "v2json")]
 pub const SETUP_CONNECTION_SERIALIZED: &'static [u8] =
-    br#"{"max_version":0,"min_version":0,"flags":0,"expected_pubkey":[],"endpoint_hostname":"stratum.slushpool.com","endpoint_port":3333}"#;
+    br#"{"max_version":0,"min_version":0,"flags":0,"expected_pubkey":[],"endpoint_hostname":"stratum.slushpool.com","endpoint_port":3333,"device":{"vendor":"Braiins","hw_rev":"1","fw_ver":"Braiins OS 2019-06-05","dev_id":"xyz"}}"#;
 
 pub fn build_setup_connection() -> SetupConnection {
     SetupConnection {
@@ -118,8 +118,14 @@ pub fn build_setup_connection() -> SetupConnection {
         min_version: 0,
         flags: 0,
         expected_pubkey: PubKey::new(),
-        endpoint_hostname: Str0_255::from_str(POOL_URL),
+        endpoint_host: Str0_255::from_str(POOL_URL),
         endpoint_port: POOL_PORT as u16,
+        device: DeviceInfo {
+            vendor: "Braiins".try_into().unwrap(),
+            hw_rev: "1".try_into().unwrap(),
+            fw_ver: MINER_SW_SIGNATURE.try_into().unwrap(),
+            dev_id: "xyz".try_into().unwrap(),
+        },
     }
 }
 
@@ -134,25 +140,16 @@ pub fn build_setup_connection_success() -> SetupConnectionSuccess {
     }
 }
 
-pub fn build_open_channel() -> OpenMiningChannel {
-    OpenMiningChannel {
+pub fn build_open_channel() -> OpenStandardMiningChannel {
+    OpenStandardMiningChannel {
         req_id: 10,
         user: USER_CREDENTIALS.try_into().unwrap(),
-        extended: false,
-        device: DeviceInfo {
-            vendor: "Braiins".try_into().unwrap(),
-            hw_rev: "1".try_into().unwrap(),
-            fw_ver: MINER_SW_SIGNATURE.try_into().unwrap(),
-            dev_id: "xyz".try_into().unwrap(),
-        },
         nominal_hashrate: 1e9,
         max_target: ii_bitcoin::Target::default().into(),
-        min_extranonce_size: 0,
-        aggregated_device_count: 1,
     }
 }
 
-pub fn build_open_channel_success() -> OpenMiningChannelSuccess {
+pub fn build_open_channel_success() -> OpenStandardMiningChannelSuccess {
     let init_target_be = uint::U256::from_big_endian(&[
         0x00, 0x00, 0x00, 0x00, 0x3f, 0xff, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -161,7 +158,7 @@ pub fn build_open_channel_success() -> OpenMiningChannelSuccess {
     let mut init_target_le = [0u8; 32];
     init_target_be.to_little_endian(&mut init_target_le);
 
-    OpenMiningChannelSuccess {
+    OpenStandardMiningChannelSuccess {
         req_id: 10,
         channel_id: 0,
         // Represents difficulty 4
