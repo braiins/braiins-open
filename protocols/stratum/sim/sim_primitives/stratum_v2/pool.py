@@ -33,8 +33,8 @@ import sim_primitives.coins as coins
 class MiningChannel:
     def __init__(self, cfg, conn_uid, channel_id):
         """
-        :param cfg: configuration is represented by the full OpenMiningChannel or
-        OpenMiningChannelSuccess message depending on which end of the channel we are on
+        :param cfg: configuration is represented by the full OpenStandardMiningChannel or
+        OpenStandardMiningChannelSuccess message depending on which end of the channel we are on
         :param conn_uid: backlink to the connection this channel is on
         :param channel_id: unique identifier for the channel
         """
@@ -150,11 +150,9 @@ class PoolV2(UpstreamConnectionProcessor):
         else:
             self._send_msg(SetupConnectionError('Connection can only be setup once'))
 
-    def visit_open_mining_channel(self, msg: OpenMiningChannel):
+    def visit_open_standard_mining_channel(self, msg: OpenStandardMiningChannel):
         # Open only channels compatible with this node's configuration
-        if (msg.max_target <= self.pool.default_target.diff_1_target) and (
-            msg.min_extranonce_size <= self.pool.extranonce2_size
-        ):
+        if msg.max_target <= self.pool.default_target.diff_1_target:
             # Create the channel and build back-links from session to channel and from
             # channel to connection
             mining_channel = PoolMiningChannel(
@@ -171,7 +169,7 @@ class PoolV2(UpstreamConnectionProcessor):
             mining_channel.set_session(session)
 
             self._send_msg(
-                OpenMiningChannelSuccess(
+                OpenStandardMiningChannelSuccess(
                     req_id=msg.req_id,
                     channel_id=mining_channel.id,
                     target=session.curr_target.target,
@@ -181,7 +179,7 @@ class PoolV2(UpstreamConnectionProcessor):
 
             # TODO-DOC: explain the (mandatory?) setting 'future_job=True' in
             #  the message since the downstream has no prev hash
-            #  immediately after the OpenMiningChannelSuccess
+            #  immediately after the OpenStandardMiningChannelSuccess
             #  Update the flow diagram in the spec including specifying the
             #  future_job attribute
             new_job_msg = self.__build_new_job_msg(mining_channel, is_future_job=True)
@@ -209,7 +207,7 @@ class PoolV2(UpstreamConnectionProcessor):
 
         else:
             self._send_msg(
-                OpenMiningChannelError(
+                OpenStandardMiningChannelError(
                     msg.req_id, 'Cannot open mining channel: {}'.format(msg)
                 )
             )
@@ -307,7 +305,7 @@ class PoolV2(UpstreamConnectionProcessor):
 
     @staticmethod
     def __build_new_job_msg(mining_channel: PoolMiningChannel, is_future_job: bool):
-        """Builds NewMiningJob or NewExtendedMiningJob depending on channel type.
+        """Builds NewMiningJob depending on channel type.
 
         The method also builds the actual job and registers it as 'future' job within
         the channel if requested.
@@ -316,35 +314,29 @@ class PoolV2(UpstreamConnectionProcessor):
         :param is_future_job: when true, the job won't be considered for the current prev
          hash known to the downstream node but for any future prev hash that explicitly
          selects it
-        :return New{Extended}MiningJob
+        :return NewMiningJob
         """
         new_job = mining_channel.session.new_mining_job()
         if is_future_job:
             mining_channel.add_future_job(new_job)
 
-        # Compose the protocol message based on actual channel type
-        if mining_channel.cfg.channel_type == MiningChannelType.STANDARD:
-            msg = NewMiningJob(
-                channel_id=mining_channel.id,
-                job_id=new_job.uid,
-                future_job=is_future_job,
-                merkle_root=Hash(),
-                version=None,
-            )
-        elif mining_channel.cfg.channel_type == MiningChannelType.EXTENDED:
-            msg = NewExtendedMiningJob(
-                channel_id=mining_channel.id,
-                job_id=new_job.uid,
-                future_job=is_future_job,
-                merkle_path=MerklePath(),
-                custom_id=None,
-                cb_prefix=CoinBasePrefix(),
-                cb_suffix=CoinBaseSuffix(),
-            )
-        else:
-            assert False, 'Unsupported channel type: {}'.format(
-                mining_channel.cfg.channel_type
-            )
+        msg = NewMiningJob(
+            channel_id=mining_channel.id,
+            job_id=new_job.uid,
+            future_job=is_future_job,
+            merkle_root=Hash(),
+            version=None,
+        )
+        # Support building extended jobs
+        # msg = NewExtendedMiningJob(
+        #     channel_id=mining_channel.id,
+        #     job_id=new_job.uid,
+        #     future_job=is_future_job,
+        #     merkle_path=MerklePath(),
+        #     custom_id=None,
+        #     cb_prefix=CoinBasePrefix(),
+        #     cb_suffix=CoinBaseSuffix(),
+        # )
 
         return msg
 

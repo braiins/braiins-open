@@ -28,9 +28,9 @@ from .messages import (
     SetupConnection,
     SetupConnectionSuccess,
     SetupConnectionError,
-    OpenMiningChannel,
-    OpenMiningChannelSuccess,
-    OpenMiningChannelError,
+    OpenStandardMiningChannel,
+    OpenStandardMiningChannelSuccess,
+    OpenStandardMiningChannelError,
     SetNewPrevHash,
     SetTarget,
     NewMiningJob,
@@ -75,9 +75,10 @@ class MinerV2(DownstreamConnectionProcessor):
                 max_version=1,
                 min_version=1,
                 flags=[DownstreamConnectionFlags.NONE],
-                endpoint_hostname='v2pool',
+                endpoint_host='v2pool',
                 endpoint_port=connection.port,
                 expected_pubkey=PubKey(),
+                device_info=DeviceInfo(),
             )
         )
         self.connection_config = None
@@ -87,16 +88,12 @@ class MinerV2(DownstreamConnectionProcessor):
         self.connection_config = self.ConnectionConfig(msg)
         self.state = self.States.CONNECTION_SETUP
 
-        req = OpenMiningChannel(
+        req = OpenStandardMiningChannel(
             req_id=None,
             user=self.name,
-            channel_type=MiningChannelType.STANDARD,
-            device_info=DeviceInfo(),
             nominal_hashrate=self.miner.speed_ghps * 1e9,
             max_target=self.miner.diff_1_target,
             # Header only mining, now extranonce 2 size required
-            min_extranonce_size=0,
-            agg_device_count=1,
         )
         # We expect a paired response to our open channel request
         self.request_registry.push(req)
@@ -110,7 +107,9 @@ class MinerV2(DownstreamConnectionProcessor):
         """
         self._emit_protocol_msg_on_bus('Connection setup failed', msg)
 
-    def visit_open_mining_channel_success(self, msg: OpenMiningChannelSuccess):
+    def visit_open_standard_mining_channel_success(
+        self, msg: OpenStandardMiningChannelSuccess
+    ):
         req = self.request_registry.pop(msg.req_id)
 
         if req is not None:
@@ -118,7 +117,7 @@ class MinerV2(DownstreamConnectionProcessor):
                 coins.Target(msg.init_target, self.miner.diff_1_target)
             )
             # TODO find some reasonable extraction of the channel configuration, for now,
-            #  we just retain the OpenMiningChannel and OpenMiningChannelSuccess message
+            #  we just retain the OpenStandardMiningChannel and OpenMiningChannelSuccess message
             #  pair that provides complete information
             self.channel = PoolMiningChannel(
                 session=session,
@@ -129,10 +128,12 @@ class MinerV2(DownstreamConnectionProcessor):
             session.run()
         else:
             self._emit_protocol_msg_on_bus(
-                'Cannot find matching OpenMiningChannel request', msg
+                'Cannot find matching OpenStandardMiningChannel request', msg
             )
 
-    def visit_open_mining_channel_error(self, msg: OpenMiningChannelError):
+    def visit_open_standard_mining_channel_error(
+        self, msg: OpenStandardMiningChannelError
+    ):
         req = self.request_registry.pop(msg.req_id)
         self._emit_protocol_msg_on_bus(
             'Open mining channel failed (orig request: {})'.format(req), msg

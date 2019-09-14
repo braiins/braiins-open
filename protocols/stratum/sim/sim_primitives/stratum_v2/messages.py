@@ -43,15 +43,17 @@ class SetupConnection(Message):
         min_version: int,
         flags: list,
         expected_pubkey: PubKey,
-        endpoint_hostname,
+        endpoint_host,
         endpoint_port: int,
+        device_info: DeviceInfo,
     ):
         self.max_version = max_version
         self.min_version = min_version
         self.flags = set(flags)
         self.expected_pubkey = expected_pubkey
-        self.endpoint_hostname = endpoint_hostname
+        self.endpoint_host = endpoint_host
         self.endpoint_port = endpoint_port
+        self.device_info = device_info
         super().__init__()
 
 
@@ -69,36 +71,19 @@ class SetupConnectionError(Message):
         super().__init__()
 
 
-class OpenMiningChannel(Message):
-    def __init__(
-        self,
-        req_id,
-        user: str,
-        channel_type: MiningChannelType,
-        device_info: DeviceInfo,
-        nominal_hashrate,
-        max_target: int,
-        min_extranonce_size: int,
-        agg_device_count: int,
-    ):
+class OpenStandardMiningChannel(Message):
+    def __init__(self, req_id, user: str, nominal_hashrate, max_target: int):
         """
 
         :param req_id: request ID for pairing with response
         :param user: user credentials for accounting shares submitted on this channel
-        :param channel_type: ChannelType
         :param device_info: Details about the connected device
         :param nominal_hashrate: Hash rate of the device in h/s (floating point)
         :param max_target: Maximum target that the device is capable of working on
-        :param min_extranonce_size: Minimum extra nonce 2 size
-        :param agg_device_count: aggregated downstream device count (e.g. the device is an aggregating proxy)
         """
         self.user = user
-        self.channel_type = channel_type
-        self.device_info = device_info
         self.nominal_hashrate = nominal_hashrate
         self.max_target = max_target
-        self.min_extranonce_size = min_extranonce_size
-        self.agg_device_count = agg_device_count
         super().__init__(req_id)
 
 
@@ -110,20 +95,14 @@ class ChannelMessage(Message):
         super().__init__(*args, **kwargs)
 
 
-class OpenMiningChannelSuccess(ChannelMessage):
-    def __init__(
-        self,
-        req_id,
-        channel_id: int,
-        target: int,
-        group_channel_id: int,
-    ):
+class OpenStandardMiningChannelSuccess(ChannelMessage):
+    def __init__(self, req_id, channel_id: int, target: int, group_channel_id: int):
         self.init_target = target
         self.group_channel_id = group_channel_id
         super().__init__(channel_id=channel_id, req_id=req_id)
 
 
-class OpenMiningChannelError(Message):
+class OpenStandardMiningChannelError(Message):
     def __init__(self, req_id, error_code: str):
         self.req_id = req_id
         self.error_code = error_code
