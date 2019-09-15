@@ -9,7 +9,7 @@ upstream Stratum V1 node.
 
 ## Prerequisites
 
-- rust toolchain installed via [rustup](https://rustup.rs/)
+- Rust toolchain installed via [rustup](https://rustup.rs/)
 
 ## Building it
 
@@ -29,7 +29,7 @@ This command builds the proxy, too:
 
 # Future Work
 
-Below is a high level list of areas that need to be resolved:
+Below is a high level list of areas that still need to be resolved:
 
 - handle multiple channels on a single downstream connection
 - use V2 submission sequence numbers for batch acknowledgement of valid job
