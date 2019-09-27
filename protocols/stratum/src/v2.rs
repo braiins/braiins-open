@@ -60,9 +60,18 @@ pub trait Handler: 'static {
     handler_method!(SetupConnection, visit_setup_connection);
     handler_method!(SetupConnectionSuccess, visit_setup_connection_success);
     handler_method!(SetupConnectionError, visit_setup_connection_error);
-    handler_method!(OpenStandardMiningChannel, visit_open_standard_mining_channel);
-    handler_method!(OpenStandardMiningChannelSuccess, visit_open_standard_mining_channel_success);
-    handler_method!(OpenStandardMiningChannelError, visit_open_standard_mining_channel_error);
+    handler_method!(
+        OpenStandardMiningChannel,
+        visit_open_standard_mining_channel
+    );
+    handler_method!(
+        OpenStandardMiningChannelSuccess,
+        visit_open_standard_mining_channel_success
+    );
+    handler_method!(
+        OpenStandardMiningChannelError,
+        visit_open_standard_mining_channel_error
+    );
     handler_method!(UpdateChannel, visit_update_channel);
     handler_method!(UpdateChannelError, visit_update_channel_error);
     handler_method!(SubmitShares, visit_submit_shares);

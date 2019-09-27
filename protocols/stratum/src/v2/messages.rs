@@ -216,9 +216,18 @@ pub struct SetGroupChannel;
 impl_conversion!(SetupConnection, visit_setup_connection);
 impl_conversion!(SetupConnectionSuccess, visit_setup_connection_success);
 impl_conversion!(SetupConnectionError, visit_setup_connection_error);
-impl_conversion!(OpenStandardMiningChannel, visit_open_standard_mining_channel);
-impl_conversion!(OpenStandardMiningChannelSuccess, visit_open_standard_mining_channel_success);
-impl_conversion!(OpenStandardMiningChannelError, visit_open_standard_mining_channel_error);
+impl_conversion!(
+    OpenStandardMiningChannel,
+    visit_open_standard_mining_channel
+);
+impl_conversion!(
+    OpenStandardMiningChannelSuccess,
+    visit_open_standard_mining_channel_success
+);
+impl_conversion!(
+    OpenStandardMiningChannelError,
+    visit_open_standard_mining_channel_error
+);
 impl_conversion!(UpdateChannel, visit_update_channel);
 impl_conversion!(UpdateChannelError, visit_update_channel_error);
 impl_conversion!(SubmitShares, visit_submit_shares);
