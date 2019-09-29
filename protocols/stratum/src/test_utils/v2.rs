@@ -110,7 +110,7 @@ pub const SETUP_CONNECTION_SERIALIZED: &'static [u8] =
     b"\x00\x00\x00\x00\x00\x00\x00\x00\x15stratum.slushpool.com\x05\x0d\x07Braiins\x011\x15Braiins OS 2019-06-05\x03xyz";
 #[cfg(feature = "v2json")]
 pub const SETUP_CONNECTION_SERIALIZED: &'static [u8] =
-    br#"{"max_version":0,"min_version":0,"flags":0,"expected_pubkey":[],"endpoint_hostname":"stratum.slushpool.com","endpoint_port":3333,"device":{"vendor":"Braiins","hw_rev":"1","fw_ver":"Braiins OS 2019-06-05","dev_id":"xyz"}}"#;
+    br#"{"max_version":0,"min_version":0,"flags":0,"expected_pubkey":[],"endpoint_host":"stratum.slushpool.com","endpoint_port":3333,"device":{"vendor":"Braiins","hw_rev":"1","fw_ver":"Braiins OS 2019-06-05","dev_id":"xyz"}}"#;
 
 pub fn build_setup_connection() -> SetupConnection {
     SetupConnection {
