@@ -27,6 +27,8 @@ use std;
 use std::fmt::{self, Display};
 use std::io;
 
+use ii_wire::tokio;
+
 #[derive(Debug)]
 pub struct Error {
     inner: Context<ErrorKind>,
@@ -119,6 +121,15 @@ impl From<Context<ErrorKind>> for Error {
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
+        let msg = e.to_string();
+        Self {
+            inner: e.context(ErrorKind::Io(msg)),
+        }
+    }
+}
+
+impl From<tokio::codec::LinesCodecError> for Error {
+    fn from(e: tokio::codec::LinesCodecError) -> Self {
         let msg = e.to_string();
         Self {
             inner: e.context(ErrorKind::Io(msg)),

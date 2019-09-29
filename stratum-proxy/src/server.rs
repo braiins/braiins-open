@@ -25,14 +25,13 @@ use std::net::ToSocketAddrs;
 
 use futures::channel::mpsc;
 use futures::future::{self, Either};
-use futures::stream::StreamExt;
+
+use ii_wire::tokio;
 use tokio::prelude::*;
 
+use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
-
-use ii_logging::macros::*;
-use ii_wire::tokio;
 use ii_wire::{Connection, Server, TxFrame};
 
 use crate::error::{ErrorKind, Result, ResultExt};
@@ -81,28 +80,28 @@ impl ConnTranslation {
 
         // V1 message send out loop
         let v1_send_task = async move {
-            while let Some(msg) = await!(v1_translation_rx.next()) {
-                if let Err(err) = await!(v1_conn_tx.send_async(msg)) {
+            while let Some(msg) = v1_translation_rx.next().await {
+                if let Err(err) = v1_conn_tx.send(msg).await {
                     error!("V1 connection failed: {}", err);
                     break;
                 }
             }
         };
-        ii_async_compat::spawn(v1_send_task);
+        tokio::spawn(v1_send_task);
 
         // V2 message send out loop
         let v2_send_task = async move {
-            while let Some(msg) = await!(v2_translation_rx.next()) {
-                if let Err(err) = await!(v2_conn_tx.send_async(msg)) {
+            while let Some(msg) = v2_translation_rx.next().await {
+                if let Err(err) = v2_conn_tx.send(msg).await {
                     error!("V2 connection failed: {}", err);
                     break;
                 }
             }
         };
-        ii_async_compat::spawn(v2_send_task);
+        tokio::spawn(v2_send_task);
 
         loop {
-            let v1_or_v2 = await!(future::select(v1_conn_rx.next(), v2_conn_rx.next()));
+            let v1_or_v2 = future::select(v1_conn_rx.next(), v2_conn_rx.next()).await;
             match v1_or_v2 {
                 // Ok path
                 Either::Left((Some(Ok(v1_msg)), _)) => v1_msg.accept(&mut self.translation),
@@ -129,7 +128,7 @@ impl ConnTranslation {
 
 async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: SocketAddr) {
     info!("Opening connection to V1: {:?}", stratum_addr);
-    let conn_v1 = match await!(Connection::connect(&stratum_addr)) {
+    let conn_v1 = match Connection::connect(&stratum_addr).await {
         Ok(conn) => conn,
         Err(e) => {
             error!("Connection to Stratum V1 failed: {}", e);
@@ -138,7 +137,7 @@ async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: Socke
     };
     info!("V1 connection setup");
     let translation = ConnTranslation::new(conn_v2, conn_v1);
-    await!(translation.run())
+    translation.run().await
 }
 
 /// Structure representing the main server task.
@@ -204,7 +203,7 @@ impl ProxyServer {
         // unfortunately you can't await in map() et al.
         let conn = match self.quit_rx {
             Some(ref mut quit_rx) => {
-                match await!(future::select(self.server.next(), quit_rx.next())) {
+                match future::select(self.server.next(), quit_rx.next()).await {
                     Either::Left((Some(conn), _)) => Some(conn),
                     Either::Right((None, _)) => {
                         // The quit_rx channel has been closed / quit_tx dropped,
@@ -222,7 +221,7 @@ impl ProxyServer {
         // and we can just await the socket
         let conn = match conn {
             Some(conn) => conn,
-            None => match await!(self.server.next()) {
+            None => match self.server.next().await {
                 Some(conn) => conn,
                 None => return None, // Socket closed
             },
@@ -231,7 +230,7 @@ impl ProxyServer {
         let do_connect = move || {
             let conn = conn?;
             let peer_addr = conn.peer_addr()?;
-            ii_async_compat::spawn(handle_connection(conn, self.stratum_addr));
+            tokio::spawn(handle_connection(conn, self.stratum_addr));
             Ok(peer_addr)
         };
 
@@ -248,7 +247,7 @@ impl ProxyServer {
             self.listen_addr, self.stratum_addr
         );
 
-        while let Some(result) = await!(self.next()) {
+        while let Some(result) = self.next().await {
             match result {
                 Ok(peer) => info!("Connection accepted from {}", peer),
                 Err(err) => error!("Connection error: {}", err),

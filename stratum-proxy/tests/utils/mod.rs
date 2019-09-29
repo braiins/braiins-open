@@ -20,8 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use crate::tokio::timer::Delay;
-use futures::compat::Future01CompatExt;
+use crate::tokio::timer;
 use futures::future::Future;
 use std::time::{Duration, Instant};
 
@@ -34,22 +33,23 @@ use std::time::{Duration, Instant};
 /// The last `Result` from the callback function is returned,
 /// carrying either an Ok value or an error.
 /// TODO: review tokio-retry if that would be a suitable implementation instead of a custom one
+/// NB. tokio-retry seems to not be updated for tokio 0.2
 pub async fn backoff<E, T, FT: Future<Output = Result<T, E>>, F: Fn() -> FT>(
     start_delay: u32,
     iterations: u32,
     f: F,
 ) -> Result<T, E> {
     let mut delay = start_delay;
-    let mut res = await!(f());
+    let mut res = f().await;
     if res.is_ok() {
         return res;
     }
 
     for _ in 0..iterations {
-        await!(Delay::new(Instant::now() + Duration::from_millis(delay as u64)).compat());
+        timer::delay_for(Duration::from_millis(delay as u64)).await;
         delay = 2 * delay;
 
-        res = await!(f());
+        res = f().await;
         if res.is_ok() {
             return res;
         }

@@ -23,8 +23,6 @@
 //! Simple proxy that translates V2 protocol from clients to V1 protocol and connects to a
 //! requested pool
 
-#![feature(await_macro, async_await)]
-
 use std::cell::RefCell;
 
 use clap::{self, Arg};
@@ -32,12 +30,14 @@ use ctrlc;
 
 use ii_logging::macros::*;
 use ii_stratum_proxy::server;
+use ii_wire::tokio;
 
 // TODO: defaults for listen & remote addrs?
 // static V2_ADDR: &'static str = "127.0.0.1:3334";
 // static V1_ADDR: &'static str = "127.0.0.1:3335";
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let _log_guard = ii_logging::setup_for_app();
 
     let args = clap::App::new("stratum-proxy")
@@ -80,5 +80,5 @@ fn main() {
     })
     .expect("Could not set SIGINT handler");
 
-    ii_async_compat::run(server.run());
+    server.run().await;
 }

@@ -20,8 +20,6 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-#![feature(async_await, await_macro)]
-
 // Tokio is re-exported here for the benefit of dependant crates.
 // That way, the Tokio dependency is specified in one place (in wire/Cargo.toml).
 pub use tokio;
@@ -35,4 +33,4 @@ pub use network::*;
 mod framing;
 pub use framing::*;
 
-pub mod utils;
+pub mod split;

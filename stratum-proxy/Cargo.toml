@@ -10,15 +10,13 @@ bytes = "0.4"
 clap = "2.33.0"
 ii-stratum = { path = "../protocols/stratum" }
 ii-wire = { path = "../protocols/wire" }
-futures-preview = { version = "0.3.0-alpha.15", features = ["compat"] }
-futures-01 = { version = "0.1.27", package = "futures" }
+futures-preview = { version = "=0.3.0-alpha.18", features = ["async-await", "nightly"] }   # TODO: move to wire too (?)
 failure = "0.1.5"
 ii-logging = { path = "../utils-rs/logging" }
 bitcoin_hashes = "0.3.2"
 uint = "0.5.0"
 ctrlc = "3.1.0"
 serde_json = "1.0.39"
-ii-async-compat = { path = "../utils-rs/async-compat" }
 
 [features]
 v2json = ["ii-stratum/v2json"]

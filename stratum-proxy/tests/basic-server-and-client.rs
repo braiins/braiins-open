@@ -27,8 +27,6 @@
 //! NOTE: currently this test must be run with --nocapture flag as there is no reasonable way of
 //! communicating any failures/panics to the test harness.
 
-#![feature(await_macro, async_await)]
-
 use futures::future::Future;
 use std::net::SocketAddr;
 
@@ -53,36 +51,38 @@ static PORT_V1: usize = 9001;
 static PORT_V2: usize = 9002;
 static PORT_V2_FULL: usize = 9003;
 
-#[test]
-fn test_v2server() {
+#[tokio::test]
+async fn test_v2server() {
     // FIXME: unwraps
 
-    ii_async_compat::run(async {
-        let addr = format!("{}:{}", ADDR, PORT_V2).parse().unwrap();
-        let mut server = Server::<v2::Framing>::bind(&addr).unwrap();
+    let addr = format!("{}:{}", ADDR, PORT_V2).parse().unwrap();
+    let mut server = Server::<v2::Framing>::bind(&addr).unwrap();
 
-        // Spawn server task that reacts to any incoming message and responds
-        // with SetupConnectionSuccess
-        tokio::spawn_async(async move {
-            let mut conn = await!(server.next()).unwrap().unwrap();
-            let msg = await!(conn.next()).unwrap().unwrap();
-            // test handler verifies that the message
-            msg.accept(&mut test_utils::v2::TestIdentityHandler);
+    // Spawn server task that reacts to any incoming message and responds
+    // with SetupConnectionSuccess
+    tokio::spawn(async move {
+        let mut conn = server.next().await.unwrap().unwrap();
+        let msg = conn.next().await.unwrap().unwrap();
+        // test handler verifies that the message
+        msg.accept(&mut test_utils::v2::TestIdentityHandler);
 
-            // test response frame
-            await!(conn.send(test_utils::v2::build_setup_connection_success()))
-                .expect("Could not send message");
-        });
-
-        // Testing client
-        let mut connection = await!(Connection::<v2::Framing>::connect(&addr))
-            .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
-        await!(connection.send(test_utils::v2::build_setup_connection()))
+        // test response frame
+        conn.send_msg(test_utils::v2::build_setup_connection_success())
+            .await
             .expect("Could not send message");
-
-        let response = await!(connection.next()).unwrap().unwrap();
-        response.accept(&mut test_utils::v2::TestIdentityHandler);
     });
+
+    // Testing client
+    let mut connection = Connection::<v2::Framing>::connect(&addr)
+        .await
+        .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
+    connection
+        .send_msg(test_utils::v2::build_setup_connection())
+        .await
+        .expect("Could not send message");
+
+    let response = connection.next().await.unwrap().unwrap();
+    response.accept(&mut test_utils::v2::TestIdentityHandler);
 }
 
 // WIP attempt to generalize
@@ -135,17 +135,19 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
     let mut server = Server::<v1::Framing>::bind(&addr).unwrap();
 
     async move {
-        while let Some(conn) = await!(server.next()) {
+        while let Some(conn) = server.next().await {
             let mut conn = conn.unwrap();
 
-            while let Some(msg) = await!(conn.next()) {
+            while let Some(msg) = conn.next().await {
                 let msg: ii_wire::Message<v1::Protocol> = msg.unwrap();
                 // test handler verifies that the message
                 msg.accept(&mut test_utils::v1::TestIdentityHandler);
 
                 // test response frame
                 let response = test_utils::v1::build_subscribe_ok_response_frame();
-                await!(conn.send(response)).expect("Could not send response");
+                conn.send_msg(response)
+                    .await
+                    .expect("Could not send response");
             }
         }
     }
@@ -153,64 +155,68 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
 
 /// TODO this test is currently work in progress and is disfunctional. Code needs to be consolidated
 /// And factor out common code with V2 server as attempted above.
-#[test]
+#[tokio::test]
 #[ignore]
-fn test_v1server() {
-    ii_async_compat::run(async {
-        let addr = format!("{}:{}", ADDR, PORT_V1).parse().unwrap();
+async fn test_v1server() {
+    let addr = format!("{}:{}", ADDR, PORT_V1).parse().unwrap();
 
-        // Spawn server task that reacts to any incoming message and responds
-        // with SetupConnectionSuccess
-        ii_async_compat::spawn(v1server_task(addr));
+    // Spawn server task that reacts to any incoming message and responds
+    // with SetupConnectionSuccess
+    tokio::spawn(v1server_task(addr));
 
-        // Testing client
-        let mut connection = await!(Connection::<v1::Framing>::connect(&addr))
-            .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
+    // Testing client
+    let mut connection = Connection::<v1::Framing>::connect(&addr)
+        .await
+        .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
 
-        let request = test_utils::v1::build_subscribe_request_frame();
-        await!(connection.send(request)).expect("Could not send request");
+    let request = test_utils::v1::build_subscribe_request_frame();
+    connection
+        .send_msg(request)
+        .await
+        .expect("Could not send request");
 
-        let response = await!(connection.next()).unwrap().unwrap();
-        response.accept(&mut test_utils::v1::TestIdentityHandler);
-    });
+    let response = connection.next().await.unwrap().unwrap();
+    response.accept(&mut test_utils::v1::TestIdentityHandler);
 }
 
 async fn test_v2_client(server_addr: String) {
     let sock_server_addr = server_addr.parse().expect("Invalid server address");
     // Test client for V2
-    await!(utils::backoff(50, 4, async move || -> Result<(), Error> {
-        let mut conn = await!(Connection::<v2::Framing>::connect(&sock_server_addr))?;
+    utils::backoff(50, 4, move || {
+        async move {
+            let mut conn = Connection::<v2::Framing>::connect(&sock_server_addr).await?;
 
-        // Initialize server connection
-        await!(conn.send(test_utils::v2::build_setup_connection()))
-            .expect("Could not send message");
+            // Initialize server connection
+            conn.send_msg(test_utils::v2::build_setup_connection())
+                .await
+                .expect("Could not send message");
 
-        // let response = await!(conn.next()).unwrap().unwrap();
-        // response.accept(&test_utils::v2::TestIdentityHandler);
+            // let response = await!(conn.next()).unwrap().unwrap();
+            // response.accept(&test_utils::v2::TestIdentityHandler);
 
-        Ok(())
-    }))
+            Result::<(), Error>::Ok(())
+        }
+    })
+    .await
     .unwrap_or_else(|e| panic!("Could not connect to {}: {}", server_addr, e));
 }
 
-#[test]
-fn test_v2server_full() {
-    ii_async_compat::run(async {
-        // This resolves to dbg.stratum.slushpool.com
-        let addr_v1 = format!("{}:{}", "52.212.249.159", 3333);
-        //            let addr_v1 = format!("{}:{}", ADDR, PORT_V1);
-        //            ii_async_compat::spawn(v1server_task(addr_v1.parse().unwrap()));
+#[tokio::test]
+async fn test_v2server_full() {
+    // This resolves to dbg.stratum.slushpool.com
+    let addr_v1 = format!("{}:{}", "52.212.249.159", 3333);
+    //            let addr_v1 = format!("{}:{}", ADDR, PORT_V1);
+    //            tokio::spawn(v1server_task(addr_v1.parse().unwrap()));
 
-        let addr_v2 = format!("{}:{}", ADDR, PORT_V2_FULL);
-        let v2server =
-            server::ProxyServer::listen(addr_v2.clone(), addr_v1).expect("Could not bind v2server");
-        let mut v2server_quit = v2server.quit_channel();
+    let addr_v2 = format!("{}:{}", ADDR, PORT_V2_FULL);
+    let v2server =
+        server::ProxyServer::listen(addr_v2.clone(), addr_v1).expect("Could not bind v2server");
+    let mut v2server_quit = v2server.quit_channel();
 
-        ii_async_compat::spawn(v2server.run());
-        await!(test_v2_client(addr_v2));
+    tokio::spawn(v2server.run());
+    test_v2_client(addr_v2).await;
 
-        // Signal the server to shut down
-        let _ = v2server_quit.try_send(());
-        // TODO kill v1 test server
-    });
+    // Signal the server to shut down
+    let _ = v2server_quit.try_send(());
+    // TODO kill v1 test server
 }
