@@ -23,5 +23,8 @@ ii-bitcoin = { path = "../../coins/bitcoin" }
 ii-wire = { path = "../wire" }
 ii-logging = { path = "../../utils-rs/logging" }
 
+[dev-dependencies]
+byte_string = "1.0.0"
+
 [features]
 v2json = []

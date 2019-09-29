@@ -22,6 +22,8 @@
 
 use std::convert::TryInto;
 
+use byte_string::ByteStr;
+
 use super::*;
 use crate::test_utils::v2::*;
 use crate::v2::framing;
@@ -45,5 +47,8 @@ fn test_serialize_setup_connection() {
         .expect("Could not serialize message");
 
     // The message has ben serialized completely, let's skip the header for now
-    assert_eq!(SETUP_CONNECTION_SERIALIZED, &frame[framing::Header::SIZE..],);
+    assert_eq!(
+        ByteStr::new(SETUP_CONNECTION_SERIALIZED),
+        ByteStr::new(&frame[framing::Header::SIZE..])
+    );
 }
