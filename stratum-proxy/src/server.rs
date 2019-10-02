@@ -25,6 +25,7 @@ use std::net::ToSocketAddrs;
 
 use futures::channel::mpsc;
 use futures::future::{self, Either};
+use ii_wire::futures;
 
 use ii_wire::tokio;
 use tokio::prelude::*;

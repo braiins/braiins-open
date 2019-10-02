@@ -20,17 +20,20 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use bitcoin_hashes::{sha256d, Hash, HashEngine};
-use bytes::BytesMut;
-use failure::ResultExt;
-use futures::channel::mpsc;
-use serde_json;
 use std::collections::HashMap;
 use std::convert::From;
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt;
 use std::mem::size_of;
+
+use futures::channel::mpsc;
+use ii_wire::futures;
+
+use bitcoin_hashes::{sha256d, Hash, HashEngine};
+use bytes::BytesMut;
+use failure::ResultExt;
+use serde_json;
 
 use ii_stratum::v1;
 use ii_stratum::v2;

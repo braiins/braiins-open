@@ -27,8 +27,9 @@
 //! NOTE: currently this test must be run with --nocapture flag as there is no reasonable way of
 //! communicating any failures/panics to the test harness.
 
-use futures::future::Future;
 use std::net::SocketAddr;
+
+use ii_wire::futures::future::Future;
 
 use ii_wire::tokio;
 use tokio::prelude::*;

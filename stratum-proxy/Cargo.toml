@@ -10,7 +10,6 @@ bytes = "0.4"
 clap = "2.33.0"
 ii-stratum = { path = "../protocols/stratum" }
 ii-wire = { path = "../protocols/wire" }
-futures-preview = { version = "=0.3.0-alpha.18", features = ["async-await", "nightly"] }   # TODO: move to wire too (?)
 failure = "0.1.5"
 ii-logging = { path = "../utils-rs/logging" }
 bitcoin_hashes = "0.3.2"

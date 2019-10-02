@@ -20,8 +20,9 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-// Tokio is re-exported here for the benefit of dependant crates.
-// That way, the Tokio dependency is specified in one place (in wire/Cargo.toml).
+// Futures and Tokio are re-exported here for the benefit of dependant crates.
+// That way, the dependencies are specified in one place (in wire/Cargo.toml).
+pub use futures;
 pub use tokio;
 
 mod messaging;
