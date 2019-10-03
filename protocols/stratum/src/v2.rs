@@ -41,7 +41,7 @@ pub use self::framing::codec::{Codec, Framing};
 
 pub struct Protocol;
 impl ii_wire::Protocol for Protocol {
-    type Handler = Handler;
+    type Handler = dyn Handler;
 }
 
 macro_rules! handler_method {

@@ -114,7 +114,7 @@ impl StratumResult {
 
 /// Specific protocol implementation for any stratum result
 impl ii_wire::Payload<Protocol> for StratumResult {
-    fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut Handler) {
+    fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut dyn Handler) {
         handler.visit_stratum_result(msg, self);
     }
 }
@@ -131,7 +131,7 @@ pub struct StratumError(pub i32, pub String, pub Option<String>);
 
 /// Specific protocol implementation for any stratum result
 impl ii_wire::Payload<Protocol> for StratumError {
-    fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut Handler) {
+    fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut dyn Handler) {
         handler.visit_stratum_error(msg, self);
     }
 }
