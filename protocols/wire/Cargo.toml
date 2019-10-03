@@ -6,16 +6,14 @@ license = "GPL-3.0-or-later"
 edition = "2018"
 
 [dependencies]
-# FIXME: update comment
-# Note: Tokio is currently pinned to 0.1.19 and rustc is pinned to nightly-2019-05-10
-# using the toolchain file, becase async-await-preview is broken in Tokio 0.1.20
-# cf. https://github.com/tokio-rs/tokio/issues/1094
-# Also, this dependency spec is used by dependant crates:
 # This is the central place to specify Tokio dependency.
-# FIXME: wait for https://github.com/tokio-rs/tokio/pull/1602
-tokio = { git = "https://github.com/braiins/tokio.git", branch = "fix-incoming" }
-tokio-io = { git = "https://github.com/braiins/tokio.git", branch = "fix-incoming" }
+# Currently we're using git master version because of [PR #1602](https://github.com/tokio-rs/tokio/pull/1602)
+# Once a version containing that PR is released, it can be used here.
+# Additionally, Rust toolchain version used in dependant crates should agree
+# with the one used by Tokio. Currently, that is: `beta` (that is Rust 1.39 at the time of writing)
+tokio = { git = "https://github.com/tokio-rs/tokio.git" }
+tokio-io = { git = "https://github.com/tokio-rs/tokio.git" }
 bytes = "0.4"
-futures-preview = { version = "=0.3.0-alpha.18", features = ["async-await", "nightly"] }
+futures-preview = { version = "=0.3.0-alpha.19" }
 failure = "0.1.5"
 pin-project = "0.4.0-beta.1"   # The version that the above tokio uses
