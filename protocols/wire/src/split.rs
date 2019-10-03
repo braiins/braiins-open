@@ -20,6 +20,32 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+//! Reader/Writer split support for fully duplex sockets.
+//!
+//! While Tokio does support some form of splitting, it's not sufficient
+//! for our usecase because of several reasons:
+//!
+//!  1. Tokio split wrappers (both the generic ones creates by `tokio::io::split()`
+//!     as well as the TCP-specific ones created by `TcpStream::split()`)
+//!     provide no access to the underlying stream, ie. there's no way to shutdown
+//!     the receiving part from the sending part and vice versa.
+//!
+//!     Our custom split wrappers provide a custom `shutdown()` method
+//!     that can be used to shutdown the whole connection.
+//!
+//!  2. Tokio's generic I/O split uses an Arc + locking to make sure the access is safe.
+//!     This shouldn't be needed for a fully duplex socket.
+//!     The TCP-specific split "solves" this problem by basically being a reference
+//!     to the original stream, unfortunatelly this makes it impossible to use
+//!     the halves independently.
+//!
+//!     Our implementation currently uses internally the locked generics split wrappers.
+//!     This is not ideal and should be revisited in the future...
+//!
+//! The problem was originally discussed in [tokio bug #174](https://github.com/tokio-rs/tokio/issues/174)
+//! w.r.t. Tokio 0.1.X and again at [PR 1521](https://github.com/tokio-rs/tokio/pull/1521) w.r.t. Tokio 0.2.0 alpha.
+//!
+
 use std::net::{Shutdown, SocketAddr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -31,7 +57,7 @@ use tokio::prelude::{AsyncRead, AsyncWrite};
 use tokio_io::split::{ReadHalf, WriteHalf};
 
 /// This is a newtype uniting unix `RawFd` and windows `RawSocket`,
-/// implementing local & peer addr getters for use in `TcpStreamRecv` and `TcpStreamSend`.
+/// implementing local & peer addr getters for use in `TcpDuplexRecv` and `TcpDuplexSend`.
 #[cfg(target_family = "unix")]
 mod raw_fd {
     use std::io;
@@ -120,15 +146,19 @@ mod raw_fd {
     }
 }
 
-// FIXME: comment
+/// A trait implementable by socket types that support fully duplex
+/// I/O without locking.
 pub trait DuplexSplit {
+    /// Type of the receiving half
     type DuplexRecv: AsyncRead;
+    /// Type of the sending half
     type DuplexSend: AsyncWrite;
 
+    /// Consumes the socket and creates receiving and sending halves from it
     fn duplex_split(self) -> (Self::DuplexRecv, Self::DuplexSend);
 }
 
-// FIXME: comment
+/// TCP socket receiver half
 #[pin_project]
 #[derive(Debug)]
 pub struct TcpDuplexRecv {
@@ -137,7 +167,7 @@ pub struct TcpDuplexRecv {
     fd: raw_fd::Fd,
 }
 
-// FIXME: comment
+/// TCP socket sender half
 #[pin_project]
 #[derive(Debug)]
 pub struct TcpDuplexSend {
@@ -203,7 +233,7 @@ impl DuplexSplit for TcpStream {
     type DuplexSend = TcpDuplexSend;
 
     fn duplex_split(self) -> (TcpDuplexRecv, TcpDuplexSend) {
-        let fd = (&self).into();
+        let fd: raw_fd::Fd = (&self).into();
         let (read, write) = io::split(self);
 
         let recv = TcpDuplexRecv { inner: read, fd };
