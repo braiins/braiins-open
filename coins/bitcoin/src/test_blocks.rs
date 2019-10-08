@@ -20,7 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use super::{DHash, FromHex, Midstate};
+use super::{DHash, FromHex, Midstate, Target};
 
 use lazy_static::lazy_static;
 
@@ -36,6 +36,7 @@ pub struct TestBlock {
     pub merkle_root: DHash,
     pub time: u32,
     pub bits: u32,
+    pub target: Target,
     pub nonce: u32,
     pub header_bytes: [u8; 80],
     /// The following fields are used for HW specific tests
@@ -67,6 +68,7 @@ impl TestBlock {
             merkle_root: DHash::from_hex(merkle_root).expect("parse hex"),
             time,
             bits,
+            target: Target::from_compact(bits).expect("network difficulty"),
             nonce,
             header_bytes,
             icarus_bytes,
