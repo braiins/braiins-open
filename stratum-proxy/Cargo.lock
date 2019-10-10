@@ -397,6 +397,7 @@ version = "0.2.0"
 dependencies = [
  "futures-preview",
  "tokio",
+ "tokio-executor",
  "tokio-io",
 ]
 

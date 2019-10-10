@@ -38,6 +38,7 @@ use ii_stratum_proxy::server;
 
 #[tokio::main]
 async fn main() {
+    ii_async_compat::setup_panic_handling();
     let _log_guard = ii_logging::setup_for_app();
 
     let args = clap::App::new("stratum-proxy")
