@@ -50,6 +50,7 @@ use std::net::{Shutdown, SocketAddr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use ii_async_compat::{tokio, tokio_io};
 use pin_project::pin_project;
 use tokio::io;
 use tokio::net::TcpStream;
@@ -60,11 +61,11 @@ use tokio_io::split::{ReadHalf, WriteHalf};
 /// implementing local & peer addr getters for use in `TcpDuplexRecv` and `TcpDuplexSend`.
 #[cfg(target_family = "unix")]
 mod raw_fd {
+    use ii_async_compat::tokio::net::TcpStream as TokioStream;
     use std::io;
     use std::net::TcpStream as StdStream;
     use std::net::{Shutdown, SocketAddr};
     use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-    use tokio::net::TcpStream as TokioStream;
 
     #[derive(Clone, Copy, Debug)]
     pub struct Fd(RawFd);
@@ -104,11 +105,11 @@ mod raw_fd {
 
 #[cfg(target_family = "windows")]
 mod raw_fd {
+    use ii_async_compat::tokio::net::TcpStream as TokioStream;
     use std::io;
     use std::net::TcpStream as StdStream;
     use std::net::{Shutdown, SocketAddr};
     use std::os::windows::io::{AsRawSocket, IntoRawSocket, RawSocket};
-    use tokio::net::TcpStream as TokioStream;
 
     #[derive(Clone, Copy, Debug)]
     pub struct Fd(RawSocket);

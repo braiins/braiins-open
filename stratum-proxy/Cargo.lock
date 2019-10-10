@@ -392,6 +392,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
 
 [[package]]
+name = "ii-async-compat"
+version = "0.2.0"
+dependencies = [
+ "futures-preview",
+ "tokio",
+ "tokio-io",
+]
+
+[[package]]
 name = "ii-bitcoin"
 version = "0.1.0"
 dependencies = [
@@ -423,6 +432,7 @@ dependencies = [
  "bytes",
  "failure",
  "hex",
+ "ii-async-compat",
  "ii-bitcoin",
  "ii-logging",
  "ii-wire",
@@ -443,6 +453,7 @@ dependencies = [
  "clap",
  "ctrlc",
  "failure",
+ "ii-async-compat",
  "ii-logging",
  "ii-stratum",
  "ii-wire",
@@ -456,10 +467,8 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "failure",
- "futures-preview",
+ "ii-async-compat",
  "pin-project",
- "tokio",
- "tokio-io",
 ]
 
 [[package]]

@@ -20,8 +20,8 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use ii_wire::tokio::timer;
-use ii_wire::futures::future::Future;
+use ii_async_compat::futures::future::Future;
+use ii_async_compat::tokio::timer;
 use std::time::{Duration, Instant};
 
 /// Run an async function/lambda repeatedly with backoff until it

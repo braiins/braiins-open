@@ -22,6 +22,8 @@
 
 use std::fmt::Debug;
 use std::ops::Deref;
+
+use ii_async_compat::tokio;
 use tokio::codec::{Decoder, Encoder};
 use tokio::io::Error as IOError;
 

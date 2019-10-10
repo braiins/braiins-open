@@ -28,7 +28,7 @@ use std::fmt;
 use std::mem::size_of;
 
 use futures::channel::mpsc;
-use ii_wire::futures;
+use ii_async_compat::futures;
 
 use bitcoin_hashes::{sha256d, Hash, HashEngine};
 use bytes::BytesMut;

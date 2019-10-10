@@ -28,6 +28,7 @@ use std::net::{Shutdown, SocketAddr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use ii_async_compat::tokio;
 use pin_project::{pin_project, pinned_drop};
 use tokio::codec::{FramedRead, FramedWrite};
 use tokio::net::tcp::Incoming;

@@ -21,6 +21,7 @@ bitcoin_hashes = "0.3.2"
 uint = "0.5.0"
 ii-bitcoin = { path = "../../coins/bitcoin" }
 ii-wire = { path = "../wire" }
+ii-async-compat = { path = "../../utils-rs/async-compat" }
 ii-logging = { path = "../../utils-rs/logging" }
 
 [dev-dependencies]

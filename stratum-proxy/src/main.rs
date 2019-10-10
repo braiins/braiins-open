@@ -28,9 +28,9 @@ use std::cell::RefCell;
 use clap::{self, Arg};
 use ctrlc;
 
+use ii_async_compat::tokio;
 use ii_logging::macros::*;
 use ii_stratum_proxy::server;
-use ii_wire::tokio;
 
 // TODO: defaults for listen & remote addrs?
 // static V2_ADDR: &'static str = "127.0.0.1:3334";

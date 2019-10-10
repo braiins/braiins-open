@@ -22,10 +22,10 @@
 
 use bytes::BytesMut;
 
+use ii_async_compat::tokio;
 use tokio::codec::length_delimited::{self, LengthDelimitedCodec};
 use tokio::codec::{Decoder, Encoder};
 
-use ii_wire::tokio;
 use ii_wire::{self, Message, TxFrame};
 
 use super::Header;

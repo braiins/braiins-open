@@ -22,7 +22,7 @@
 
 use futures::stream::StreamExt;
 
-use ii_wire::tokio;
+use ii_async_compat::tokio;
 
 use super::*;
 use ii_stratum::test_utils;
@@ -101,7 +101,6 @@ async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<TxFrame
 /// TODO we need a way to detect that translation is not responding and the entire test should fail
 #[tokio::test]
 async fn test_setup_connection_translate() {
-    // ii_async_compat::run(async {
     let (v1_tx, mut v1_rx) = mpsc::channel(1);
     let (v2_tx, mut v2_rx) = mpsc::channel(1);
     let mut translation = V2ToV1Translation::new(v1_tx, v2_tx);

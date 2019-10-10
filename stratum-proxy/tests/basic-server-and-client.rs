@@ -29,20 +29,16 @@
 
 use std::net::SocketAddr;
 
-use ii_wire::futures::future::Future;
+use ii_async_compat::{futures, tokio};
 
-use ii_wire::tokio;
+use futures::future::Future;
 use tokio::prelude::*;
-use tokio::runtime::current_thread as runtime;
-
-use ii_stratum::test_utils;
 
 use ii_stratum::error::Error;
+use ii_stratum::test_utils;
 use ii_stratum::v1;
 use ii_stratum::v2;
-
 use ii_stratum_proxy::server;
-
 use ii_wire::{Connection, Server};
 
 mod utils;

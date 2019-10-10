@@ -8,14 +8,15 @@ edition = "2018"
 [dependencies]
 bytes = "0.4"
 clap = "2.33.0"
-ii-stratum = { path = "../protocols/stratum" }
-ii-wire = { path = "../protocols/wire" }
 failure = "0.1.5"
-ii-logging = { path = "../utils-rs/logging" }
 bitcoin_hashes = "0.3.2"
 uint = "0.5.0"
 ctrlc = "3.1.0"
 serde_json = "1.0.39"
+ii-stratum = { path = "../protocols/stratum" }
+ii-wire = { path = "../protocols/wire" }
+ii-async-compat = { path = "../utils-rs/async-compat" }
+ii-logging = { path = "../utils-rs/logging" }
 
 [features]
 v2json = ["ii-stratum/v2json"]

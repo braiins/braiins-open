@@ -22,8 +22,6 @@
 
 // Futures and Tokio are re-exported here for the benefit of dependant crates.
 // That way, the dependencies are specified in one place (in wire/Cargo.toml).
-pub use futures;
-pub use tokio;
 
 mod messaging;
 pub use messaging::*;

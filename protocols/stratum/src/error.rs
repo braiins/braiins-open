@@ -27,7 +27,7 @@ use std;
 use std::fmt::{self, Display};
 use std::io;
 
-use ii_wire::tokio;
+use ii_async_compat::tokio;
 
 #[derive(Debug)]
 pub struct Error {

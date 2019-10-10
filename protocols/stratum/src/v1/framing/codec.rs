@@ -23,12 +23,14 @@
 use bytes::BytesMut;
 
 use std::str;
+
+use ii_async_compat::tokio;
 use tokio::codec::{Decoder, Encoder, LinesCodec};
 
 use crate::error::Error;
 use crate::v1::{deserialize_message, Protocol};
 use ii_wire::Message;
-use ii_wire::{self, tokio, TxFrame};
+use ii_wire::{self, TxFrame};
 
 // FIXME: error handling
 // FIXME: check bytesmut capacity when encoding (use BytesMut::remaining_mut())
