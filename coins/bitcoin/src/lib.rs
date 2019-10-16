@@ -388,6 +388,52 @@ impl MeetsTarget for DHash {
     }
 }
 
+/// Structure used for storing all shares determined from solution target difficulty
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
+pub struct Shares(u64);
+
+impl Shares {
+    const DIFFICULTY_1_SHIFT: usize = 32;
+
+    /// Create shares object with some initial value based on target
+    pub fn new(target: &Target) -> Self {
+        Self(target.get_difficulty() as u64)
+    }
+
+    /// Account solution specified by its target difficulty to the shares
+    pub fn account_solution(&mut self, target: &Target) {
+        self.0 += target.get_difficulty() as u64
+    }
+
+    /// Share=1 represents a space of 2^32 calculated hashes for Bitcoin mainnet; exactly
+    /// 2^256 / (0xffff << 208), where 0xffff<<208 is defined as target difficulty 1 for Bitcoin
+    /// mainnet. Shares at dificulty X takes X times more hashes to compute.
+    #[inline]
+    pub fn into_hashes(self) -> u128 {
+        (self.0 as u128) << Self::DIFFICULTY_1_SHIFT
+    }
+
+    pub fn into_kilo_hashes(self) -> f64 {
+        self.into_hashes() as f64 * 1e-3
+    }
+
+    pub fn into_mega_hashes(self) -> f64 {
+        self.into_hashes() as f64 * 1e-6
+    }
+
+    pub fn into_giga_hashes(self) -> f64 {
+        self.into_hashes() as f64 * 1e-9
+    }
+}
+
+impl std::ops::Add for Shares {
+    type Output = Self;
+
+    fn add(self, shares: Self) -> Self {
+        Self(self.0 + shares.0)
+    }
+}
+
 #[cfg(test)]
 pub mod test {
     use super::*;
@@ -573,5 +619,36 @@ pub mod test {
 
             assert_eq!(target_bytes, hash_bytes);
         }
+    }
+
+    #[test]
+    fn test_shares() {
+        let target_difficulty_1: Target = Default::default();
+
+        // test default value
+        let shares = Shares::default();
+        assert_eq!(shares.into_hashes(), 0);
+
+        // test shares based on target difficulty 1
+        let mut shares = Shares::new(&target_difficulty_1);
+        assert_eq!(shares.into_hashes(), 0x100000000);
+
+        // test number transformation
+        assert_eq!(shares.into_kilo_hashes(), 4294967.296);
+        assert_eq!(shares.into_mega_hashes(), 4294.967296);
+        assert_eq!(shares.into_giga_hashes(), 4.294967296);
+
+        // test share accounting for another target with difficulty 1
+        shares.account_solution(&target_difficulty_1);
+        assert_eq!(shares.into_hashes(), 0x200000000);
+
+        // test add operator (2 * shares) == (shares + shares)
+        let shares = shares + shares;
+        assert_eq!(shares.into_hashes(), 0x400000000);
+
+        // test comparison operators
+        assert_eq!(Shares::default(), Shares::default());
+        assert!(Shares::default() < shares);
+        assert!(shares > Shares::default());
     }
 }
