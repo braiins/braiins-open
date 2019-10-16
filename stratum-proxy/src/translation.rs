@@ -69,6 +69,7 @@ pub struct V2ToV1Translation {
 
     /// Channel for sending out V2 responses
     v2_tx: mpsc::Sender<TxFrame>,
+    #[allow(dead_code)] // TODO: unused as of now
     v2_req_id: MessageId,
     /// All connection details
     v2_conn_details: Option<v2::messages::SetupConnection>,
@@ -134,6 +135,7 @@ type JobMap = HashMap<u32, V1SubmitTemplate>;
 impl V2ToV1Translation {
     const PROTOCOL_VERSION: usize = 0;
     /// No support for the extended protocol yet, therefore, no extranonce advertised
+    #[allow(dead_code)]
     const MAX_EXTRANONCE_SIZE: usize = 0;
     /// Currently, no support for multiple channels in the proxy
     const CHANNEL_ID: u32 = 0;
@@ -828,10 +830,12 @@ impl v2::Handler for V2ToV1Translation {
 
         self.v2_conn_details = Some(payload.clone());
         let mut configure = v1::messages::Configure::new();
-        configure.add_feature(v1::messages::VersionRolling::new(
-            ii_stratum::BIP320_N_VERSION_MASK,
-            ii_stratum::BIP320_N_VERSION_MAX_BITS,
-        )); // FIXME: how to handle errors from configure.add_feature() ?
+        configure
+            .add_feature(v1::messages::VersionRolling::new(
+                ii_stratum::BIP320_N_VERSION_MASK,
+                ii_stratum::BIP320_N_VERSION_MAX_BITS,
+            ))
+            .expect("addfeature failed"); // FIXME: how to handle errors from configure.add_feature() ?
 
         let v1_configure_message = self.v1_method_into_message(
             configure,
