@@ -397,8 +397,10 @@ version = "0.2.0"
 dependencies = [
  "futures-preview",
  "tokio",
+ "tokio-codec",
  "tokio-executor",
  "tokio-io",
+ "tokio-net",
 ]
 
 [[package]]
