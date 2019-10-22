@@ -389,6 +389,9 @@ impl MeetsTarget for DHash {
 }
 
 /// Structure used for storing all shares determined from solution target difficulty
+/// Share=1 represents a space of 2^32 calculated hashes for Bitcoin mainnet; exactly
+/// 2^256 / (0xffff << 208), where 0xffff << 208 is defined as target difficulty 1 for Bitcoin
+/// mainnet. Each solution that meets a target at difficulty D is accounted as D shares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub struct Shares(u64);
 
@@ -405,9 +408,6 @@ impl Shares {
         self.0 += target.get_difficulty() as u64
     }
 
-    /// Share=1 represents a space of 2^32 calculated hashes for Bitcoin mainnet; exactly
-    /// 2^256 / (0xffff << 208), where 0xffff<<208 is defined as target difficulty 1 for Bitcoin
-    /// mainnet. Shares at dificulty X takes X times more hashes to compute.
     #[inline]
     pub fn into_hashes(self) -> u128 {
         (self.0 as u128) << Self::DIFFICULTY_1_SHIFT
