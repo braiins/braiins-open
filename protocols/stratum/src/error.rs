@@ -27,7 +27,7 @@ use std;
 use std::fmt::{self, Display};
 use std::io;
 
-use ii_async_compat::tokio;
+use ii_async_compat::tokio_util;
 
 #[derive(Debug)]
 pub struct Error {
@@ -128,8 +128,8 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<tokio::codec::LinesCodecError> for Error {
-    fn from(e: tokio::codec::LinesCodecError) -> Self {
+impl From<tokio_util::codec::LinesCodecError> for Error {
+    fn from(e: tokio_util::codec::LinesCodecError) -> Self {
         let msg = e.to_string();
         Self {
             inner: e.context(ErrorKind::Io(msg)),

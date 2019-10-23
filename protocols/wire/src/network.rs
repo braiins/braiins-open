@@ -28,12 +28,12 @@ use std::net::{Shutdown, SocketAddr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use ii_async_compat::tokio;
+use ii_async_compat::{tokio, tokio_util};
 use pin_project::{pin_project, pinned_drop};
-use tokio::codec::{FramedRead, FramedWrite};
 use tokio::net::tcp::Incoming;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
+use tokio_util::codec::{FramedRead, FramedWrite};
 
 use crate::framing::Framing;
 use crate::split::{DuplexSplit, TcpDuplexRecv, TcpDuplexSend};
@@ -223,7 +223,7 @@ pub struct Server<F: Framing> {
 impl<F: Framing> Server<F> {
     pub fn bind(addr: &SocketAddr) -> Result<Server<F>, F::Error> {
         let tcp = StdTcpListener::bind(addr)?;
-        let tcp = TcpListener::from_std(tcp, &Default::default())?;
+        let tcp = TcpListener::from_std(tcp)?;
 
         Ok(Server {
             tcp: tcp.incoming(),

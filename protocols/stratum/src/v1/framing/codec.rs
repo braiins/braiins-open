@@ -24,8 +24,8 @@ use bytes::BytesMut;
 
 use std::str;
 
-use ii_async_compat::tokio;
-use tokio::codec::{Decoder, Encoder, LinesCodec};
+use ii_async_compat::tokio_util;
+use tokio_util::codec::{Decoder, Encoder, LinesCodec};
 
 use crate::error::Error;
 use crate::v1::{deserialize_message, Protocol};

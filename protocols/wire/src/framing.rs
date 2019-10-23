@@ -23,9 +23,9 @@
 use std::fmt::Debug;
 use std::ops::Deref;
 
-use ii_async_compat::tokio;
-use tokio::codec::{Decoder, Encoder};
+use ii_async_compat::{tokio, tokio_util};
 use tokio::io::Error as IOError;
+use tokio_util::codec::{Decoder, Encoder};
 
 /// Represents a generic frame being sent/received.
 #[derive(PartialEq, Debug)]

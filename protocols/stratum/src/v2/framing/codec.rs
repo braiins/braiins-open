@@ -22,9 +22,9 @@
 
 use bytes::BytesMut;
 
-use ii_async_compat::tokio;
-use tokio::codec::length_delimited::{self, LengthDelimitedCodec};
-use tokio::codec::{Decoder, Encoder};
+use ii_async_compat::tokio_util;
+use tokio_util::codec::length_delimited::{self, LengthDelimitedCodec};
+use tokio_util::codec::{Decoder, Encoder};
 
 use ii_wire::{self, Message, TxFrame};
 
