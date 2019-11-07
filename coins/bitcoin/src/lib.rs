@@ -33,6 +33,7 @@ use bitcoin_hashes::{sha256, HashEngine};
 pub use bitcoin_hashes::{hex::FromHex, sha256d::Hash as DHash, Hash as HashTrait};
 
 use std::convert::TryInto;
+use std::fmt;
 use std::mem::size_of;
 use std::slice::Chunks;
 
@@ -409,20 +410,33 @@ impl Shares {
     }
 
     #[inline]
-    pub fn into_hashes(self) -> u128 {
-        (self.0 as u128) << Self::DIFFICULTY_1_SHIFT
+    pub fn into_hashes(self) -> HashesUnit {
+        HashesUnit::Hashes((self.0 as u128) << Self::DIFFICULTY_1_SHIFT)
     }
 
-    pub fn into_kilo_hashes(self) -> f64 {
-        self.into_hashes() as f64 * 1e-3
+    #[inline]
+    pub fn into_kilo_hashes(self) -> HashesUnit {
+        self.into_hashes().into_kilo_hashes()
     }
 
-    pub fn into_mega_hashes(self) -> f64 {
-        self.into_hashes() as f64 * 1e-6
+    #[inline]
+    pub fn into_mega_hashes(self) -> HashesUnit {
+        self.into_hashes().into_mega_hashes()
     }
 
-    pub fn into_giga_hashes(self) -> f64 {
-        self.into_hashes() as f64 * 1e-9
+    #[inline]
+    pub fn into_giga_hashes(self) -> HashesUnit {
+        self.into_hashes().into_giga_hashes()
+    }
+
+    #[inline]
+    pub fn into_tera_hashes(self) -> HashesUnit {
+        self.into_hashes().into_tera_hashes()
+    }
+
+    #[inline]
+    pub fn into_pretty_hashes(self) -> HashesUnit {
+        self.into_hashes().into_pretty_hashes()
     }
 }
 
@@ -438,6 +452,117 @@ impl std::ops::Add for Shares {
 
     fn add(self, shares: Self) -> Self {
         Self(self.0 + shares.0)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum HashesUnit {
+    Hashes(u128),
+    KiloHashes(f64),
+    MegaHashes(f64),
+    GigaHashes(f64),
+    TeraHashes(f64),
+}
+
+impl HashesUnit {
+    pub fn into_u128(self) -> u128 {
+        match self {
+            Self::Hashes(value) => value,
+            Self::KiloHashes(value)
+            | Self::MegaHashes(value)
+            | Self::GigaHashes(value)
+            | Self::TeraHashes(value) => value as u128,
+        }
+    }
+
+    pub fn into_f64(self) -> f64 {
+        match self {
+            Self::Hashes(value) => value as f64,
+            Self::KiloHashes(value)
+            | Self::MegaHashes(value)
+            | Self::GigaHashes(value)
+            | Self::TeraHashes(value) => value,
+        }
+    }
+
+    pub fn into_hashes(self) -> HashesUnit {
+        match self {
+            Self::Hashes(value) => Self::Hashes(value),
+            Self::KiloHashes(value) => Self::Hashes((value * 1e+3) as u128),
+            Self::MegaHashes(value) => Self::Hashes((value * 1e+6) as u128),
+            Self::GigaHashes(value) => Self::Hashes((value * 1e+9) as u128),
+            Self::TeraHashes(value) => Self::Hashes((value * 1e+12) as u128),
+        }
+    }
+
+    pub fn into_kilo_hashes(self) -> HashesUnit {
+        match self {
+            Self::Hashes(value) => Self::KiloHashes(value as f64 * 1e-3),
+            Self::KiloHashes(value) => Self::KiloHashes(value),
+            Self::MegaHashes(value) => Self::KiloHashes(value * 1e+3),
+            Self::GigaHashes(value) => Self::KiloHashes(value * 1e+6),
+            Self::TeraHashes(value) => Self::KiloHashes(value * 1e+9),
+        }
+    }
+
+    pub fn into_mega_hashes(self) -> HashesUnit {
+        match self {
+            Self::Hashes(value) => Self::MegaHashes(value as f64 * 1e-6),
+            Self::KiloHashes(value) => Self::MegaHashes(value * 1e-3),
+            Self::MegaHashes(value) => Self::MegaHashes(value),
+            Self::GigaHashes(value) => Self::MegaHashes(value * 1e+3),
+            Self::TeraHashes(value) => Self::MegaHashes(value * 1e+6),
+        }
+    }
+
+    pub fn into_giga_hashes(self) -> HashesUnit {
+        match self {
+            Self::Hashes(value) => Self::GigaHashes(value as f64 * 1e-9),
+            Self::KiloHashes(value) => Self::GigaHashes(value * 1e-6),
+            Self::MegaHashes(value) => Self::GigaHashes(value * 1e-3),
+            Self::GigaHashes(value) => Self::GigaHashes(value),
+            Self::TeraHashes(value) => Self::GigaHashes(value * 1e+3),
+        }
+    }
+
+    pub fn into_tera_hashes(self) -> HashesUnit {
+        match self {
+            Self::Hashes(value) => Self::TeraHashes(value as f64 * 1e-12),
+            Self::KiloHashes(value) => Self::TeraHashes(value * 1e-9),
+            Self::MegaHashes(value) => Self::TeraHashes(value * 1e-6),
+            Self::GigaHashes(value) => Self::TeraHashes(value * 1e-3),
+            Self::TeraHashes(value) => Self::TeraHashes(value),
+        }
+    }
+
+    pub fn into_pretty_hashes(self) -> HashesUnit {
+        let units: [Box<dyn Fn() -> HashesUnit>; 4] = [
+            Box::new(|| self.into_tera_hashes()),
+            Box::new(|| self.into_giga_hashes()),
+            Box::new(|| self.into_mega_hashes()),
+            Box::new(|| self.into_kilo_hashes()),
+        ];
+
+        for unit in units.iter() {
+            let pretty_hashes = (unit)();
+            // check if current unit is not truncated too much
+            if pretty_hashes.into_u128() > 0 {
+                return pretty_hashes;
+            }
+        }
+        self.into_hashes()
+    }
+}
+
+impl fmt::Display for HashesUnit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Hashes(value) => write!(f, "{} H", value),
+            Self::KiloHashes(value) => write!(f, "{:.2} kH", value),
+            Self::MegaHashes(value) => write!(f, "{:.2} MH", value),
+            Self::GigaHashes(value) => write!(f, "{:.2} GH", value),
+            Self::TeraHashes(value) => write!(f, "{:.2} TH", value),
+        }
     }
 }
 
