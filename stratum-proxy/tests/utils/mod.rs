@@ -22,7 +22,7 @@
 
 use ii_async_compat::futures::future::Future;
 use ii_async_compat::tokio::timer;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Run an async function/lambda repeatedly with backoff until it
 /// returns Ok(...) or until the number of inerations is reached.
