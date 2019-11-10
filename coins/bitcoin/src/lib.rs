@@ -455,6 +455,8 @@ impl std::ops::Add for Shares {
     }
 }
 
+/// Provides consistent interface for working with hash units and convert between them including
+/// pretty printing.
 #[derive(Clone, Copy)]
 pub enum HashesUnit {
     Hashes(u128),
