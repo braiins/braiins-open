@@ -426,6 +426,13 @@ impl Shares {
     }
 }
 
+/// Helper conversion from a u64 share counter
+impl From<u64> for Shares {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 impl std::ops::Add for Shares {
     type Output = Self;
 
