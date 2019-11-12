@@ -440,6 +440,12 @@ impl Shares {
         self.into_hashes().into_pretty_hashes()
     }
 
+    /// Convert inner representation to floating point number
+    #[inline]
+    pub fn as_f64(&self) -> f64 {
+        self.0 as f64
+    }
+
     /// Compute number of shares per second
     pub fn to_sharerate(&self, interval: time::Duration) -> f64 {
         let secs = interval.as_secs_f64();
