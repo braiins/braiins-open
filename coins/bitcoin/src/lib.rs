@@ -36,6 +36,7 @@ use std::convert::TryInto;
 use std::fmt;
 use std::mem::size_of;
 use std::slice::Chunks;
+use std::time;
 
 /// SHA256 digest size used in Bitcoin protocol
 pub const SHA256_DIGEST_SIZE: usize = 32;
@@ -437,6 +438,16 @@ impl Shares {
     #[inline]
     pub fn into_pretty_hashes(self) -> HashesUnit {
         self.into_hashes().into_pretty_hashes()
+    }
+
+    /// Compute number of shares per second
+    pub fn to_sharerate(&self, interval: time::Duration) -> f64 {
+        let secs = interval.as_secs_f64();
+        if secs == 0.0 {
+            self.0 as f64
+        } else {
+            self.0 as f64 / secs
+        }
     }
 }
 
