@@ -468,7 +468,7 @@ impl std::ops::Add for Shares {
 
 /// Provides consistent interface for working with hash units and convert between them including
 /// pretty printing.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HashesUnit {
     Hashes(u128),
     KiloHashes(f64),
@@ -772,24 +772,33 @@ pub mod test {
 
         // test default value
         let shares = Shares::default();
-        assert_eq!(shares.into_hashes(), 0);
+        assert_eq!(shares.into_hashes(), HashesUnit::Hashes(0));
 
         // test shares based on target difficulty 1
         let mut shares = Shares::new(&target_difficulty_1);
-        assert_eq!(shares.into_hashes(), 0x100000000);
+        assert_eq!(shares.into_hashes(), HashesUnit::Hashes(0x100000000));
 
         // test number transformation
-        assert_eq!(shares.into_kilo_hashes(), 4294967.296);
-        assert_eq!(shares.into_mega_hashes(), 4294.967296);
-        assert_eq!(shares.into_giga_hashes(), 4.294967296);
+        assert_eq!(
+            shares.into_kilo_hashes(),
+            HashesUnit::KiloHashes(4294967.296)
+        );
+        assert_eq!(
+            shares.into_mega_hashes(),
+            HashesUnit::MegaHashes(4294.967296)
+        );
+        assert_eq!(
+            shares.into_giga_hashes(),
+            HashesUnit::GigaHashes(4.294967296)
+        );
 
         // test share accounting for another target with difficulty 1
         shares.account_solution(&target_difficulty_1);
-        assert_eq!(shares.into_hashes(), 0x200000000);
+        assert_eq!(shares.into_hashes(), HashesUnit::Hashes(0x200000000));
 
         // test add operator (2 * shares) == (shares + shares)
         let shares = shares + shares;
-        assert_eq!(shares.into_hashes(), 0x400000000);
+        assert_eq!(shares.into_hashes(), HashesUnit::Hashes(0x400000000));
 
         // test comparison operators
         assert_eq!(Shares::default(), Shares::default());
