@@ -61,7 +61,7 @@ async fn test_v2server() {
         let mut conn = server.next().await.unwrap().unwrap();
         let msg = conn.next().await.unwrap().unwrap();
         // test handler verifies that the message
-        msg.accept(&mut test_utils::v2::TestIdentityHandler);
+        msg.accept(&mut test_utils::v2::TestIdentityHandler).await;
 
         // test response frame
         conn.send_msg(test_utils::v2::build_setup_connection_success())
@@ -79,7 +79,9 @@ async fn test_v2server() {
         .expect("Could not send message");
 
     let response = connection.next().await.unwrap().unwrap();
-    response.accept(&mut test_utils::v2::TestIdentityHandler);
+    response
+        .accept(&mut test_utils::v2::TestIdentityHandler)
+        .await;
 }
 
 // WIP attempt to generalize
@@ -138,7 +140,7 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
             while let Some(msg) = conn.next().await {
                 let msg: ii_wire::Message<v1::Protocol> = msg.unwrap();
                 // test handler verifies that the message
-                msg.accept(&mut test_utils::v1::TestIdentityHandler);
+                msg.accept(&mut test_utils::v1::TestIdentityHandler).await;
 
                 // test response frame
                 let response = test_utils::v1::build_subscribe_ok_response_frame();
@@ -173,7 +175,9 @@ async fn test_v1server() {
         .expect("Could not send request");
 
     let response = connection.next().await.unwrap().unwrap();
-    response.accept(&mut test_utils::v1::TestIdentityHandler);
+    response
+        .accept(&mut test_utils::v1::TestIdentityHandler)
+        .await;
 }
 
 async fn test_v2_client(server_addr: String) {

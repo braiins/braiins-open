@@ -20,6 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use async_trait::async_trait;
 use bitcoin_hashes::{hex::FromHex, sha256d, Hash};
 use std::fmt::Debug;
 use uint;
@@ -55,8 +56,9 @@ impl TestIdentityHandler {
     }
 }
 
+#[async_trait]
 impl Handler for TestIdentityHandler {
-    fn visit_setup_connection(
+    async fn visit_setup_connection(
         &mut self,
         msg: &ii_wire::Message<Protocol>,
         payload: &SetupConnection,
@@ -64,7 +66,7 @@ impl Handler for TestIdentityHandler {
         self.visit_and_check(msg, payload, build_setup_connection);
     }
 
-    fn visit_setup_connection_success(
+    async fn visit_setup_connection_success(
         &mut self,
         msg: &ii_wire::Message<Protocol>,
         payload: &SetupConnectionSuccess,
@@ -72,7 +74,7 @@ impl Handler for TestIdentityHandler {
         self.visit_and_check(msg, payload, build_setup_connection_success);
     }
 
-    fn visit_open_standard_mining_channel(
+    async fn visit_open_standard_mining_channel(
         &mut self,
         msg: &ii_wire::Message<Protocol>,
         payload: &OpenStandardMiningChannel,
@@ -80,7 +82,7 @@ impl Handler for TestIdentityHandler {
         self.visit_and_check(msg, payload, build_open_channel);
     }
 
-    fn visit_open_standard_mining_channel_success(
+    async fn visit_open_standard_mining_channel_success(
         &mut self,
         msg: &ii_wire::Message<Protocol>,
         payload: &OpenStandardMiningChannelSuccess,
@@ -88,11 +90,15 @@ impl Handler for TestIdentityHandler {
         self.visit_and_check(msg, payload, build_open_channel_success);
     }
 
-    fn visit_new_mining_job(&mut self, msg: &ii_wire::Message<Protocol>, payload: &NewMiningJob) {
+    async fn visit_new_mining_job(
+        &mut self,
+        msg: &ii_wire::Message<Protocol>,
+        payload: &NewMiningJob,
+    ) {
         self.visit_and_check(msg, payload, build_new_mining_job);
     }
 
-    fn visit_set_new_prev_hash(
+    async fn visit_set_new_prev_hash(
         &mut self,
         msg: &ii_wire::Message<Protocol>,
         payload: &SetNewPrevHash,
@@ -100,7 +106,11 @@ impl Handler for TestIdentityHandler {
         self.visit_and_check(msg, payload, build_set_new_prev_hash);
     }
 
-    fn visit_submit_shares(&mut self, msg: &ii_wire::Message<Protocol>, payload: &SubmitShares) {
+    async fn visit_submit_shares(
+        &mut self,
+        msg: &ii_wire::Message<Protocol>,
+        payload: &SubmitShares,
+    ) {
         self.visit_and_check(msg, payload, build_submit_shares);
     }
 }

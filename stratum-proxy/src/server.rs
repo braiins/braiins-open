@@ -104,8 +104,8 @@ impl ConnTranslation {
             let v1_or_v2 = future::select(v1_conn_rx.next(), v2_conn_rx.next()).await;
             match v1_or_v2 {
                 // Ok path
-                Either::Left((Some(Ok(v1_msg)), _)) => v1_msg.accept(&mut self.translation),
-                Either::Right((Some(Ok(v2_msg)), _)) => v2_msg.accept(&mut self.translation),
+                Either::Left((Some(Ok(v1_msg)), _)) => v1_msg.accept(&mut self.translation).await,
+                Either::Right((Some(Ok(v2_msg)), _)) => v2_msg.accept(&mut self.translation).await,
 
                 // Connection close
                 Either::Left((None, _)) | Either::Right((None, _)) => break,

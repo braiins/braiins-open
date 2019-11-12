@@ -37,6 +37,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cff77d8686867eceff3105329d4698d96c2391c176d5d03adc90c7389162b5b8"
 
 [[package]]
+name = "async-trait"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b64ebe56ac5fbe89417328eeb4291984d138056dcf694f1414ab0f26d49a6290"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.2",
+ "syn 1.0.7",
+]
+
+[[package]]
 name = "atty"
 version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -484,6 +495,7 @@ dependencies = [
 name = "ii-stratum"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bitcoin_hashes",
  "byteorder",
  "bytes",
@@ -505,6 +517,7 @@ dependencies = [
 name = "ii-stratum-proxy"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bitcoin_hashes",
  "bytes",
  "clap",
@@ -522,6 +535,7 @@ dependencies = [
 name = "ii-wire"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bytes",
  "failure",
  "ii-async-compat",

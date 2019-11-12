@@ -22,6 +22,7 @@
 
 //! Definition of all Stratum V1 messages
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 
@@ -36,7 +37,9 @@ use crate::v1::{HexBytes, HexU32Be, PrevHash};
 pub mod test;
 
 macro_rules! impl_conversion_request {
-    ($request:ty, $method:path, $handler_fn:ident) => {
+    ($request:tt, $method:path, $handler_fn:tt) => {
+        // NOTE: $request and $handler_fn need to be tt because of https://github.com/dtolnay/async-trait/issues/46
+
         impl TryFrom<$request> for framing::RequestPayload {
             type Error = crate::error::Error;
 
@@ -62,9 +65,10 @@ macro_rules! impl_conversion_request {
             }
         }
 
+        #[async_trait]
         impl ii_wire::Payload<Protocol> for $request {
-            fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut dyn Handler) {
-                handler.$handler_fn(msg, self);
+            async fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut dyn Handler) {
+                handler.$handler_fn(msg, self).await;
             }
         }
     };

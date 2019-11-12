@@ -22,13 +22,16 @@
 
 use std::sync::atomic;
 
+use async_trait::async_trait;
+
 pub trait Protocol {
-    type Handler: ?Sized;
+    type Handler: ?Sized + Send;
 }
 
 /// Generic payload for a message.
+#[async_trait]
 pub trait Payload<P: Protocol>: Sync + Send {
-    fn accept(&self, msg: &Message<P>, handler: &mut P::Handler);
+    async fn accept(&self, msg: &Message<P>, handler: &mut P::Handler);
 }
 
 /// Generic message as e.g. created by reading from a stream.
@@ -46,8 +49,8 @@ impl<P: Protocol> Message<P> {
 
     /// Adaptor method to allow visiting messages directly even if the actual
     /// visitor pattern is implemented over payloads.
-    pub fn accept(&self, handler: &mut P::Handler) {
-        self.payload.accept(self, handler);
+    pub async fn accept(&self, handler: &mut P::Handler) {
+        self.payload.accept(self, handler).await;
     }
 }
 

@@ -31,6 +31,7 @@ use crate::error::{Result, ResultExt};
 
 use crate::v2::framing::MessageType;
 
+use async_trait::async_trait;
 use packed_struct::PackedStructSlice;
 use std::convert::TryFrom;
 
@@ -44,42 +45,103 @@ impl ii_wire::Protocol for Protocol {
     type Handler = dyn Handler;
 }
 
-macro_rules! handler_method {
-    ($ty:ident, $name:ident) => (
-        fn $name(
-            &mut self,
-            _msg: &Message<Protocol>,
-            _payload: &messages::$ty,
-        ) {}
-    )
-}
-
 /// Specifies all messages to be visited
 /// TODO document why anything implementing the Handler must be static
-pub trait Handler: 'static {
-    handler_method!(SetupConnection, visit_setup_connection);
-    handler_method!(SetupConnectionSuccess, visit_setup_connection_success);
-    handler_method!(SetupConnectionError, visit_setup_connection_error);
-    handler_method!(
-        OpenStandardMiningChannel,
-        visit_open_standard_mining_channel
-    );
-    handler_method!(
-        OpenStandardMiningChannelSuccess,
-        visit_open_standard_mining_channel_success
-    );
-    handler_method!(
-        OpenStandardMiningChannelError,
-        visit_open_standard_mining_channel_error
-    );
-    handler_method!(UpdateChannel, visit_update_channel);
-    handler_method!(UpdateChannelError, visit_update_channel_error);
-    handler_method!(SubmitShares, visit_submit_shares);
-    handler_method!(SubmitSharesSuccess, visit_submit_shares_success);
-    handler_method!(SubmitSharesError, visit_submit_shares_error);
-    handler_method!(NewMiningJob, visit_new_mining_job);
-    handler_method!(SetNewPrevHash, visit_set_new_prev_hash);
-    handler_method!(SetTarget, visit_set_target);
+#[async_trait]
+pub trait Handler: 'static + Send {
+    async fn visit_setup_connection(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::SetupConnection,
+    ) {
+    }
+
+    async fn visit_setup_connection_success(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::SetupConnectionSuccess,
+    ) {
+    }
+
+    async fn visit_setup_connection_error(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::SetupConnectionError,
+    ) {
+    }
+
+    async fn visit_open_standard_mining_channel(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::OpenStandardMiningChannel,
+    ) {
+    }
+
+    async fn visit_open_standard_mining_channel_success(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::OpenStandardMiningChannelSuccess,
+    ) {
+    }
+
+    async fn visit_open_standard_mining_channel_error(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::OpenStandardMiningChannelError,
+    ) {
+    }
+
+    async fn visit_update_channel(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::UpdateChannel,
+    ) {
+    }
+
+    async fn visit_update_channel_error(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::UpdateChannelError,
+    ) {
+    }
+
+    async fn visit_submit_shares(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::SubmitShares,
+    ) {
+    }
+
+    async fn visit_submit_shares_success(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::SubmitSharesSuccess,
+    ) {
+    }
+
+    async fn visit_submit_shares_error(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::SubmitSharesError,
+    ) {
+    }
+
+    async fn visit_new_mining_job(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::NewMiningJob,
+    ) {
+    }
+
+    async fn visit_set_new_prev_hash(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &messages::SetNewPrevHash,
+    ) {
+    }
+
+    async fn visit_set_target(&mut self, _msg: &Message<Protocol>, _payload: &messages::SetTarget) {
+    }
 }
 
 /// TODO should/could this be part of the framing trait or protocol trait or none of these
@@ -192,15 +254,16 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<Protocol>> {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use bytes::BytesMut;
-    use packed_struct::PackedStruct;
-
     use crate::test_utils::v2::*;
+
+    use bytes::BytesMut;
+    use ii_async_compat::tokio;
+    use packed_struct::PackedStruct;
 
     /// This test demonstrates an actual implementation of protocol handler (aka visitor to a set of
     /// desired messsages
-    #[test]
-    fn test_deserialize_message() {
+    #[tokio::test]
+    async fn test_deserialize_message() {
         // build serialized message
         let header = framing::Header::new(
             framing::MessageType::SetupConnection,
@@ -211,6 +274,6 @@ pub mod test {
         serialized_msg.extend_from_slice(SETUP_CONNECTION_SERIALIZED);
 
         let msg = deserialize_message(&serialized_msg).expect("Deserialization failed");
-        msg.accept(&mut TestIdentityHandler);
+        msg.accept(&mut TestIdentityHandler).await;
     }
 }

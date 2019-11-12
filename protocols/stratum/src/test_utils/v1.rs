@@ -20,6 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use async_trait::async_trait;
 use serde::Serialize;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
@@ -324,8 +325,13 @@ impl TestIdentityHandler {
     }
 }
 
+#[async_trait]
 impl Handler for TestIdentityHandler {
-    fn visit_stratum_result(&mut self, msg: &ii_wire::Message<Protocol>, payload: &StratumResult) {
+    async fn visit_stratum_result(
+        &mut self,
+        msg: &ii_wire::Message<Protocol>,
+        payload: &StratumResult,
+    ) {
         self.visit_and_check(
             msg,
             payload,
@@ -338,19 +344,23 @@ impl Handler for TestIdentityHandler {
         );
     }
 
-    fn visit_configure(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Configure) {
+    async fn visit_configure(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Configure) {
         self.visit_and_check_request(msg, payload, build_configure, MINING_CONFIGURE_REQ_JSON);
     }
 
-    fn visit_subscribe(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Subscribe) {
+    async fn visit_subscribe(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Subscribe) {
         self.visit_and_check_request(msg, payload, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
     }
 
-    fn visit_authorize(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Authorize) {
+    async fn visit_authorize(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Authorize) {
         self.visit_and_check_request(msg, payload, build_authorize, MINING_AUTHORIZE_JSON);
     }
 
-    fn visit_set_difficulty(&mut self, msg: &ii_wire::Message<Protocol>, payload: &SetDifficulty) {
+    async fn visit_set_difficulty(
+        &mut self,
+        msg: &ii_wire::Message<Protocol>,
+        payload: &SetDifficulty,
+    ) {
         self.visit_and_check_request(
             msg,
             payload,
@@ -359,11 +369,11 @@ impl Handler for TestIdentityHandler {
         );
     }
 
-    fn visit_notify(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Notify) {
+    async fn visit_notify(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Notify) {
         self.visit_and_check_request(msg, payload, build_mining_notify, MINING_NOTIFY_JSON);
     }
 
-    fn visit_submit(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Submit) {
+    async fn visit_submit(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Submit) {
         self.visit_and_check_request(msg, payload, build_mining_submit, MINING_SUBMIT_JSON);
     }
 }

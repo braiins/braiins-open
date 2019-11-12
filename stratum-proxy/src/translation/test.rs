@@ -34,7 +34,7 @@ use ii_stratum::v2;
 
 /// Simulates incoming message by converting it into a TxFrame and running the deserialization
 /// chain from that point on
-fn v2_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
+async fn v2_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
 where
     M: TryInto<TxFrame, Error = ii_stratum::error::Error>,
 {
@@ -42,10 +42,10 @@ where
     let frame: ii_wire::TxFrame = message.try_into().expect("Could not serialize message");
 
     let msg = v2::deserialize_message(&frame).expect("Deserialization failed");
-    msg.accept(translation);
+    msg.accept(translation).await;
 }
 
-fn v1_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
+async fn v1_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
 where
     M: TryInto<TxFrame, Error = ii_stratum::error::Error>,
 {
@@ -56,7 +56,7 @@ where
         std::str::from_utf8(&frame).expect("Cannot convert frame to utf-8 str"),
     )
     .expect("Deserialization failed");
-    msg.accept(translation);
+    msg.accept(translation).await;
 }
 
 async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<TxFrame>) {
@@ -69,7 +69,9 @@ async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<TxFrame
     let v2_response =
         v2::deserialize_message(&v2_response_tx_frame).expect("Deserialization failed");
     // verify the response using testing identity handler
-    v2_response.accept(&mut test_utils::v2::TestIdentityHandler);
+    v2_response
+        .accept(&mut test_utils::v2::TestIdentityHandler)
+        .await;
 }
 
 //fn verify_message_from_frame<F, T, P: ProtocolBase, H>(
@@ -93,7 +95,7 @@ async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<TxFrame
         std::str::from_utf8(&frame).expect("Cannot convert frame to utf-8 str"),
     )
     .expect("Deserialization failed");
-    msg.accept(&mut test_utils::v1::TestIdentityHandler);
+    msg.accept(&mut test_utils::v1::TestIdentityHandler).await;
 }
 
 /// This test simulates incoming connection to the translation and verifies that the translation
@@ -105,17 +107,18 @@ async fn test_setup_connection_translate() {
     let (v2_tx, mut v2_rx) = mpsc::channel(1);
     let mut translation = V2ToV1Translation::new(v1_tx, v2_tx);
 
-    v2_simulate_incoming_message(&mut translation, test_utils::v2::build_setup_connection());
+    v2_simulate_incoming_message(&mut translation, test_utils::v2::build_setup_connection()).await;
     // Setup mining connection should result into: mining.configure
     v1_verify_generated_response_message(&mut v1_rx).await;
     v1_simulate_incoming_message(
         &mut translation,
         test_utils::v1::build_configure_ok_response_message(),
-    );
+    )
+    .await;
     v2_verify_generated_response_message(&mut v2_rx).await;
 
     // Opening a channel should result into: V1 generating a subscribe request
-    v2_simulate_incoming_message(&mut translation, test_utils::v2::build_open_channel());
+    v2_simulate_incoming_message(&mut translation, test_utils::v2::build_open_channel()).await;
     // Opening a channel should result into: V1 generating a subscribe and authorize requests
     v1_verify_generated_response_message(&mut v1_rx).await;
     v1_verify_generated_response_message(&mut v1_rx).await;
@@ -124,25 +127,29 @@ async fn test_setup_connection_translate() {
     v1_simulate_incoming_message(
         &mut translation,
         test_utils::v1::build_subscribe_ok_response_frame(),
-    );
+    )
+    .await;
     // Authorize response
     v1_simulate_incoming_message(
         &mut translation,
         test_utils::v1::build_authorize_ok_response_message(),
-    );
+    )
+    .await;
 
     // SetDifficulty notification before completion
     v1_simulate_incoming_message(
         &mut translation,
         test_utils::v1::build_set_difficulty_request_message(),
-    );
+    )
+    .await;
     // Now we should have a successfully open channel
     v2_verify_generated_response_message(&mut v2_rx).await;
 
     v1_simulate_incoming_message(
         &mut translation,
         test_utils::v1::build_mining_notify_request_message(),
-    );
+    )
+    .await;
     // Expect NewMiningJob
     v2_verify_generated_response_message(&mut v2_rx).await;
     // Expect SetNewPrevHash
@@ -165,14 +172,15 @@ async fn test_setup_connection_translate() {
     );
 
     // Send SubmitShares
-    v2_simulate_incoming_message(&mut translation, test_utils::v2::build_submit_shares());
+    v2_simulate_incoming_message(&mut translation, test_utils::v2::build_submit_shares()).await;
     // Expect mining.submit to be generated
     v1_verify_generated_response_message(&mut v1_rx).await;
     // Simulate mining.submit response (true)
     v1_simulate_incoming_message(
         &mut translation,
         test_utils::v1::build_mining_submit_ok_response_message(),
-    );
+    )
+    .await;
     // Expect SubmitSharesSuccess to be generated
     v2_verify_generated_response_message(&mut v2_rx).await;
     // });

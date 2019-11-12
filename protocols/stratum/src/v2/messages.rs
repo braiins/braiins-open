@@ -25,6 +25,7 @@
 use std::convert::TryFrom;
 use std::io::{Cursor, Write};
 
+use async_trait::async_trait;
 use packed_struct::PackedStruct;
 use serde;
 use serde::{Deserialize, Serialize};
@@ -64,7 +65,9 @@ fn serialize_with_header<M: Serialize>(
 }
 
 macro_rules! impl_conversion {
-    ($message:ident, /*$msg_type:path,*/ $handler_fn:ident) => {
+    ($message:tt, /*$msg_type:path,*/ $handler_fn:tt) => {
+        // NOTE: $message and $handler_fn need to be tt because of https://github.com/dtolnay/async-trait/issues/46
+
         impl TryFrom<$message> for ii_wire::TxFrame {
             type Error = Error;
 
@@ -83,13 +86,14 @@ macro_rules! impl_conversion {
         }
 
         //  specific protocol implementation
+        #[async_trait]
         impl ii_wire::Payload<super::Protocol> for $message {
-            fn accept(
+            async fn accept(
                 &self,
                 msg: &ii_wire::Message<super::Protocol>,
                 handler: &mut <super::Protocol as ii_wire::Protocol>::Handler,
             ) {
-                handler.$handler_fn(msg, self);
+                handler.$handler_fn(msg, self).await;
             }
         }
     };

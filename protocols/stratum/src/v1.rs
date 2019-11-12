@@ -30,6 +30,7 @@ use crate::v1::error::ErrorKind;
 use crate::v1::framing::Frame;
 use crate::v1::framing::Method;
 
+use async_trait::async_trait;
 use bitcoin_hashes::hex::{FromHex, ToHex};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 use hex::FromHexError;
@@ -49,40 +50,46 @@ impl ii_wire::Protocol for Protocol {
 }
 
 /// Specifies all messages to be visited
-pub trait Handler: 'static {
+#[async_trait]
+pub trait Handler: 'static + Send {
     /// Handles the result part of the response
-    fn visit_stratum_result(
+    async fn visit_stratum_result(
         &mut self,
         _msg: &Message<Protocol>,
         _payload: &framing::StratumResult,
     ) {
     }
     /// Handles the error part of the response
-    fn visit_stratum_error(&mut self, _msg: &Message<Protocol>, _payload: &framing::StratumError) {}
+    async fn visit_stratum_error(
+        &mut self,
+        _msg: &Message<Protocol>,
+        _payload: &framing::StratumError,
+    ) {
+    }
 
-    fn visit_configure(&mut self, _msg: &Message<Protocol>, _payload: &messages::Configure) {}
+    async fn visit_configure(&mut self, _msg: &Message<Protocol>, _payload: &messages::Configure) {}
 
-    fn visit_subscribe(&mut self, _msg: &Message<Protocol>, _payload: &messages::Subscribe) {}
+    async fn visit_subscribe(&mut self, _msg: &Message<Protocol>, _payload: &messages::Subscribe) {}
 
-    fn visit_authorize(&mut self, _msg: &Message<Protocol>, _payload: &messages::Authorize) {}
+    async fn visit_authorize(&mut self, _msg: &Message<Protocol>, _payload: &messages::Authorize) {}
 
-    fn visit_set_difficulty(
+    async fn visit_set_difficulty(
         &mut self,
         _msg: &Message<Protocol>,
         _payload: &messages::SetDifficulty,
     ) {
     }
 
-    fn visit_notify(&mut self, _msg: &Message<Protocol>, _payload: &messages::Notify) {}
+    async fn visit_notify(&mut self, _msg: &Message<Protocol>, _payload: &messages::Notify) {}
 
-    fn visit_set_version_mask(
+    async fn visit_set_version_mask(
         &mut self,
         _msg: &Message<Protocol>,
         _payload: &messages::SetVersionMask,
     ) {
     }
 
-    fn visit_submit(&mut self, _msg: &Message<Protocol>, _payload: &messages::Submit) {}
+    async fn visit_submit(&mut self, _msg: &Message<Protocol>, _payload: &messages::Submit) {}
 }
 
 /// TODO: deserialization should be done from &[u8] so that it is consistent with V2
@@ -350,6 +357,8 @@ mod test {
     use super::*;
     use crate::test_utils::v1::*;
 
+    use ii_async_compat::tokio;
+
     /// Test traits that will be used by serded for HexBytes when converting from/to string
     #[test]
     fn test_hex_bytes() {
@@ -391,19 +400,19 @@ mod test {
 
     /// This test demonstrates an actual implementation of protocol handler (aka visitor to a set of
     /// desired messsages
-    #[test]
-    fn test_deserialize_serialize_request_message() {
+    #[tokio::test]
+    async fn test_deserialize_serialize_request_message() {
         for req in V1_TEST_REQUESTS.iter() {
             let msg = deserialize_message(req).expect("Deserialization failed");
-            msg.accept(&mut TestIdentityHandler);
+            msg.accept(&mut TestIdentityHandler).await;
         }
     }
 
-    #[test]
-    fn test_deserialize_response_message() {
+    #[tokio::test]
+    async fn test_deserialize_response_message() {
         let msg =
             deserialize_message(MINING_SUBSCRIBE_OK_RESULT_JSON).expect("Deserialization failed");
-        msg.accept(&mut TestIdentityHandler);
+        msg.accept(&mut TestIdentityHandler).await;
         // TODO also perform serialization and check the output matches
     }
 

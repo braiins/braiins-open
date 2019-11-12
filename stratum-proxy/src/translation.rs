@@ -27,6 +27,7 @@ use std::convert::TryInto;
 use std::fmt;
 use std::mem::size_of;
 
+use async_trait::async_trait;
 use futures::channel::mpsc;
 use ii_async_compat::futures;
 
@@ -703,11 +704,12 @@ impl V2ToV1Translation {
     }
 }
 
+#[async_trait]
 impl v1::Handler for V2ToV1Translation {
     /// The result visitor takes care of detecting a spurious response without matching request
     /// and passes processing further
     /// TODO write a solid unit test covering all 3 scenarios that can go wrong
-    fn visit_stratum_result(
+    async fn visit_stratum_result(
         &mut self,
         msg: &ii_wire::Message<v1::Protocol>,
         payload: &v1::framing::StratumResult,
@@ -738,7 +740,7 @@ impl v1::Handler for V2ToV1Translation {
             .ok();
     }
 
-    fn visit_set_difficulty(
+    async fn visit_set_difficulty(
         &mut self,
         msg: &Message<v1::Protocol>,
         payload: &v1::messages::SetDifficulty,
@@ -769,7 +771,7 @@ impl v1::Handler for V2ToV1Translation {
 
     /// Composes a new mining job and sends it downstream
     /// TODO: Only 1 channel is supported
-    fn visit_notify(&mut self, msg: &Message<v1::Protocol>, payload: &v1::messages::Notify) {
+    async fn visit_notify(&mut self, msg: &Message<v1::Protocol>, payload: &v1::messages::Notify) {
         trace!(
             "visit_notify() msg.id={:?} state={:?} payload:{:?}",
             msg.id,
@@ -788,7 +790,7 @@ impl v1::Handler for V2ToV1Translation {
     /// TODO currently unimplemented, the proxy should refuse changing the version mask from the server
     /// Since this is a notification only, the only action that the translation can do is log +
     /// report an error
-    fn visit_set_version_mask(
+    async fn visit_set_version_mask(
         &mut self,
         msg: &Message<v1::Protocol>,
         payload: &v1::messages::SetVersionMask,
@@ -805,8 +807,9 @@ impl v1::Handler for V2ToV1Translation {
 /// TODO: implement an internal state where in each state only a subset of visit methods is valid,
 /// the rest of the methods have default implementation that only reports error in the log and to the client, dropping a connection?
 /// Connection dropping is to be clarified
+#[async_trait]
 impl v2::Handler for V2ToV1Translation {
-    fn visit_setup_connection(
+    async fn visit_setup_connection(
         &mut self,
         msg: &Message<v2::Protocol>,
         payload: &v2::messages::SetupConnection,
@@ -854,7 +857,7 @@ impl v2::Handler for V2ToV1Translation {
     /// Upon successful authorization:
     /// - communicate OpenStandardMiningChannelSuccess
     /// - start sending Jobs downstream to V2 client
-    fn visit_open_standard_mining_channel(
+    async fn visit_open_standard_mining_channel(
         &mut self,
         msg: &Message<v2::Protocol>,
         payload: &v2::messages::OpenStandardMiningChannel,
@@ -926,7 +929,7 @@ impl v2::Handler for V2ToV1Translation {
     /// - emit V1 Submit message
     ///
     /// If any of the above points fail, reply with SubmitShareError + reasoning
-    fn visit_submit_shares(
+    async fn visit_submit_shares(
         &mut self,
         msg: &Message<v2::Protocol>,
         payload: &v2::messages::SubmitShares,

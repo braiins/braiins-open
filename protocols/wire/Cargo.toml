@@ -10,3 +10,4 @@ ii-async-compat = { path = "../../utils-rs/async-compat" }
 bytes = "0.4"
 failure = "0.1.5"
 pin-project = "0.4.0-beta.1"   # The version that the currently used tokio uses
+async-trait = "0.1.17"

@@ -19,6 +19,7 @@ packed_struct = "0.3"
 packed_struct_codegen = "0.3"
 bitcoin_hashes = "0.3.2"
 uint = "0.5.0"
+async-trait = "0.1.17"
 ii-bitcoin = { path = "../../coins/bitcoin" }
 ii-wire = { path = "../wire" }
 ii-async-compat = { path = "../../utils-rs/async-compat" }
