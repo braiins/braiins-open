@@ -1,8 +1,11 @@
 # Overview
 
-This project is a simulation of the Stratum mining protocol. It currently supports both versions **Stratum V1** and **Stratum V2**. The intention is to verify the design of the **Stratum V2** with regards to translating between both protocol variants. At the same time, the platform can serve as a testbed for various network latency scenarios.
+This project is a simulation of the Stratum mining protocol. It currently supports both versions **Stratum V1** and **Stratum V2**.
+The intention is to verify the design of the **Stratum V2** with regards to translating between both protocol variants.
+At the same time, the platform can serve as a testbed for various network latency scenarios.
 
-Last but not least, the idea is to have a reference implementation of both protocols that serves the blueprint specification of the messages
+Last but not least, the idea is to have a reference implementation of both protocols that serves the blueprint specification
+of the messages.
 
 
 # Features
@@ -11,6 +14,7 @@ Last but not least, the idea is to have a reference implementation of both proto
 - complete definition of protocol messages
 - pool rejects stale shares since it simulates finding new blocks
 - miners simulate finding shares based exponential distribution
+- plot results of series of simmulations
 
 
 ## Install
@@ -29,13 +33,19 @@ pip install -r ./requirements.txt
 
 ## Running Stratum V2 Simulation
 
-`python ./pool_miner_sim.py --verbose --latency=0.2 --v1proto`
-led
-
+`python ./pool_miner_sim.py --verbose --latency=0.2`
 
 ## Running Stratum V1 Simulation
 
-`python ./pool_miner_sim.py --verbose --latency=0.2 --v1proto`
+`python ./pool_miner_sim.py --verbose --latency=0.2 --v1`
+
+## Running Stratum V2 Miner and V1 Pool using Proxy Simulation
+
+`python ./pool_miner_sim.py --verbose --latency=0.2 --v2v1`
+
+## Simulate V2-V2, V1-V1 and V2-proxy-V1 and plot results into PDF report
+
+`python ./simulate_and_plot_results.py`
 
 
 # Future Work
@@ -43,16 +53,19 @@ led
 The simulation is far from complete, currently it supports the following
  scenarios:
 
-```2xminer (V1) ----> pool (V1)```
-
-```2xminer (V2) ----> pool (V1)```
+```
+2xminer (V1) ----> pool (V1)
+2xminer (V2) ----> pool (V2)
+miner (V2) ----> proxy (translating) ---> pool (V1)
+```
 
 Example scenarios that need to be to be covered:
 
-```miner (V1) ----> proxy (V1:V2) ---> pool (V2)```
-```miner (V2) ----> proxy (translating) ---> pool (V1)```
+```
+miner (V1) ----> proxy (V1:V2) ---> pool (V2)
+```
 
 The current simulation output is very basic, below are a few points that could be covered. We are sure there is more that could be extended
 
-- implement BDD scenarios using gherking language to run a full set of simulation scenarios
+- implement BDD scenarios using gherkin language to run a full set of simulation scenarios
 - provide more advanced statistics with chart plotting

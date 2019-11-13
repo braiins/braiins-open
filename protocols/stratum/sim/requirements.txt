@@ -1,5 +1,6 @@
 numpy
 simpy
+matplotlib
 hashids
 event_bus
 colorama
