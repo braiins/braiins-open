@@ -415,6 +415,13 @@ impl Shares {
         HashesUnit::Hashes((self.0 as u128) << Self::DIFFICULTY_1_SHIFT)
     }
 
+    pub fn into_hashrate(self, interval: time::Duration) -> HashesUnit {
+        let secs = interval.as_secs() as u128;
+        let hashes = self.into_hashes().into_u128();
+        let hashrate = if secs == 0 { hashes } else { hashes / secs };
+        hashrate.into()
+    }
+
     #[inline]
     pub fn into_kilo_hashes(self) -> HashesUnit {
         self.into_hashes().into_kilo_hashes()
@@ -570,6 +577,12 @@ impl HashesUnit {
             }
         }
         self.into_hashes()
+    }
+}
+
+impl From<u128> for HashesUnit {
+    fn from(hashes: u128) -> Self {
+        Self::Hashes(hashes)
     }
 }
 
