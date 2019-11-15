@@ -101,11 +101,11 @@ macro_rules! impl_conversion {
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SetupConnection {
-    pub max_version: u16,
+    pub protocol: u8,
     pub min_version: u16,
+    pub max_version: u16,
     /// TODO: specify an enum for flags
     pub flags: u32,
-    pub expected_pubkey: PubKey,
     pub endpoint_host: Str0_255,
     pub endpoint_port: u16,
     pub device: DeviceInfo,
@@ -116,11 +116,11 @@ pub struct SetupConnectionSuccess {
     pub used_version: u16,
     /// TODO: specify an enum for flags
     pub flags: u32,
-    pub pub_key: PubKey,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SetupConnectionError {
+    pub flags: u32,
     pub code: Str0_255,
 }
 
@@ -138,6 +138,7 @@ pub struct OpenStandardMiningChannelSuccess {
     pub channel_id: u32,
     /// Initial target for mining
     pub target: Uint256Bytes,
+    pub extranonce_prefix: Bytes0_32,
     /// See SetGroupChannel for details
     pub group_channel_id: u32,
 }
@@ -145,7 +146,7 @@ pub struct OpenStandardMiningChannelSuccess {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenStandardMiningChannelError {
     pub req_id: u32,
-    pub code: Str1_32,
+    pub code: Str0_32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -157,7 +158,7 @@ pub struct UpdateChannelError;
 pub struct CloseChannel;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct SubmitShares {
+pub struct SubmitSharesStandard {
     pub channel_id: u32,
     pub seq_num: u32,
     pub job_id: u32,
@@ -172,14 +173,14 @@ pub struct SubmitSharesSuccess {
     pub channel_id: u32,
     pub last_seq_num: u32,
     pub new_submits_accepted_count: u32,
-    pub new_shares_count: u32,
+    pub new_shares_sum: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitSharesError {
     pub channel_id: u32,
     pub seq_num: u32,
-    pub code: Str1_32,
+    pub code: Str0_32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -187,8 +188,8 @@ pub struct NewMiningJob {
     pub channel_id: u32,
     pub job_id: u32,
     pub future_job: bool,
-    pub merkle_root: Uint256Bytes,
     pub version: u32,
+    pub merkle_root: Uint256Bytes,
 }
 
 pub struct NewExtendedMiningJob;
@@ -196,11 +197,10 @@ pub struct NewExtendedMiningJob;
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetNewPrevHash {
     pub channel_id: u32,
+    pub job_id: u32,
     pub prev_hash: Uint256Bytes,
     pub min_ntime: u32,
-    pub max_ntime_offset: u16,
     pub nbits: u32,
-    pub job_id: u32,
     // TODO specify signature type
     //pub signature: ??,
 }
@@ -234,7 +234,7 @@ impl_conversion!(
 );
 impl_conversion!(UpdateChannel, visit_update_channel);
 impl_conversion!(UpdateChannelError, visit_update_channel_error);
-impl_conversion!(SubmitShares, visit_submit_shares);
+impl_conversion!(SubmitSharesStandard, visit_submit_shares_standard);
 impl_conversion!(SubmitSharesSuccess, visit_submit_shares_success);
 impl_conversion!(SubmitSharesError, visit_submit_shares_error);
 impl_conversion!(NewMiningJob, visit_new_mining_job);

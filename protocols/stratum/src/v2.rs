@@ -105,10 +105,10 @@ pub trait Handler: 'static + Send {
     ) {
     }
 
-    async fn visit_submit_shares(
+    async fn visit_submit_shares_standard(
         &mut self,
         _msg: &Message<Protocol>,
-        _payload: &messages::SubmitShares,
+        _payload: &messages::SubmitSharesStandard,
     ) {
     }
 
@@ -214,8 +214,8 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<Protocol>> {
             let prev_hash = messages::SetTarget::try_from(msg_bytes)?;
             (None, Ok(Box::new(prev_hash) as Box<dyn Payload<Protocol>>))
         }
-        MessageType::SubmitShares => {
-            let submit_shares = messages::SubmitShares::try_from(msg_bytes)?;
+        MessageType::SubmitSharesStandard => {
+            let submit_shares = messages::SubmitSharesStandard::try_from(msg_bytes)?;
             (
                 // TODO possibly extract the sequence ID
                 None,

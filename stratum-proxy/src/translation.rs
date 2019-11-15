@@ -39,7 +39,7 @@ use serde_json;
 
 use ii_stratum::v1;
 use ii_stratum::v2;
-use ii_stratum::v2::types::{PubKey, Uint256Bytes};
+use ii_stratum::v2::types::{Bytes0_32, Uint256Bytes};
 
 use ii_logging::macros::*;
 use ii_wire::{Message, MessageId, TxFrame};
@@ -231,6 +231,7 @@ impl V2ToV1Translation {
                     req_id: v2_channel_details.req_id,
                     channel_id: Self::CHANNEL_ID,
                     target: init_target.clone(),
+                    extranonce_prefix: Bytes0_32::new(),
                     group_channel_id: 0,
                 };
                 Self::submit_message(&mut self.v2_tx, msg);
@@ -323,14 +324,13 @@ impl V2ToV1Translation {
                 let success = v2::messages::SetupConnectionSuccess {
                     used_version: Self::PROTOCOL_VERSION as u16,
                     flags: 0,
-                    // TODO provide public key for TOFU
-                    pub_key: PubKey::new(),
                 };
                 Self::submit_message(&mut self.v2_tx, success);
             } else {
                 // TODO consolidate into abort_connection() + communicate shutdown of this
                 // connection similarly everywhere in the code
                 let response = v2::messages::SetupConnectionError {
+                    flags: 0, // TODO handle flags
                     code: "Cannot negotiate upstream V1 version mask"
                         .try_into()
                         .unwrap(),
@@ -355,6 +355,7 @@ impl V2ToV1Translation {
         // TODO consolidate into abort_connection() + communicate shutdown of this
         // connection similarly everywhere in the code
         let response = v2::messages::SetupConnectionError {
+            flags: 0, // TODO handle flags
             code: "Cannot negotiate upstream V1 version mask"
                 .try_into()
                 .unwrap(),
@@ -482,7 +483,7 @@ impl V2ToV1Translation {
                         channel_id: Self::CHANNEL_ID,
                         last_seq_num: 0,
                         new_submits_accepted_count: 1,
-                        new_shares_count: 1,
+                        new_shares_sum: 1, // TODO is this really 1?
                     };
                     Self::submit_message(&mut self.v2_tx, success_msg);
                 } else {
@@ -608,7 +609,6 @@ impl V2ToV1Translation {
             channel_id: Self::CHANNEL_ID,
             prev_hash,
             min_ntime: payload.time(),
-            max_ntime_offset,
             nbits: payload.bits(),
             job_id,
         })
@@ -631,7 +631,7 @@ impl V2ToV1Translation {
     }
 
     /// Generates log trace entry and reject shares error reply to the client
-    fn reject_shares(&mut self, payload: &v2::messages::SubmitShares, err_msg: String) {
+    fn reject_shares(&mut self, payload: &v2::messages::SubmitSharesStandard, err_msg: String) {
         trace!("Unrecognized channel ID: {}", payload.channel_id);
         Self::submit_message(
             &mut self.v2_tx,
@@ -827,6 +827,7 @@ impl v2::Handler for V2ToV1Translation {
                 &mut self.v2_tx,
                 v2::messages::SetupConnectionError {
                     code: "Connection can be setup only once".try_into().unwrap(),
+                    flags: payload.flags, // TODO Flags indicating features causing an error
                 },
             );
             return;
@@ -930,10 +931,10 @@ impl v2::Handler for V2ToV1Translation {
     /// - emit V1 Submit message
     ///
     /// If any of the above points fail, reply with SubmitShareError + reasoning
-    async fn visit_submit_shares(
+    async fn visit_submit_shares_standard(
         &mut self,
         msg: &Message<v2::Protocol>,
-        payload: &v2::messages::SubmitShares,
+        payload: &v2::messages::SubmitSharesStandard,
     ) {
         trace!(
             "visit_submit_shares() msg.id={:?} state={:?} payload:{:?}",

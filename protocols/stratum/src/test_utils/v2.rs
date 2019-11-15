@@ -106,10 +106,10 @@ impl Handler for TestIdentityHandler {
         self.visit_and_check(msg, payload, build_set_new_prev_hash);
     }
 
-    async fn visit_submit_shares(
+    async fn visit_submit_shares_standard(
         &mut self,
         msg: &ii_wire::Message<Protocol>,
-        payload: &SubmitShares,
+        payload: &SubmitSharesStandard,
     ) {
         self.visit_and_check(msg, payload, build_submit_shares);
     }
@@ -117,17 +117,17 @@ impl Handler for TestIdentityHandler {
 
 #[cfg(not(feature = "v2json"))]
 pub const SETUP_CONNECTION_SERIALIZED: &'static [u8] =
-    b"\x00\x00\x00\x00\x00\x00\x00\x00\x15stratum.slushpool.com\x05\x0d\x07Braiins\x011\x15Braiins OS 2019-06-05\x03xyz";
+    b"\x00\x02\x00\x02\x00\x00\x00\x00\x00\x15stratum.slushpool.com\x05\x0d\x07Braiins\x011\x15Braiins OS 2019-06-05\x03xyz";
 #[cfg(feature = "v2json")]
 pub const SETUP_CONNECTION_SERIALIZED: &'static [u8] =
-    br#"{"max_version":0,"min_version":0,"flags":0,"expected_pubkey":[],"endpoint_host":"stratum.slushpool.com","endpoint_port":3333,"device":{"vendor":"Braiins","hw_rev":"1","fw_ver":"Braiins OS 2019-06-05","dev_id":"xyz"}}"#;
+    br#"{"max_version":2,"min_version":2,"flags":0,"expected_pubkey":[],"endpoint_host":"stratum.slushpool.com","endpoint_port":3333,"device":{"vendor":"Braiins","hw_rev":"1","fw_ver":"Braiins OS 2019-06-05","dev_id":"xyz"}}"#;
 
 pub fn build_setup_connection() -> SetupConnection {
     SetupConnection {
-        max_version: 0,
-        min_version: 0,
+        protocol: 0,
+        max_version: 2,
+        min_version: 2,
         flags: 0,
-        expected_pubkey: PubKey::new(),
         endpoint_host: Str0_255::from_str(POOL_URL),
         endpoint_port: POOL_PORT as u16,
         device: DeviceInfo {
@@ -146,7 +146,6 @@ pub fn build_setup_connection_success() -> SetupConnectionSuccess {
     SetupConnectionSuccess {
         used_version: 0,
         flags: 0,
-        pub_key: PubKey::new(),
     }
 }
 
@@ -173,6 +172,7 @@ pub fn build_open_channel_success() -> OpenStandardMiningChannelSuccess {
         channel_id: 0,
         // Represents difficulty 4
         target: Uint256Bytes(init_target_le),
+        extranonce_prefix: Bytes0_32::new(),
         group_channel_id: 0,
     }
 }
@@ -201,19 +201,16 @@ pub fn build_set_new_prev_hash() -> SetNewPrevHash {
         channel_id: 0,
         prev_hash: Uint256Bytes(prev_hash.into_inner()),
         min_ntime: v1_req.time(),
-        // TODO: this needs to be reviewed and system time should be deterministically involved,
-        // too?
-        max_ntime_offset: 1800,
         job_id: 0,
         nbits: v1_req.bits(),
     }
 }
 
-pub fn build_submit_shares() -> SubmitShares {
+pub fn build_submit_shares() -> SubmitSharesStandard {
     // Use the mining job to provide sensible information for the share submit
     let mining_job = build_new_mining_job();
 
-    SubmitShares {
+    SubmitSharesStandard {
         channel_id: mining_job.channel_id,
         seq_num: 0,
         job_id: mining_job.job_id,

@@ -72,8 +72,8 @@ class MinerV2(DownstreamConnectionProcessor):
         #  PubKey handling is also not precisely defined yet
         self._send_msg(
             SetupConnection(
-                max_version=1,
-                min_version=1,
+                max_version=2,
+                min_version=2,
                 flags=[DownstreamConnectionFlags.NONE],
                 endpoint_host='v2pool',
                 endpoint_port=connection.port,
