@@ -32,7 +32,6 @@ use crate::error::{Result, ResultExt};
 use crate::v2::framing::MessageType;
 
 use async_trait::async_trait;
-use packed_struct::PackedStructSlice;
 use std::convert::TryFrom;
 
 use ii_logging::macros::*;
@@ -147,7 +146,7 @@ pub trait Handler: 'static + Send {
 /// TODO should/could this be part of the framing trait or protocol trait or none of these
 /// (implement From trait...)
 pub fn deserialize_message(src: &[u8]) -> Result<Message<Protocol>> {
-    let header = framing::Header::unpack_from_slice(&src[0..framing::Header::SIZE])
+    let header = framing::Header::unpack_and_swap_endianness(&src[0..framing::Header::SIZE])
         .context("Cannot decode V2 header")?;
     // Decoder should have ensured correct framing. This is only sanity check, therefore we don't
     // convert it into an error as it is effectively a bug!
@@ -196,7 +195,7 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<Protocol>> {
             )
         }
         MessageType::OpenStandardMiningChannelError => {
-            let channel_error = messages::OpenStandardMiningChannelSuccess::try_from(msg_bytes)?;
+            let channel_error = messages::OpenStandardMiningChannelError::try_from(msg_bytes)?;
             (
                 Some(channel_error.req_id),
                 Ok(Box::new(channel_error) as Box<dyn Payload<Protocol>>),
@@ -211,15 +210,15 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<Protocol>> {
             (None, Ok(Box::new(prev_hash) as Box<dyn Payload<Protocol>>))
         }
         MessageType::SetTarget => {
-            let prev_hash = messages::SetTarget::try_from(msg_bytes)?;
-            (None, Ok(Box::new(prev_hash) as Box<dyn Payload<Protocol>>))
+            let target = messages::SetTarget::try_from(msg_bytes)?;
+            (None, Ok(Box::new(target) as Box<dyn Payload<Protocol>>))
         }
         MessageType::SubmitSharesStandard => {
-            let submit_shares = messages::SubmitSharesStandard::try_from(msg_bytes)?;
+            let submit_shares_standard = messages::SubmitSharesStandard::try_from(msg_bytes)?;
             (
                 // TODO possibly extract the sequence ID
                 None,
-                Ok(Box::new(submit_shares) as Box<dyn Payload<Protocol>>),
+                Ok(Box::new(submit_shares_standard) as Box<dyn Payload<Protocol>>),
             )
         }
         MessageType::SubmitSharesSuccess => {
@@ -258,7 +257,6 @@ pub mod test {
 
     use bytes::BytesMut;
     use ii_async_compat::{bytes, tokio};
-    use packed_struct::PackedStruct;
 
     /// This test demonstrates an actual implementation of protocol handler (aka visitor to a set of
     /// desired messsages
@@ -270,7 +268,7 @@ pub mod test {
             SETUP_CONNECTION_SERIALIZED.len(),
         );
         let mut serialized_msg = BytesMut::with_capacity(64);
-        serialized_msg.extend_from_slice(&header.pack());
+        serialized_msg.extend_from_slice(&header.pack_and_swap_endianness());
         serialized_msg.extend_from_slice(SETUP_CONNECTION_SERIALIZED);
 
         let msg = deserialize_message(&serialized_msg).expect("Deserialization failed");

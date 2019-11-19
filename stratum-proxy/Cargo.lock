@@ -520,6 +520,7 @@ dependencies = [
  "ii-bitcoin",
  "ii-logging",
  "ii-wire",
+ "lazy_static",
  "packed_struct",
  "packed_struct_codegen",
  "serde",

@@ -598,7 +598,6 @@ impl V2ToV1Translation {
         job_id: u32,
         payload: &v1::messages::Notify,
     ) -> crate::error::Result<v2::messages::SetNewPrevHash> {
-        let max_ntime_offset = (7200 - 0/*min(0, sys_time - payload.time())*/) / 4;
         // TODO review how this can be prevented from failing. If this fails, it should result in
         // panic as it marks a software bug
         let prev_hash =

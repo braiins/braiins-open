@@ -26,7 +26,6 @@ use std::convert::TryFrom;
 use std::io::{Cursor, Write};
 
 use async_trait::async_trait;
-use packed_struct::PackedStruct;
 use serde;
 use serde::{Deserialize, Serialize};
 
@@ -59,7 +58,7 @@ fn serialize_with_header<M: Serialize>(
     let payload_len = cursor.position() as usize - Header::SIZE;
     let header = Header::new(msg_type, payload_len);
     cursor.set_position(0);
-    cursor.write(&header.pack())?;
+    cursor.write(&header.pack_and_swap_endianness())?;
 
     Ok(ii_wire::Frame::new(cursor.into_inner().into_boxed_slice()))
 }
