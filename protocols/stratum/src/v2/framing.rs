@@ -32,6 +32,11 @@ pub mod codec;
 #[derive(PackedStruct, Debug)]
 #[packed_struct(endian = "lsb")]
 pub struct Header {
+    // WARN: This struct's layout needs to be kept in sync
+    // with the consts in the impl block below.
+    // This is because the Codec needs to know the offset
+    // and size of the msg_length field in the packed byte array
+    // (not in the struct in-memory, so we can't auto-deduce this).
     #[packed_field(size_bytes = "1", ty = "enum")]
     pub msg_type: MessageType,
     pub msg_length: Integer<u32, packed_bits::Bits24>,
@@ -39,6 +44,8 @@ pub struct Header {
 
 impl Header {
     pub const SIZE: usize = 4;
+    pub const LEN_OFFSET: usize = 1;
+    pub const LEN_SIZE: usize = 3;
 
     pub fn new(msg_type: MessageType, msg_length: usize) -> Header {
         assert!(msg_length <= 0xffffff, "Message too large");

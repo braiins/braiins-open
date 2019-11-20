@@ -32,7 +32,6 @@ use super::Header;
 use crate::error::Error;
 use crate::v2::{deserialize_message, Protocol};
 
-// FIXME: error handling
 // FIXME: check bytesmut capacity when encoding (use BytesMut::remaining_mut())
 
 #[derive(Debug)]
@@ -67,11 +66,10 @@ impl Default for Codec {
     fn default() -> Self {
         // TODO: limit frame size with max_frame_length() ?
         Codec(
-            // TODO: numbers vs constants
             length_delimited::Builder::new()
                 .little_endian()
-                .length_field_offset(1)
-                .length_field_length(3)
+                .length_field_offset(Header::LEN_OFFSET)
+                .length_field_length(Header::LEN_SIZE)
                 .num_skip(0)
                 .length_adjustment(Header::SIZE as isize)
                 .new_codec(),
@@ -92,4 +90,36 @@ impl ii_wire::Framing for Framing {
     type Rx = Message<Protocol>;
     type Error = Error;
     type Codec = Codec;
+}
+
+#[cfg(test)]
+mod test {
+    use std::convert::TryInto;
+
+    use ii_async_compat::tokio;
+
+    use super::*;
+    use crate::test_utils::v2::{build_setup_connection, TestIdentityHandler};
+
+    #[tokio::test]
+    async fn test_v2codec() {
+        let mut codec = Codec::default();
+
+        let input = build_setup_connection();
+        let txframe: TxFrame = input
+            .clone()
+            .try_into()
+            .expect("Could not serialize message");
+
+        let mut buffer = BytesMut::new();
+        codec
+            .encode(txframe, &mut buffer)
+            .expect("Codec failed to encode message");
+
+        let msg = codec
+            .decode(&mut buffer)
+            .expect("Codec failed to decode message")
+            .expect("Incomplete message");
+        msg.accept(&mut TestIdentityHandler).await;
+    }
 }
