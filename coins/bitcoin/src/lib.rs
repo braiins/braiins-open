@@ -415,6 +415,11 @@ impl Shares {
         HashesUnit::Hashes((self.0 as u128) << Self::DIFFICULTY_1_SHIFT)
     }
 
+    #[inline]
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+
     pub fn into_hashrate(self, interval: time::Duration) -> HashesUnit {
         let secs = interval.as_secs() as u128;
         let hashes = self.into_hashes().into_u128();
@@ -468,6 +473,13 @@ impl Shares {
 impl From<u64> for Shares {
     fn from(value: u64) -> Self {
         Self(value)
+    }
+}
+
+/// It is useful to convert from hashes to shares
+impl From<HashesUnit> for Shares {
+    fn from(hashes: HashesUnit) -> Self {
+        ((hashes.into_u128() >> Self::DIFFICULTY_1_SHIFT) as u64).into()
     }
 }
 
