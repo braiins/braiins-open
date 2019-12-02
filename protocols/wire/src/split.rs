@@ -50,12 +50,11 @@ use std::net::{Shutdown, SocketAddr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use ii_async_compat::{tokio, tokio_io};
+use ii_async_compat::tokio;
 use pin_project::pin_project;
 use tokio::io;
 use tokio::net::TcpStream;
 use tokio::prelude::{AsyncRead, AsyncWrite};
-use tokio_io::split::{ReadHalf, WriteHalf};
 
 /// This is a newtype uniting unix `RawFd` and windows `RawSocket`,
 /// implementing local & peer addr getters for use in `TcpDuplexRecv` and `TcpDuplexSend`.
@@ -164,7 +163,7 @@ pub trait DuplexSplit {
 #[derive(Debug)]
 pub struct TcpDuplexRecv {
     #[pin]
-    inner: ReadHalf<TcpStream>,
+    inner: io::ReadHalf<TcpStream>,
     fd: raw_fd::Fd,
 }
 
@@ -173,7 +172,7 @@ pub struct TcpDuplexRecv {
 #[derive(Debug)]
 pub struct TcpDuplexSend {
     #[pin]
-    inner: WriteHalf<TcpStream>,
+    inner: io::WriteHalf<TcpStream>,
     fd: raw_fd::Fd,
 }
 

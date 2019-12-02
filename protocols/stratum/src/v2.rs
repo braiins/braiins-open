@@ -257,7 +257,7 @@ pub mod test {
     use crate::test_utils::v2::*;
 
     use bytes::BytesMut;
-    use ii_async_compat::tokio;
+    use ii_async_compat::{bytes, tokio};
     use packed_struct::PackedStruct;
 
     /// This test demonstrates an actual implementation of protocol handler (aka visitor to a set of

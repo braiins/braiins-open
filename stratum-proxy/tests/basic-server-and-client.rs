@@ -29,10 +29,7 @@
 
 use std::net::SocketAddr;
 
-use ii_async_compat::{futures, tokio};
-
-use futures::future::Future;
-use tokio::prelude::*;
+use ii_async_compat::prelude::*;
 
 use ii_stratum::error::Error;
 use ii_stratum::test_utils;

@@ -28,11 +28,9 @@ use std::net::{Shutdown, SocketAddr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use ii_async_compat::{tokio, tokio_util};
+use ii_async_compat::prelude::*;
 use pin_project::{pin_project, pinned_drop};
-use tokio::net::tcp::Incoming;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::prelude::*;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 use crate::framing::Framing;
@@ -216,7 +214,7 @@ impl<F: Framing> Sink<F::Tx> for Connection<F> {
 #[derive(Debug)]
 pub struct Server<F: Framing> {
     #[pin]
-    tcp: Incoming,
+    tcp: TcpListener,
     _marker: PhantomData<&'static F>,
 }
 
@@ -226,7 +224,7 @@ impl<F: Framing> Server<F> {
         let tcp = TcpListener::from_std(tcp)?;
 
         Ok(Server {
-            tcp: tcp.incoming(),
+            tcp,
             _marker: PhantomData,
         })
     }
@@ -236,8 +234,9 @@ impl<F: Framing> Stream for Server<F> {
     type Item = Result<Connection<F>, F::Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        self.project()
-            .tcp
+        let mut tcp = self.project().tcp;
+
+        Pin::new(&mut tcp.incoming())
             .poll_next(cx)
             .map(|opt| opt.map(|res| res.map(Connection::new).map_err(F::Error::from)))
     }

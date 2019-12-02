@@ -20,11 +20,11 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use bytes::BytesMut;
-
 use std::str;
 
-use ii_async_compat::tokio_util;
+use ii_async_compat::{bytes, tokio_util};
+
+use bytes::BytesMut;
 use tokio_util::codec::{Decoder, Encoder, LinesCodec};
 
 use crate::error::Error;

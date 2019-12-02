@@ -21,7 +21,7 @@
 // contact us at opensource@braiins.com.
 
 use ii_async_compat::futures::future::Future;
-use ii_async_compat::tokio::timer;
+use ii_async_compat::tokio::time;
 use std::time::Duration;
 
 /// Run an async function/lambda repeatedly with backoff until it
@@ -46,7 +46,7 @@ pub async fn backoff<E, T, FT: Future<Output = Result<T, E>>, F: Fn() -> FT>(
     }
 
     for _ in 0..iterations {
-        timer::delay_for(Duration::from_millis(delay as u64)).await;
+        time::delay_for(Duration::from_millis(delay as u64)).await;
         delay = 2 * delay;
 
         res = f().await;

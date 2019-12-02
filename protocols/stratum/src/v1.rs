@@ -255,7 +255,7 @@ impl TryFrom<&str> for PrevHash {
         }
         // Swap every u32 from big endian to little endian byte order
         for chunk in prev_hash_stratum_order.chunks(size_of::<u32>()) {
-            let prev_hash_word = bytes::BigEndian::read_u32(chunk);
+            let prev_hash_word = BigEndian::read_u32(chunk);
             prev_hash_cursor
                 .write_u32::<LittleEndian>(prev_hash_word)
                 .expect("Internal error: Could not write buffer");
@@ -282,7 +282,7 @@ impl Into<String> for PrevHash {
         let mut prev_hash_stratum_cursor = std::io::Cursor::new(Vec::new());
         // swap every u32 from little endian to big endian
         for chunk in self.0.chunks(size_of::<u32>()) {
-            let prev_hash_word = bytes::LittleEndian::read_u32(chunk);
+            let prev_hash_word = LittleEndian::read_u32(chunk);
             prev_hash_stratum_cursor
                 .write_u32::<BigEndian>(prev_hash_word)
                 .expect("Internal error: Could not write buffer");

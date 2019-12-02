@@ -23,11 +23,10 @@
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 
-use ii_async_compat::{futures, tokio};
+use ii_async_compat::prelude::*;
 
 use futures::channel::mpsc;
 use futures::future::{self, Either};
-use tokio::prelude::*;
 
 use ii_logging::macros::*;
 use ii_stratum::v1;
