@@ -32,6 +32,7 @@ use crate::error::{Result, ResultExt};
 use crate::v2::framing::MessageType;
 
 use async_trait::async_trait;
+use packed_struct::prelude::*;
 use std::convert::TryFrom;
 
 use ii_logging::macros::*;
@@ -160,7 +161,11 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<Protocol>> {
     let msg_bytes = &src[framing::Header::SIZE..];
 
     // Build message based on its type specified in the header
-    let (id, payload) = match header.msg_type {
+    let (id, payload) = match MessageType::from_primitive(header.msg_type).ok_or(
+        error::ErrorKind::UnknownMessage(
+            format!("Unexpected payload type, full header: {:?}", header).into(),
+        ),
+    )? {
         MessageType::SetupConnection => (
             None,
             Ok(Box::new(messages::SetupConnection::try_from(msg_bytes)?)
@@ -245,6 +250,7 @@ pub fn deserialize_message(src: &[u8]) -> Result<Message<Protocol>> {
             .into()),
         ),
     };
+
     trace!("V2: message ID: {:?}", id);
     // TODO: message ID handling is not implemented
     payload.map(|p| Message::new(id, p))

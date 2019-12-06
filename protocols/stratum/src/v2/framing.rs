@@ -44,8 +44,8 @@ pub struct Header {
     pub is_channel_message: bool,
     #[packed_field(bits = "46:32")]
     pub extension_type: Integer<u16, packed_bits::Bits15>,
-    #[packed_field(bits = "31:24", size_bytes = "1", ty = "enum")]
-    pub msg_type: MessageType,
+    #[packed_field(bits = "31:24")]
+    pub msg_type: u8,
     #[packed_field(bits = "23:0")]
     pub msg_length: Integer<u32, packed_bits::Bits24>,
 }
@@ -62,7 +62,7 @@ impl Header {
         Header {
             is_channel_message: msg_type.is_channel_message(),
             extension_type: 0.into(),
-            msg_type,
+            msg_type: msg_type.to_primitive(),
             msg_length,
         }
     }
