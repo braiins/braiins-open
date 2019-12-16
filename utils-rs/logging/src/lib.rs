@@ -90,15 +90,20 @@ pub struct LoggingConfig {
     /// The default logging level,
     /// this may be altered with the RUST_LOG env var on startup.
     pub level: Level,
+    /// Channel size for the asynchronous drain, increasing the channel size prevents
+    /// the drain to drop messages in case of logging bursts
+    pub drain_channel_size: usize,
 }
 
 impl LoggingConfig {
+    pub const ASYNC_LOGGER_DRAIN_CHANNEL_SIZE: usize = 128;
     /// Logging configuration suitable for test harness,
     /// doesn't pollute terminal, logs to `test-log.txt` in system tmp location.
     pub fn for_testing() -> Self {
         Self {
             target: LoggingTarget::File(env::temp_dir().join("test-log.txt")),
             level: Level::Trace,
+            drain_channel_size: Self::ASYNC_LOGGER_DRAIN_CHANNEL_SIZE,
         }
     }
 
@@ -106,7 +111,7 @@ impl LoggingConfig {
     ///
     /// The default level is `Debug` for debug builds
     /// and `Info` for release builds.
-    pub fn for_app() -> Self {
+    pub fn for_app(drain_channel_size: usize) -> Self {
         Self {
             target: LoggingTarget::Stderr,
             level: if cfg!(debug_assertions) {
@@ -114,6 +119,7 @@ impl LoggingConfig {
             } else {
                 Level::Info
             },
+            drain_channel_size,
         }
     }
 
@@ -122,6 +128,7 @@ impl LoggingConfig {
         Self {
             target: LoggingTarget::None,
             level: Level::Error,
+            drain_channel_size: Self::ASYNC_LOGGER_DRAIN_CHANNEL_SIZE,
         }
     }
 }
@@ -176,8 +183,8 @@ pub fn setup(config: LoggingConfig) -> FlushGuard {
 ///
 /// Panics if `LOGGER` is already instantiated, ie. its configuration
 /// can no longer be changed.
-pub fn setup_for_app() -> FlushGuard {
-    setup(LoggingConfig::for_app())
+pub fn setup_for_app(drain_channel_size: usize) -> FlushGuard {
+    setup(LoggingConfig::for_app(drain_channel_size))
 }
 
 /// Sets up envlogger filter for a drain, with proper default settings
@@ -272,7 +279,9 @@ impl GuardedLogger {
         D: Drain<Ok = (), Err = E> + Send + 'static,
     {
         let drain = get_envlogger_drain(drain, config.level);
-        let (drain, guard) = Async::new(drain.fuse()).build_with_guard();
+        let (drain, guard) = Async::new(drain.fuse())
+            .chan_size(config.drain_channel_size)
+            .build_with_guard();
         Self {
             logger: Logger::root(drain.fuse(), o!()),
             guard: Mutex::new(FlushGuard(Some(guard))),

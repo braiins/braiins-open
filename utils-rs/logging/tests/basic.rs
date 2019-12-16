@@ -46,6 +46,7 @@ fn test_logging_basic() {
     let config = LoggingConfig {
         target: LoggingTarget::File(temp_file.path().into()),
         level: Level::Trace,
+        drain_channel_size: LoggingConfig::ASYNC_LOGGER_DRAIN_CHANNEL_SIZE,
     };
 
     // Setup logger
