@@ -122,6 +122,25 @@ class MinerV1(DownstreamConnectionProcessor):
         self.session.set_target(msg.diff)
         self._emit_protocol_msg_on_bus('Difficulty updated', msg)
 
+    def visit_reconnect(self, msg):
+        self._emit_protocol_msg_on_bus(
+            'Reconnect received, waiting {} seconds'.format(msg.wait_time), msg
+        )
+
+        def disconnect_and_reconnect():
+            target = self.connection.conn_target
+            self.session.terminate()
+            self.state = self.States.INIT
+            self.miner.set_is_mining(False)
+            self.connection.disconnect()
+            yield self.env.timeout(msg.wait_time)
+            self.setup()
+            self.connection.connect_to(target)
+            self.miner.set_is_mining(True)
+            self._emit_protocol_msg_on_bus('Miner reconnected', msg)
+
+        self.env.process(disconnect_and_reconnect())
+
     @property
     def _allowed_to_mine(self):
         return self.state in (

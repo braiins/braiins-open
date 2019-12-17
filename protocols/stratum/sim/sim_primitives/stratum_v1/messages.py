@@ -102,6 +102,14 @@ class Notify(Message):
         super().__init__()
 
 
+class Reconnect(Message):
+    def __init__(self, hostname, port, wait_time):
+        self.hostname = hostname
+        self.port = port
+        self.wait_time = wait_time
+        super().__init__()
+
+
 class OkResult(Message):
     pass
 
