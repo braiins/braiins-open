@@ -1,0 +1,7 @@
+[workspace]
+
+members = [
+    "unvariant",
+    "unvariant-macros",
+    "unvariant-tests",
+]

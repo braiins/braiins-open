@@ -1,0 +1,11 @@
+[package]
+name = "ii-unvariant-tests"
+version = "0.1.0"
+authors = ["Vojtech Kral <vojtech.kral@braiins.com>"]
+edition = "2018"
+
+[dependencies]
+ii-unvariant = { path = "../unvariant" }
+
+[dev-dependencies]
+tokio = { version = "0.2.2", features = ["full"] }

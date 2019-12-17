@@ -1,0 +1,11 @@
+[package]
+name = "ii-unvariant"
+version = "0.1.0"
+authors = ["Vojtech Kral <vojtech.kral@braiins.com>"]
+edition = "2018"
+
+[dependencies]
+futures = "0.3.5"
+pin-project = "0.4.22"
+proc-macro-hack = "0.5.11"
+ii-unvariant-macros = { path = "../unvariant-macros" }
