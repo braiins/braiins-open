@@ -26,8 +26,8 @@
 mod messaging;
 pub use messaging::*;
 
-mod network;
-pub use network::*;
+mod server;
+pub use server::*;
 
 mod framing;
 pub use framing::*;
