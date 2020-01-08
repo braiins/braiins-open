@@ -43,6 +43,7 @@ use ii_logging::macros::*;
 use ii_wire::{self, Message, Payload};
 
 pub use self::framing::codec::{Codec, Framing};
+pub use self::framing::TxFrame;
 
 pub struct Protocol;
 impl ii_wire::Protocol for Protocol {

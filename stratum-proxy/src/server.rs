@@ -31,7 +31,7 @@ use futures::future::{self, Either};
 use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
-use ii_wire::{Connection, Server, TxFrame};
+use ii_wire::{Connection, Server};
 
 use crate::error::{ErrorKind, Result, ResultExt};
 use crate::translation::V2ToV1Translation;
@@ -45,11 +45,11 @@ struct ConnTranslation {
     // TODO to be removed as the translator may send out items directly via a particular connection
     // (when treated as a sink)
     /// Frames from the translator to be sent out via V1 connection
-    v1_translation_rx: mpsc::Receiver<TxFrame>,
+    v1_translation_rx: mpsc::Receiver<v1::TxFrame>,
     /// Downstream connection
     v2_conn: Connection<v2::Framing>,
     /// Frames from the translator to be sent out via V2 connection
-    v2_translation_rx: mpsc::Receiver<TxFrame>,
+    v2_translation_rx: mpsc::Receiver<v2::TxFrame>,
 }
 
 impl ConnTranslation {

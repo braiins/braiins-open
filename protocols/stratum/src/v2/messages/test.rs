@@ -42,7 +42,7 @@ fn test_deserialize_setup_connection() {
 
 #[test]
 fn test_serialize_setup_connection() {
-    let frame: ii_wire::TxFrame = build_setup_connection()
+    let frame: TxFrame = build_setup_connection()
         .try_into()
         .expect("Could not serialize message");
 

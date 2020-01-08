@@ -27,12 +27,12 @@ use ii_async_compat::{bytes, tokio_util};
 use bytes::BytesMut;
 use tokio_util::codec::{Decoder, Encoder, LinesCodec};
 
+use ii_wire::{self, Message};
+
+use super::TxFrame;
 use crate::error::Error;
 use crate::v1::{deserialize_message, Protocol};
-use ii_wire::Message;
-use ii_wire::{self, TxFrame};
 
-// FIXME: error handling
 // FIXME: check bytesmut capacity when encoding (use BytesMut::remaining_mut())
 
 #[derive(Debug)]

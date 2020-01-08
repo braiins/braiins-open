@@ -43,6 +43,8 @@ use crate::error::{Result, ResultExt};
 
 pub const MAX_MESSAGE_LENGTH: usize = 16384;
 
+pub type TxFrame = Box<[u8]>;
+
 /// All recognized methods of the V1 protocol have the 'mining.' prefix in json.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum Method {
@@ -187,12 +189,12 @@ impl From<Response> for Frame {
     }
 }
 
-impl TryInto<ii_wire::TxFrame> for Frame {
+impl TryInto<TxFrame> for Frame {
     type Error = crate::error::Error;
 
-    fn try_into(self: Frame) -> std::result::Result<ii_wire::TxFrame, Self::Error> {
+    fn try_into(self: Frame) -> std::result::Result<TxFrame, Self::Error> {
         let serialized = serde_json::to_vec(&self).context("Serializing RPC to JSON failed")?;
-        Ok(ii_wire::Frame::new(serialized.into_boxed_slice()))
+        Ok(serialized.into_boxed_slice())
     }
 }
 
@@ -260,7 +262,6 @@ impl FromStr for Frame {
 mod test {
     use super::*;
     use crate::test_utils::v1::*;
-    use ii_wire::TxFrame;
 
     #[test]
     fn test_deserialize_serialize_request() {

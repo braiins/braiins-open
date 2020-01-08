@@ -26,9 +26,9 @@ use bytes::BytesMut;
 use tokio_util::codec::length_delimited::{self, LengthDelimitedCodec};
 use tokio_util::codec::{Decoder, Encoder};
 
-use ii_wire::{self, Message, TxFrame};
+use ii_wire::{self, Message};
 
-use super::Header;
+use super::{Header, TxFrame};
 use crate::error::Error;
 use crate::v2::{deserialize_message, Protocol};
 

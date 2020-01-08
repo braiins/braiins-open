@@ -29,17 +29,14 @@ use ii_stratum::test_utils;
 use ii_stratum::v1;
 use ii_stratum::v2;
 
-//       F::Error: From<E>,
-//        M: TryInto<F::Tx, Error = E>,
-
 /// Simulates incoming message by converting it into a TxFrame and running the deserialization
 /// chain from that point on
 async fn v2_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
 where
-    M: TryInto<TxFrame, Error = ii_stratum::error::Error>,
+    M: TryInto<v2::TxFrame, Error = ii_stratum::error::Error>,
 {
     // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait)
-    let frame: ii_wire::TxFrame = message.try_into().expect("Could not serialize message");
+    let frame: v2::TxFrame = message.try_into().expect("Could not serialize message");
 
     let msg = v2::deserialize_message(&frame).expect("Deserialization failed");
     msg.accept(translation).await;
@@ -47,10 +44,10 @@ where
 
 async fn v1_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
 where
-    M: TryInto<TxFrame, Error = ii_stratum::error::Error>,
+    M: TryInto<v1::TxFrame, Error = ii_stratum::error::Error>,
 {
     // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait) as if it arrived to translation
-    let frame: ii_wire::TxFrame = message.try_into().expect("Could not serialize message");
+    let frame: v1::TxFrame = message.try_into().expect("Could not serialize message");
 
     let msg = v1::deserialize_message(
         std::str::from_utf8(&frame).expect("Cannot convert frame to utf-8 str"),
@@ -59,7 +56,7 @@ where
     msg.accept(translation).await;
 }
 
-async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<TxFrame>) {
+async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<v2::TxFrame>) {
     // Pickup the response and verify it
     let v2_response_tx_frame = v2_rx.next().await.expect("At least 1 message was expected");
 
@@ -86,7 +83,7 @@ async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<TxFrame
 //    message.accept(handler);
 //}
 
-async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<TxFrame>) {
+async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<v1::TxFrame>) {
     // Pickup the response and verify it
     // TODO add timeout
     let frame = v1_rx.next().await.expect("At least 1 message was expected");

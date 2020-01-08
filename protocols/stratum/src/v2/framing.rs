@@ -31,6 +31,8 @@ use packed_struct_codegen::PrimitiveEnum_u8;
 
 pub mod codec;
 
+pub type TxFrame = Box<[u8]>;
+
 /// Header of the protocol message
 #[derive(PackedStruct, Debug)]
 #[packed_struct(endian = "msb", bit_numbering = "lsb0", size_bytes = "6")]

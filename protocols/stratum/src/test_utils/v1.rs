@@ -294,8 +294,7 @@ impl TestIdentityHandler {
         );
         assert_eq!(expected_payload, *payload, "Message payloads don't match");
 
-        let serialized_message: ii_wire::TxFrame =
-            full_message.try_into().expect("Cannot serialize");
+        let serialized_message: TxFrame = full_message.try_into().expect("Cannot serialize");
         assert_eq!(
             json_message,
             std::str::from_utf8(&serialized_message)

@@ -29,7 +29,7 @@ use async_trait::async_trait;
 use serde;
 use serde::{Deserialize, Serialize};
 
-use super::framing::{Header, MessageType};
+use super::framing::{Header, MessageType, TxFrame};
 use super::types::*;
 use crate::error::{Error, Result};
 
@@ -42,10 +42,7 @@ use serde_json as serialization;
 mod test;
 
 /// Serializes the specified message into a frame
-fn serialize_with_header<M: Serialize>(
-    message: M,
-    msg_type: MessageType,
-) -> Result<ii_wire::TxFrame> {
+fn serialize_with_header<M: Serialize>(message: M, msg_type: MessageType) -> Result<TxFrame> {
     let buffer = Vec::with_capacity(128); // This is what serde does
 
     // TODO review the behavior below, that would mean it would optimize the move completely?
@@ -60,17 +57,17 @@ fn serialize_with_header<M: Serialize>(
     cursor.set_position(0);
     cursor.write(&header.pack_and_swap_endianness())?;
 
-    Ok(ii_wire::Frame::new(cursor.into_inner().into_boxed_slice()))
+    Ok(cursor.into_inner().into_boxed_slice())
 }
 
 macro_rules! impl_conversion {
     ($message:tt, /*$msg_type:path,*/ $handler_fn:tt) => {
         // NOTE: $message and $handler_fn need to be tt because of https://github.com/dtolnay/async-trait/issues/46
 
-        impl TryFrom<$message> for ii_wire::TxFrame {
+        impl TryFrom<$message> for TxFrame {
             type Error = Error;
 
-            fn try_from(m: $message) -> Result<ii_wire::TxFrame> {
+            fn try_from(m: $message) -> Result<TxFrame> {
                 serialize_with_header(&m, MessageType::$message)
             }
         }

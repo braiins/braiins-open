@@ -27,9 +27,8 @@ pub mod messages;
 pub mod serialization;
 pub mod types;
 
+use self::framing::MessageType;
 use crate::error::{Result, ResultExt};
-
-use crate::v2::framing::MessageType;
 
 use async_trait::async_trait;
 use packed_struct::prelude::*;
@@ -39,6 +38,7 @@ use ii_logging::macros::*;
 use ii_wire::{self, Message, Payload};
 
 pub use self::framing::codec::{Codec, Framing};
+pub use self::framing::TxFrame;
 
 pub struct Protocol;
 impl ii_wire::Protocol for Protocol {
