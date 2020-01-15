@@ -26,6 +26,9 @@
 mod messaging;
 pub use messaging::*;
 
+mod connection;
+pub use connection::*;
+
 mod server;
 pub use server::*;
 
