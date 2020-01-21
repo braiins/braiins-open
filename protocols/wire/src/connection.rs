@@ -140,6 +140,7 @@ pub struct Connection<F: Framing> {
 
 impl<F: Framing> Connection<F> {
     pub(crate) fn new(stream: TcpStream) -> Self {
+        // FIXME: remove split
         let (stream_rx, stream_tx) = stream.duplex_split();
         let codec_tx = FramedWrite::new(stream_tx, F::Codec::default());
         let codec_rx = FramedRead::new(stream_rx, F::Codec::default());

@@ -32,6 +32,9 @@ pub use connection::*;
 mod server;
 pub use server::*;
 
+mod client;
+pub use client::*;
+
 mod framing;
 pub use framing::*;
 
