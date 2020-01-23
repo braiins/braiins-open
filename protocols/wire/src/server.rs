@@ -21,8 +21,8 @@
 // contact us at opensource@braiins.com.
 
 use std::marker::PhantomData;
-use std::net::TcpListener as StdTcpListener;
 use std::net::SocketAddr;
+use std::net::TcpListener as StdTcpListener;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 

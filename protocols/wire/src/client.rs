@@ -21,15 +21,15 @@
 // contact us at opensource@braiins.com.
 
 use std::fmt::Debug;
-use std::time::{Duration, Instant};
 use std::marker::PhantomData;
 use std::net::SocketAddr;
+use std::time::{Duration, Instant};
 
 use ii_async_compat::prelude::*;
 use tokio::time;
 
-use crate::Framing;
 use crate::Connection;
+use crate::Framing;
 
 /// Backoff generation for `ReConnection`.
 pub trait Backoff: Debug {
@@ -94,7 +94,10 @@ pub struct AttemptError<F: Framing> {
 
 impl<F: Framing> AttemptError<F> {
     fn new(next_attempt_in: Duration, error: F::Error) -> Self {
-        Self { next_attempt_in, error }
+        Self {
+            next_attempt_in,
+            error,
+        }
     }
 }
 
@@ -144,7 +147,7 @@ impl<F: Framing> Client<F> {
             Ok(conn) => {
                 self.backoff.reset();
                 Ok(conn)
-            },
+            }
             Err(err) => {
                 let backoff = self.backoff.next();
                 self.next_delay = Some((Instant::now(), backoff));
