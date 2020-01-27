@@ -91,7 +91,7 @@ impl<F: Framing> Sink<F::Tx> for ConnectionTx<F> {
     }
 }
 
-#[pin_project]
+#[pin_project(PinnedDrop)]
 #[derive(Debug)]
 pub struct ConnectionRx<F: Framing> {
     #[pin]

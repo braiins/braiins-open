@@ -8,5 +8,5 @@ edition = "2018"
 [dependencies]
 ii-async-compat = { path = "../../utils-rs/async-compat" }
 failure = "0.1.5"
-pin-project = "0.4.0-beta.1"   # The version that the currently used tokio uses
+pin-project = "0.4.5"
 async-trait = "0.1.17"
