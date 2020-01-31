@@ -93,7 +93,6 @@ impl Header {
             "BUG: no message length specified for serialization nor the header already has a \
              predefined message length!",
         );
-        assert!(msg_length <= Self::MAX_LEN, "BUG: Message too large");
 
         let extension_field: ExtType =
             self.extension_type | (u16::from(self.is_channel_message) << Self::CHANNEL_MSG_SHIFT);
@@ -336,6 +335,12 @@ mod test {
 
         let mut header_bytes = BytesMut::new();
         header.serialize(&mut header_bytes, None);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_header_too_large_message() {
+        let _header = Header::new(true, 0, 0x16, Some(Header::MAX_LEN + 1));
     }
 
     #[test]
