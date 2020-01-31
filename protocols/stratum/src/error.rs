@@ -128,6 +128,15 @@ impl From<io::Error> for Error {
     }
 }
 
+impl From<fmt::Error> for Error {
+    fn from(e: fmt::Error) -> Self {
+        let msg = e.to_string();
+        Self {
+            inner: e.context(ErrorKind::General(msg)),
+        }
+    }
+}
+
 impl From<tokio_util::codec::LinesCodecError> for Error {
     fn from(e: tokio_util::codec::LinesCodecError) -> Self {
         let msg = e.to_string();

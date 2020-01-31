@@ -22,62 +22,66 @@
 
 //! All stratum V2 protocol messages
 
-use std::convert::TryFrom;
-use std::io::{Cursor, Write};
-
 use async_trait::async_trait;
+use lazy_static::lazy_static;
+use packed_struct_codegen::PrimitiveEnum_u8;
 use serde;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::convert::TryFrom;
 
-use super::framing::{Header, MessageType, TxFrame};
-use super::types::*;
-use crate::error::{Error, Result};
-
+use super::framing;
 #[cfg(not(feature = "v2json"))]
 use super::serialization;
+use super::types::*;
+use crate::error::{Error, Result};
 #[cfg(feature = "v2json")]
 use serde_json as serialization;
 
 #[cfg(test)]
 mod test;
 
-/// Serializes the specified message into a frame
-fn serialize_with_header<M: Serialize>(message: M, msg_type: MessageType) -> Result<TxFrame> {
-    let buffer = Vec::with_capacity(128); // This is what serde does
-
-    // TODO review the behavior below, that would mean it would optimize the move completely?
-    // Cursor is used here to write the serialized message and then the header in front of it
-    // otherwise the the serialized message would have to be shifted in memory
-    let mut cursor = Cursor::new(buffer);
-    cursor.set_position(Header::SIZE as u64);
-    serialization::to_writer(&mut cursor, &message)?;
-
-    let payload_len = cursor.position() as usize - Header::SIZE;
-    let header = Header::new(msg_type, payload_len);
-    cursor.set_position(0);
-    cursor.write(&header.pack_and_swap_endianness())?;
-
-    Ok(cursor.into_inner().into_boxed_slice())
-}
-
 macro_rules! impl_conversion {
     ($message:tt, /*$msg_type:path,*/ $handler_fn:tt) => {
         // NOTE: $message and $handler_fn need to be tt because of https://github.com/dtolnay/async-trait/issues/46
 
-        impl TryFrom<$message> for TxFrame {
+        impl TryFrom<$message> for framing::Frame {
             type Error = Error;
 
-            fn try_from(m: $message) -> Result<TxFrame> {
-                serialize_with_header(&m, MessageType::$message)
+            /// Prepares a frame for serializing the specified message just in time (the message
+            /// is treated as a `SerializablePayload`)
+            fn try_from(m: $message) -> Result<Self> {
+                Ok(framing::Frame::from_serializable_payload(
+                    MessageType::$message.is_channel_message(),
+                    0, // TODO specify the extension ID
+                    MessageType::$message as framing::MsgType,
+                    m,
+                ))
             }
         }
 
-        // TODO: the from type should be RxFrame (?)
+        /// Each message is a `SerializablePayload` object that can be serialized into `writer`
+        impl framing::SerializablePayload for $message {
+            fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
+                serialization::to_writer(writer, self).map_err(Into::into)
+            }
+        }
+
         impl TryFrom<&[u8]> for $message {
             type Error = Error;
 
             fn try_from(msg: &[u8]) -> Result<Self> {
                 serialization::from_slice(msg).map_err(Into::into)
+            }
+        }
+
+        impl TryFrom<framing::Frame> for $message {
+            type Error = Error;
+
+            fn try_from(frame: framing::Frame) -> Result<Self> {
+                let (_header, payload) = frame.split();
+                let payload = payload.into_bytes_mut()?;
+                Self::try_from(&payload[..])
             }
         }
 
@@ -95,7 +99,85 @@ macro_rules! impl_conversion {
     };
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+/// All message recognized by the protocol
+#[derive(PrimitiveEnum_u8, Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum MessageType {
+    SetupConnection = 0x00,
+    SetupConnectionSuccess = 0x01,
+    SetupConnectionError = 0x02,
+    ChannelEndpointChanged = 0x03,
+
+    // Mining Protocol
+    OpenStandardMiningChannel = 0x10,
+    OpenStandardMiningChannelSuccess = 0x11,
+    OpenStandardMiningChannelError = 0x12,
+    OpenExtendedMiningChannel = 0x13,
+    OpenExtendedMiningChannelSuccess = 0x14,
+    OpenExtendedMiningChannelError = 0x15,
+    UpdateChannel = 0x16,
+    UpdateChannelError = 0x17,
+    CloseChannel = 0x18,
+    SetExtranoncePrefix = 0x19,
+    SubmitSharesStandard = 0x1a,
+    SubmitSharesExtended = 0x1b,
+    SubmitSharesSuccess = 0x1c,
+    SubmitSharesError = 0x1d,
+    NewMiningJob = 0x1e,
+    NewExtendedMiningJob = 0x1f,
+    SetNewPrevHash = 0x20,
+    SetTarget = 0x21,
+    SetCustomMiningJob = 0x22,
+    SetCustomMiningJobSuccess = 0x23,
+    SetCustomMiningError = 0x24,
+    Reconnect = 0x25,
+    SetGroupChannel = 0x26,
+}
+
+impl MessageType {
+    fn is_channel_message(&self) -> bool {
+        match IS_CHANNEL_MESSAGE.get(self) {
+            Some(&is_ch_msg) => is_ch_msg,
+            None => false,
+        }
+    }
+}
+
+lazy_static! {
+    static ref IS_CHANNEL_MESSAGE: HashMap<MessageType, bool> = [
+        (MessageType::SetupConnection, false),
+        (MessageType::SetupConnectionSuccess, false),
+        (MessageType::SetupConnectionError, false),
+        (MessageType::ChannelEndpointChanged, true),
+        (MessageType::OpenStandardMiningChannel, false),
+        (MessageType::OpenStandardMiningChannelSuccess, false),
+        (MessageType::OpenStandardMiningChannelError, false),
+        (MessageType::OpenExtendedMiningChannel, false),
+        (MessageType::OpenExtendedMiningChannelSuccess, false),
+        (MessageType::OpenExtendedMiningChannelError, false),
+        (MessageType::UpdateChannel, true),
+        (MessageType::UpdateChannelError, true),
+        (MessageType::CloseChannel, true),
+        (MessageType::SetExtranoncePrefix, true),
+        (MessageType::SubmitSharesStandard, true),
+        (MessageType::SubmitSharesExtended, true),
+        (MessageType::SubmitSharesSuccess, true),
+        (MessageType::SubmitSharesError, true),
+        (MessageType::NewMiningJob, true),
+        (MessageType::NewExtendedMiningJob, true),
+        (MessageType::SetNewPrevHash, true),
+        (MessageType::SetTarget, true),
+        (MessageType::SetCustomMiningJob, false),
+        (MessageType::SetCustomMiningJobSuccess, false),
+        (MessageType::SetCustomMiningError, false),
+        (MessageType::Reconnect, false),
+        (MessageType::SetGroupChannel, false),
+    ]
+    .iter()
+    .cloned()
+    .collect();
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetupConnection {
     pub protocol: u8,
     pub min_version: u16,
@@ -107,7 +189,7 @@ pub struct SetupConnection {
     pub device: DeviceInfo,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetupConnectionSuccess {
     pub used_version: u16,
     /// TODO: specify an enum for flags
@@ -145,10 +227,10 @@ pub struct OpenStandardMiningChannelError {
     pub code: Str0_32,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct UpdateChannel;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct UpdateChannelError;
 
 pub struct CloseChannel;

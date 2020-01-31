@@ -49,7 +49,7 @@ struct ConnTranslation {
     /// Downstream connection
     v2_conn: Connection<v2::Framing>,
     /// Frames from the translator to be sent out via V2 connection
-    v2_translation_rx: mpsc::Receiver<v2::TxFrame>,
+    v2_translation_rx: mpsc::Receiver<v2::Frame>,
 }
 
 impl ConnTranslation {
@@ -104,7 +104,15 @@ impl ConnTranslation {
             match v1_or_v2 {
                 // Ok path
                 Either::Left((Some(Ok(v1_msg)), _)) => v1_msg.accept(&mut self.translation).await,
-                Either::Right((Some(Ok(v2_msg)), _)) => v2_msg.accept(&mut self.translation).await,
+                Either::Right((Some(Ok(v2_frame)), _)) => {
+                    match v2::build_message_from_frame(v2_frame) {
+                        Ok(v2_msg) => v2_msg.accept(&mut self.translation).await,
+                        Err(err) => {
+                            error!("Cannot build V2 message from frame: {}", err);
+                            break;
+                        }
+                    }
+                }
 
                 // Connection close
                 Either::Left((None, _)) | Either::Right((None, _)) => break,

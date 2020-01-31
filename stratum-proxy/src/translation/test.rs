@@ -33,12 +33,12 @@ use ii_stratum::v2;
 /// chain from that point on
 async fn v2_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
 where
-    M: TryInto<v2::TxFrame, Error = ii_stratum::error::Error>,
+    M: TryInto<v2::Frame, Error = ii_stratum::error::Error>,
 {
     // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait)
-    let frame: v2::TxFrame = message.try_into().expect("Could not serialize message");
+    let frame: v2::Frame = message.try_into().expect("Could not serialize message");
 
-    let msg = v2::deserialize_message(&frame).expect("Deserialization failed");
+    let msg = v2::build_message_from_frame(frame).expect("Deserialization failed");
     msg.accept(translation).await;
 }
 
@@ -56,7 +56,7 @@ where
     msg.accept(translation).await;
 }
 
-async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<v2::TxFrame>) {
+async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<v2::Frame>) {
     // Pickup the response and verify it
     let v2_response_tx_frame = v2_rx.next().await.expect("At least 1 message was expected");
 
@@ -64,7 +64,7 @@ async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<v2::TxF
     // connection, the test case will deserialize it and inspect it using the identity
     // handler from test utils
     let v2_response =
-        v2::deserialize_message(&v2_response_tx_frame).expect("Deserialization failed");
+        v2::build_message_from_frame(v2_response_tx_frame).expect("Deserialization failed");
     // verify the response using testing identity handler
     v2_response
         .accept(&mut test_utils::v2::TestIdentityHandler)

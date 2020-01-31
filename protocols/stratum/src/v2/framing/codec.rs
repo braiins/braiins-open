@@ -20,45 +20,39 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use ii_async_compat::{bytes, tokio_util};
-
 use bytes::BytesMut;
 use tokio_util::codec::length_delimited::{self, LengthDelimitedCodec};
 use tokio_util::codec::{Decoder, Encoder};
 
-use ii_wire::{self, Message};
+use ii_async_compat::{bytes, tokio_util};
+use ii_wire;
 
-use super::{Header, TxFrame};
+use super::{Frame, Header};
 use crate::error::Error;
-use crate::v2::{deserialize_message, Protocol};
-
-// FIXME: check bytesmut capacity when encoding (use BytesMut::remaining_mut())
 
 #[derive(Debug)]
 pub struct Codec(LengthDelimitedCodec);
 
 impl Decoder for Codec {
-    type Item = Message<Protocol>;
+    type Item = Frame;
     type Error = Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let bytes = self.0.decode(src)?;
-        let bytes = match bytes {
+        let mut bytes = match bytes {
             Some(bytes) => bytes,
             None => return Ok(None),
         };
-
-        deserialize_message(&bytes).map(Some)
+        Frame::deserialize(&mut bytes).map(Some)
     }
 }
 
 impl Encoder for Codec {
-    type Item = TxFrame;
+    type Item = Frame;
     type Error = Error;
 
     fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.extend_from_slice(&item);
-        Ok(())
+        item.serialize(dst)
     }
 }
 
@@ -71,6 +65,7 @@ impl Default for Codec {
                 .length_field_offset(Header::LEN_OFFSET)
                 .length_field_length(Header::LEN_SIZE)
                 .num_skip(0)
+                // Actual header length is not counted in the length field
                 .length_adjustment(Header::SIZE as isize)
                 .new_codec(),
             // Note: LengthDelimitedCodec is a bit tricky to coerce into
@@ -82,44 +77,47 @@ impl Default for Codec {
     }
 }
 
+/// Helper struct that groups all framing related associated types (Frame + Error +
+/// Codec) for the `ii_wire::Framing` trait
+/// TODO: move to 'framing' module
 #[derive(Debug)]
 pub struct Framing;
 
 impl ii_wire::Framing for Framing {
-    type Tx = TxFrame;
-    type Rx = Message<Protocol>;
+    type Tx = Frame;
+    type Rx = Frame;
     type Error = Error;
     type Codec = Codec;
 }
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryInto;
-
-    use ii_async_compat::tokio;
-
     use super::*;
-    use crate::test_utils::v2::{build_setup_connection, TestIdentityHandler};
 
-    #[tokio::test]
-    async fn test_v2codec() {
+    #[test]
+    fn test_codec() {
         let mut codec = Codec::default();
+        let mut payload = BytesMut::new();
+        payload.extend_from_slice(&[1, 2, 3, 4]);
+        let expected_frame = Frame::from_serialized_payload(false, 0, 0x16, payload.clone());
 
-        let input = build_setup_connection();
-        let txframe: TxFrame = input
-            .clone()
-            .try_into()
-            .expect("Could not serialize message");
+        // This is currently due to the fact that Frame doesn't support cloning
+        let expected_frame_copy = Frame::from_serialized_payload(false, 0, 0x16, payload);
 
         let mut buffer = BytesMut::new();
         codec
-            .encode(txframe, &mut buffer)
+            .encode(expected_frame, &mut buffer)
             .expect("Codec failed to encode message");
 
-        let msg = codec
+        let decoded_frame = codec
             .decode(&mut buffer)
             .expect("Codec failed to decode message")
             .expect("Incomplete message");
-        msg.accept(&mut TestIdentityHandler).await;
+
+        assert_eq!(
+            expected_frame_copy, decoded_frame,
+            "Expected ({:x?}) and decoded ({:x?}) frames don't match",
+            expected_frame_copy, decoded_frame
+        );
     }
 }

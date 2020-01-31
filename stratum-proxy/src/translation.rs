@@ -70,7 +70,7 @@ pub struct V2ToV1Translation {
     v1_deferred_notify: Option<v1::messages::Notify>,
 
     /// Channel for sending out V2 responses
-    v2_tx: mpsc::Sender<v2::TxFrame>,
+    v2_tx: mpsc::Sender<v2::Frame>,
     #[allow(dead_code)] // TODO: unused as of now
     v2_req_id: MessageId,
     /// All connection details
@@ -147,7 +147,7 @@ impl V2ToV1Translation {
     /// TODO: DIFF1 const target is broken, the last U64 word gets actually initialized to 0xffffffff, not sure why
     const DIFF1_TARGET: uint::U256 = uint::U256([0, 0, 0, 0xffff0000u64]);
 
-    pub fn new(v1_tx: mpsc::Sender<v1::TxFrame>, v2_tx: mpsc::Sender<v2::TxFrame>) -> Self {
+    pub fn new(v1_tx: mpsc::Sender<v1::TxFrame>, v2_tx: mpsc::Sender<v2::Frame>) -> Self {
         Self {
             v2_conn_details: None,
             v2_channel_details: None,
@@ -167,7 +167,8 @@ impl V2ToV1Translation {
         }
     }
 
-    /// Converts the response message into a TxFrame and submits it into the specified queue
+    /// Converts the response message into a `Frame` and submits it into the
+    /// specified queue
     /// TODO: handle serialization errors (logger + terminate?)
     fn submit_message<F, T, E>(tx: &mut mpsc::Sender<F>, msg: T)
     where

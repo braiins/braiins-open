@@ -27,19 +27,20 @@ pub mod messages;
 pub mod serialization;
 pub mod types;
 
-use self::framing::MessageType;
-use crate::error::{Result, ResultExt};
+use self::messages::MessageType;
+use crate::error::Result;
 
 use async_trait::async_trait;
 use packed_struct::prelude::*;
 use std::convert::TryFrom;
 
 use ii_logging::macros::*;
-use ii_wire::{self, Message, Payload};
+use ii_wire::{self, Message};
 
 pub use self::framing::codec::{Codec, Framing};
-pub use self::framing::TxFrame;
+pub use self::framing::Frame;
 
+/// Protocol associates a custom handler with it
 pub struct Protocol;
 impl ii_wire::Protocol for Protocol {
     type Handler = dyn Handler;
@@ -144,108 +145,101 @@ pub trait Handler: 'static + Send {
     }
 }
 
-/// TODO should/could this be part of the framing trait or protocol trait or none of these
-/// (implement From trait...)
-pub fn deserialize_message(src: &[u8]) -> Result<Message<Protocol>> {
-    let header = framing::Header::unpack_and_swap_endianness(&src[0..framing::Header::SIZE])
-        .context("Cannot decode V2 header")?;
-    // Decoder should have ensured correct framing. This is only sanity check, therefore we don't
-    // convert it into an error as it is effectively a bug!
-    let msg_len: u32 = header.msg_length.into();
-    assert_eq!(
-        framing::Header::SIZE + msg_len as usize,
-        src.len(),
-        "Malformed message"
-    );
-    trace!("V2: deserialized header: {:?}", header);
-    let msg_bytes = &src[framing::Header::SIZE..];
+/// Consumes `frame` and produces a Message object based on the payload type
+pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protocol>> {
+    trace!("V2: building message from frame {:x?}", frame);
 
     // Build message based on its type specified in the header
-    let (id, payload) = match MessageType::from_primitive(header.msg_type).ok_or(
+    let (id, payload) = match MessageType::from_primitive(frame.header.msg_type).ok_or(
         error::ErrorKind::UnknownMessage(
-            format!("Unexpected payload type, full header: {:?}", header).into(),
+            format!("Unexpected payload type, full header: {:x?}", frame.header).into(),
         ),
     )? {
         MessageType::SetupConnection => (
             None,
-            Ok(Box::new(messages::SetupConnection::try_from(msg_bytes)?)
-                as Box<dyn Payload<Protocol>>),
+            Ok(Box::new(messages::SetupConnection::try_from(frame)?)
+                as Box<dyn ii_wire::Payload<Protocol>>),
         ),
         MessageType::SetupConnectionSuccess => (
             None,
-            Ok(
-                Box::new(messages::SetupConnectionSuccess::try_from(msg_bytes)?)
-                    as Box<dyn Payload<Protocol>>,
-            ),
+            Ok(Box::new(messages::SetupConnectionSuccess::try_from(frame)?)
+                as Box<dyn ii_wire::Payload<Protocol>>),
         ),
         MessageType::SetupConnectionError => (
             None,
-            Ok(
-                Box::new(messages::SetupConnectionError::try_from(msg_bytes)?)
-                    as Box<dyn Payload<Protocol>>,
-            ),
+            Ok(Box::new(messages::SetupConnectionError::try_from(frame)?)
+                as Box<dyn ii_wire::Payload<Protocol>>),
         ),
         MessageType::OpenStandardMiningChannel => {
-            let channel = messages::OpenStandardMiningChannel::try_from(msg_bytes)?;
+            let channel = messages::OpenStandardMiningChannel::try_from(frame)?;
             (
                 Some(channel.req_id),
-                Ok(Box::new(channel) as Box<dyn Payload<Protocol>>),
+                Ok(Box::new(channel) as Box<dyn ii_wire::Payload<Protocol>>),
             )
         }
         MessageType::OpenStandardMiningChannelSuccess => {
-            let channel_success = messages::OpenStandardMiningChannelSuccess::try_from(msg_bytes)?;
+            let channel_success = messages::OpenStandardMiningChannelSuccess::try_from(frame)?;
             (
                 Some(channel_success.req_id),
-                Ok(Box::new(channel_success) as Box<dyn Payload<Protocol>>),
+                Ok(Box::new(channel_success) as Box<dyn ii_wire::Payload<Protocol>>),
             )
         }
         MessageType::OpenStandardMiningChannelError => {
-            let channel_error = messages::OpenStandardMiningChannelError::try_from(msg_bytes)?;
+            let channel_error = messages::OpenStandardMiningChannelError::try_from(frame)?;
             (
                 Some(channel_error.req_id),
-                Ok(Box::new(channel_error) as Box<dyn Payload<Protocol>>),
+                Ok(Box::new(channel_error) as Box<dyn ii_wire::Payload<Protocol>>),
             )
         }
         MessageType::NewMiningJob => {
-            let job = messages::NewMiningJob::try_from(msg_bytes)?;
-            (None, Ok(Box::new(job) as Box<dyn Payload<Protocol>>))
+            let job = messages::NewMiningJob::try_from(frame)?;
+            (
+                None,
+                Ok(Box::new(job) as Box<dyn ii_wire::Payload<Protocol>>),
+            )
         }
         MessageType::SetNewPrevHash => {
-            let prev_hash = messages::SetNewPrevHash::try_from(msg_bytes)?;
-            (None, Ok(Box::new(prev_hash) as Box<dyn Payload<Protocol>>))
+            let prev_hash = messages::SetNewPrevHash::try_from(frame)?;
+            (
+                None,
+                Ok(Box::new(prev_hash) as Box<dyn ii_wire::Payload<Protocol>>),
+            )
         }
         MessageType::SetTarget => {
-            let target = messages::SetTarget::try_from(msg_bytes)?;
-            (None, Ok(Box::new(target) as Box<dyn Payload<Protocol>>))
+            let target = messages::SetTarget::try_from(frame)?;
+            (
+                None,
+                Ok(Box::new(target) as Box<dyn ii_wire::Payload<Protocol>>),
+            )
         }
         MessageType::SubmitSharesStandard => {
-            let submit_shares_standard = messages::SubmitSharesStandard::try_from(msg_bytes)?;
+            let submit_shares_standard = messages::SubmitSharesStandard::try_from(frame)?;
             (
                 // TODO possibly extract the sequence ID
                 None,
-                Ok(Box::new(submit_shares_standard) as Box<dyn Payload<Protocol>>),
+                Ok(Box::new(submit_shares_standard) as Box<dyn ii_wire::Payload<Protocol>>),
             )
         }
         MessageType::SubmitSharesSuccess => {
-            let success = messages::SubmitSharesSuccess::try_from(msg_bytes)?;
+            let success = messages::SubmitSharesSuccess::try_from(frame)?;
             (
                 // TODO what to do about the ID? - use sequence number?
                 None,
-                Ok(Box::new(success) as Box<dyn Payload<Protocol>>),
+                Ok(Box::new(success) as Box<dyn ii_wire::Payload<Protocol>>),
             )
         }
         MessageType::SubmitSharesError => {
-            let err_msg = messages::SubmitSharesError::try_from(msg_bytes)?;
+            let err_msg = messages::SubmitSharesError::try_from(frame)?;
             (
                 // TODO what to do about the ID?
                 None,
-                Ok(Box::new(err_msg) as Box<dyn Payload<Protocol>>),
+                Ok(Box::new(err_msg) as Box<dyn ii_wire::Payload<Protocol>>),
             )
         }
         _ => (
             None,
             Err(error::ErrorKind::UnknownMessage(
-                format!("Unexpected payload type, full header: {:?}", header).into(),
+                format!("Unexpected payload type, full header: {:?}", frame.header).into(),
             )
             .into()),
         ),
@@ -261,23 +255,21 @@ pub mod test {
     use super::*;
     use crate::test_utils::v2::*;
 
-    use bytes::BytesMut;
-    use ii_async_compat::{bytes, tokio};
+    use ii_async_compat::tokio;
+    use std::convert::TryInto;
 
     /// This test demonstrates an actual implementation of protocol handler (aka visitor to a set of
     /// desired messsages
+    /// TODO refactor this test once we have a message dispatcher in place
     #[tokio::test]
-    async fn test_deserialize_message() {
-        // build serialized message
-        let header = framing::Header::new(
-            framing::MessageType::SetupConnection,
-            SETUP_CONNECTION_SERIALIZED.len(),
-        );
-        let mut serialized_msg = BytesMut::with_capacity(64);
-        serialized_msg.extend_from_slice(&header.pack_and_swap_endianness());
-        serialized_msg.extend_from_slice(SETUP_CONNECTION_SERIALIZED);
+    async fn test_build_message_from_frame() {
+        let message_payload = build_setup_connection();
+        let frame = message_payload
+            .try_into()
+            .expect("Cannot create test frame");
 
-        let msg = deserialize_message(&serialized_msg).expect("Deserialization failed");
-        msg.accept(&mut TestIdentityHandler).await;
+        let message =
+            build_message_from_frame(frame).expect("Message payload deserialization failed");
+        message.accept(&mut TestIdentityHandler).await;
     }
 }

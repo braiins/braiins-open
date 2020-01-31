@@ -22,147 +22,285 @@
 
 //! This module defines basic framing and all protocol message types
 
-use lazy_static::lazy_static;
-use std::collections::HashMap;
+use bytes::{
+    buf::{Buf, BufMut, BufMutExt},
+    BytesMut,
+};
+use std::fmt;
+use std::io::Write;
 
-use packed_struct::prelude::*;
-use packed_struct_codegen::PackedStruct;
-use packed_struct_codegen::PrimitiveEnum_u8;
+use ii_async_compat::bytes;
+use ii_logging::macros::*;
+
+use crate::error::{Result, ResultExt};
 
 pub mod codec;
 
-pub type TxFrame = Box<[u8]>;
+/// Message type field in the frame header
+pub type MsgType = u8;
+/// Extension type field in the frame header
+pub type ExtType = u16;
 
-/// Header of the protocol message
-#[derive(PackedStruct, Debug)]
-#[packed_struct(endian = "msb", bit_numbering = "lsb0", size_bytes = "6")]
+/// Header of each stratum protocol frame
+/// This object has custom serialization and deserialization
+#[derive(Debug, PartialEq, Clone)]
 pub struct Header {
-    // WARN: This struct's layout needs to be kept in sync
-    // with the consts in the impl block below.
-    // This is because the Codec needs to know the offset
-    // and size of the msg_length field in the packed byte array
-    // (not in the struct in-memory, so we can't auto-deduce this).
-    #[packed_field(bits = "47")]
+    /// Indicates whether payload contains a channel message
     pub is_channel_message: bool,
-    #[packed_field(bits = "46:32")]
-    pub extension_type: Integer<u16, packed_bits::Bits15>,
-    #[packed_field(bits = "31:24")]
-    pub msg_type: u8,
-    #[packed_field(bits = "23:0")]
-    pub msg_length: Integer<u32, packed_bits::Bits24>,
+    /// Unique identifier of the extension describing this protocol message
+    pub extension_type: ExtType,
+    /// Unique identifier of the message within the extension_type namespace
+    pub msg_type: MsgType,
+    /// Length of the protocol message, not including this header
+    pub msg_length: Option<u32>,
 }
 
 impl Header {
     pub const SIZE: usize = 6;
     pub const LEN_OFFSET: usize = 3;
     pub const LEN_SIZE: usize = 3;
+    pub const MAX_LEN: u32 = 0xffffff;
+    /// Bit position of the 'is_channel_message' flag
+    const CHANNEL_MSG_SHIFT: usize = 15;
+    const CHANNEL_MSG_MASK: u16 = 1u16 << Self::CHANNEL_MSG_SHIFT;
 
-    pub fn new(msg_type: MessageType, msg_length: usize) -> Header {
-        assert!(msg_length <= 0xffffff, "Message too large");
-        let msg_length = (msg_length as u32).into();
-
-        Header {
-            is_channel_message: msg_type.is_channel_message(),
-            extension_type: 0.into(),
-            msg_type: msg_type.to_primitive(),
+    pub fn new(
+        is_channel_message: bool,
+        extension_type: ExtType,
+        msg_type: MsgType,
+        msg_length: Option<u32>,
+    ) -> Self {
+        assert!(
+            msg_length.unwrap_or(0) <= Self::MAX_LEN,
+            "BUG: Message too large, request: {} bytes, max allowed {} bytes",
+            msg_length.unwrap(),
+            Self::MAX_LEN
+        );
+        Self {
+            is_channel_message,
+            extension_type: extension_type.into(),
+            msg_type,
             msg_length,
         }
     }
 
-    pub fn unpack_and_swap_endianness(raw_msg: &[u8]) -> Result<Self, packed_struct::PackingError> {
-        let mut swapped_raw_msg = [0u8; Self::SIZE];
-        swapped_raw_msg.clone_from_slice(&raw_msg);
-        swapped_raw_msg.swap(0, 1);
-        swapped_raw_msg.swap(3, 5);
+    /// Serializes the header into the specified `dst` buffer and fills out the length field
+    /// based on user specified optional value in `msg_length` or takes the value already set in
+    /// the header
+    pub fn serialize(&self, dst: &mut BytesMut, msg_length: Option<u32>) {
+        // Determine the message length
+        let msg_length = msg_length.or(self.msg_length).expect(
+            "BUG: no message length specified for serialization nor the header already has a \
+             predefined message length!",
+        );
+        assert!(msg_length <= Self::MAX_LEN, "BUG: Message too large");
 
-        Self::unpack_from_slice(&swapped_raw_msg)
+        let extension_field: ExtType =
+            self.extension_type | (u16::from(self.is_channel_message) << Self::CHANNEL_MSG_SHIFT);
+        dst.put_u16_le(extension_field);
+        dst.put_u8(self.msg_type);
+        dst.put_uint_le(msg_length as u64, Self::LEN_SIZE);
     }
 
-    pub fn pack_and_swap_endianness(&self) -> [u8; Self::SIZE] {
-        let mut output: [u8; Self::SIZE] = self.pack();
-        output.swap(0, 1);
-        output.swap(3, 5);
-        output
-    }
-}
+    /// Deserializes a `Header` from `src`
+    pub fn deserialize(src: &mut BytesMut) -> Self {
+        let extension_field = src.get_u16_le();
+        let msg_type = src.get_u8();
+        let length = src.get_uint_le(Self::LEN_SIZE) as u32;
 
-/// All message recognized by the protocol
-//#[derive(PrimitiveEnum_u8, Clone, Copy, Debug, PartialEq)]
-#[derive(PrimitiveEnum_u8, Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum MessageType {
-    SetupConnection = 0x00,
-    SetupConnectionSuccess = 0x01,
-    SetupConnectionError = 0x02,
-    ChannelEndpointChanged = 0x03,
-
-    // Mining Protocol
-    OpenStandardMiningChannel = 0x10,
-    OpenStandardMiningChannelSuccess = 0x11,
-    OpenStandardMiningChannelError = 0x12,
-    OpenExtendedMiningChannel = 0x13,
-    OpenExtendedMiningChannelSuccess = 0x14,
-    OpenExtendedMiningChannelError = 0x15,
-    UpdateChannel = 0x16,
-    UpdateChannelError = 0x17,
-    CloseChannel = 0x18,
-    SetExtranoncePrefix = 0x19,
-    SubmitSharesStandard = 0x1a,
-    SubmitSharesExtended = 0x1b,
-    SubmitSharesSuccess = 0x1c,
-    SubmitSharesError = 0x1d,
-    NewMiningJob = 0x1e,
-    NewExtendedMiningJob = 0x1f,
-    SetNewPrevHash = 0x20,
-    SetTarget = 0x21,
-    SetCustomMiningJob = 0x22,
-    SetCustomMiningJobSuccess = 0x23,
-    SetCustomMiningError = 0x24,
-    Reconnect = 0x25,
-    SetGroupChannel = 0x26,
-}
-
-impl MessageType {
-    fn is_channel_message(&self) -> bool {
-        match IS_CHANNEL_MESSAGE.get(self) {
-            Some(&is_ch_msg) => is_ch_msg,
-            None => false,
+        Self {
+            is_channel_message: (extension_field & Self::CHANNEL_MSG_MASK) != 0,
+            extension_type: extension_field & !Self::CHANNEL_MSG_MASK,
+            msg_type,
+            msg_length: Some(length),
         }
     }
 }
 
-lazy_static! {
-    static ref IS_CHANNEL_MESSAGE: HashMap<MessageType, bool> = [
-        (MessageType::SetupConnection, false),
-        (MessageType::SetupConnectionSuccess, false),
-        (MessageType::SetupConnectionError, false),
-        (MessageType::ChannelEndpointChanged, true),
-        (MessageType::OpenStandardMiningChannel, false),
-        (MessageType::OpenStandardMiningChannelSuccess, false),
-        (MessageType::OpenStandardMiningChannelError, false),
-        (MessageType::OpenExtendedMiningChannel, false),
-        (MessageType::OpenExtendedMiningChannelSuccess, false),
-        (MessageType::OpenExtendedMiningChannelError, false),
-        (MessageType::UpdateChannel, true),
-        (MessageType::UpdateChannelError, true),
-        (MessageType::CloseChannel, true),
-        (MessageType::SetExtranoncePrefix, true),
-        (MessageType::SubmitSharesStandard, true),
-        (MessageType::SubmitSharesExtended, true),
-        (MessageType::SubmitSharesSuccess, true),
-        (MessageType::SubmitSharesError, true),
-        (MessageType::NewMiningJob, true),
-        (MessageType::NewExtendedMiningJob, true),
-        (MessageType::SetNewPrevHash, true),
-        (MessageType::SetTarget, true),
-        (MessageType::SetCustomMiningJob, false),
-        (MessageType::SetCustomMiningJobSuccess, false),
-        (MessageType::SetCustomMiningError, false),
-        (MessageType::Reconnect, false),
-        (MessageType::SetGroupChannel, false),
-    ]
-    .iter()
-    .cloned()
-    .collect();
+pub trait SerializablePayload: Send + Sync {
+    /// The payload is serialized to a specified `writer`
+    fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()>;
+}
+
+/// Frame payload that either consists of a series of bytes or a dynamic payload that can be
+/// serialized on demand
+pub enum Payload {
+    SerializedBytes(BytesMut),
+    LazyBytes(Box<dyn SerializablePayload>),
+}
+
+impl Payload {
+    /// Helper associated method that converts `serializable_payload` to `BytesMut`
+    fn serializable_payload_to_bytes_mut(
+        payload: &Box<dyn SerializablePayload>,
+    ) -> Result<BytesMut> {
+        // TODO: use some default capacity
+        let payload_bytes = BytesMut::new();
+        let mut writer = payload_bytes.writer();
+        payload.serialize_to_writer(&mut writer)?;
+        Ok(writer.into_inner())
+    }
+
+    /// Consumes the payload and transforms it into a `BytesMut`
+    /// TODO: consider returning a read-only buffer
+    pub fn into_bytes_mut(self) -> Result<BytesMut> {
+        match self {
+            Self::SerializedBytes(payload) => Ok(payload),
+            Self::LazyBytes(payload) => Self::serializable_payload_to_bytes_mut(&payload),
+        }
+    }
+
+    /// Expensive variant for converting the payload into `BytesMut`. It creates a copy of the
+    /// payload should the frame be already in serialized variant. The reason why we cannot use
+    /// `into_bytes_mut(self.clone())` is that the LazyBytes variant is not easily clonable as it
+    /// is a trait object. We would have to provide a custom clone method for it.
+    /// TODO: consider returning a read-only buffer
+    pub fn to_bytes_mut(&self) -> Result<BytesMut> {
+        match self {
+            Self::SerializedBytes(ref payload) => Ok(payload.clone()),
+            Self::LazyBytes(ref payload) => Self::serializable_payload_to_bytes_mut(payload),
+        }
+    }
+}
+
+/// Comparing 2 payloads is expensive as it results converting the payload into a BytesMut to
+/// cover both variants of the Payload. The advantage of this uniform approach is that we can
+/// compare Payloads created under different circumstances (`SerializedBytes` or `LazyBytes`
+/// variants).
+impl PartialEq for Payload {
+    fn eq(&self, other: &Self) -> bool {
+        // We have to successfully unwrap both conversion results before proceeding with comparison.
+        // Any error results in indicating a mismatch
+        if let Ok(self_bytes) = self.to_bytes_mut() {
+            if let Ok(other_bytes) = other.to_bytes_mut() {
+                self_bytes == other_bytes
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+}
+
+impl fmt::Debug for Payload {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SerializedBytes(payload) => write!(f, "S{:x?}", payload.to_vec()),
+            Self::LazyBytes(_) => write!(f, "L{:x?}", self.to_bytes_mut().map_err(|_| fmt::Error)?),
+        }
+    }
+}
+
+/// Protocol frame
+/// The frame provides `header` information for payload dispatching etc. Direct access to payload
+/// is not possible as it requires complex handling. For payload processing it is recommended to use
+/// `Frame::split()`
+#[derive(Debug, PartialEq)]
+pub struct Frame {
+    /// Allow public access to the header for payload dispatching etc.
+    pub header: Header,
+    /// Keep payload
+    payload: Payload,
+}
+
+impl Frame {
+    /// Builds a frame from `src`. No copying occurs as `BytesMut` allows us splitting off
+    /// the payload part. The method panics if  `src` doesn't contain exactly one frame.
+    fn deserialize(src: &mut BytesMut) -> Result<Self> {
+        let header = Header::deserialize(src);
+        // Missing length is considered a bug
+        let msg_len: u32 = header.msg_length.expect("BUG: missing header length field");
+        // The caller (possibly decoder) should have ensured correct framing. It is only a sanity
+        // check that the expected length and remaining bytes in the buffer.
+        // Note, that header deserialization also took the relevant part of the
+        // source bytes, therefore its remaining size is reduced.
+        assert_eq!(
+            msg_len as usize,
+            src.len(),
+            "BUG: malformed message header ({:x?}) - message length ({}) and remaining data length \
+            ({}) don't match",
+            header, msg_len, src.len()
+        );
+        trace!("V2: deserialized header: {:?}", header);
+        let payload = src.split();
+        Ok(Self {
+            header,
+            payload: Payload::SerializedBytes(payload),
+        })
+    }
+
+    pub fn from_serialized_payload(
+        is_channel_msg: bool,
+        ext_type: ExtType,
+        msg_type: MsgType,
+        payload: BytesMut,
+    ) -> Self {
+        let header = Header::new(
+            is_channel_msg,
+            ext_type,
+            msg_type,
+            Some(payload.len() as u32),
+        );
+        Self {
+            header,
+            payload: Payload::SerializedBytes(payload),
+        }
+    }
+
+    pub fn from_serializable_payload<T>(
+        is_channel_msg: bool,
+        ext_type: ExtType,
+        msg_type: MsgType,
+        payload: T,
+    ) -> Self
+    // TODO review the static lifetime
+    where
+        T: 'static + SerializablePayload,
+    {
+        let header = Header::new(is_channel_msg, ext_type, msg_type, None);
+        Self {
+            header,
+            payload: Payload::LazyBytes(Box::new(payload)),
+        }
+    }
+
+    /// Serializes a frame into a specified `dst` buffer. The method either copies the already
+    /// serialized payload into the buffer or runs the on-demand serializer of the payload.
+    fn serialize(&self, dst: &mut BytesMut) -> Result<()> {
+        // TODO reserve a reasonable chunk in the buffer - make it a constant
+        dst.reserve(128);
+        let mut payload_writer = dst.split_off(Header::SIZE).writer();
+        // Static payload is sent directly to the writer whereas the dynamically
+        // `SerializablePayload` is asked to perform serialization
+        match &self.payload {
+            Payload::SerializedBytes(payload) => {
+                payload_writer
+                    .write(payload)
+                    .context("Serialize static frame payload")?;
+                ()
+            }
+            Payload::LazyBytes(payload) => payload
+                .serialize_to_writer(&mut payload_writer)
+                .context("Serialize dynamic frame payload")?,
+        }
+        // Writer not needed anymore, the underlying BytesMut now contains the serialized payload
+        let payload_buf = payload_writer.into_inner();
+        // Serialize the header since now can determine the actual payload length
+        let payload_len = payload_buf.len();
+        self.header.serialize(dst, Some(payload_len as u32));
+
+        // Join the payload with the header (no copying occurs here as the buffer has been
+        // originally split off of `dst`
+        dst.unsplit(payload_buf);
+
+        Ok(())
+    }
+
+    /// Consumes the frame providing its header and payload
+    pub fn split(self) -> (Header, Payload) {
+        (self.header, self.payload)
+    }
 }
 
 pub const PAYLOAD_CHANNEL_OFFSET: usize = 4;
@@ -172,43 +310,74 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_header_pack_channel() {
-        let expected_bytes = [0x00u8, 0x80, 0x16, 0xcc, 0xbb, 0xaa];
-        let header = Header::new(MessageType::UpdateChannel, 0xaabbcc);
-        let header_bytes = header.pack_and_swap_endianness();
-        assert_eq!(
-            expected_bytes, header_bytes,
-            "Packing test header failed, message being \
-             serialized: {:#08x?}",
-            header
-        );
-    }
+    fn test_header_serialization() {
+        let expected_bytes = BytesMut::from(&[0x00u8, 0x80, 0x16, 0xcc, 0xbb, 0xaa][..]);
 
-    #[test]
-    fn test_header_pack_not_channel() {
-        let expected_bytes = [0x00u8, 0x00, 0x00, 0xcc, 0xbb, 0xaa];
-        let header = Header::new(MessageType::SetupConnection, 0xaabbcc);
-        let header_bytes = header.pack_and_swap_endianness();
-        assert_eq!(
-            expected_bytes, header_bytes,
-            "Packing test header failed, message being \
-             serialized: {:#08x?}",
-            header
-        );
-    }
+        let header = Header::deserialize(&mut expected_bytes.clone());
 
-    /// This test relies on the fact that there is at least one message type identifier (0xff) is
-    /// not used in the protocol.
-    #[test]
-    fn test_unknown_message_type() {
-        let broken_header = [0xffu8, 0xaa, 0xbb, 0xcc];
-        let header = Header::unpack_from_slice(&broken_header);
-        assert!(
-            header.is_err(),
-            "Unpacking should have failed to non-existing header type, \
-             parsed: {:#04x?}, sliced view {:#04x?}",
+        let mut header_bytes = BytesMut::new();
+        header.serialize(&mut header_bytes, Some(0xaabbcc as u32));
+        assert_eq!(
+            BytesMut::from(&expected_bytes[..]),
+            header_bytes,
+            "Serialized header {:x?} doesn't match expected: {:x?}, received: {:x?}",
             header,
-            broken_header
+            expected_bytes,
+            header_bytes
+        );
+    }
+
+    /// Verify invalid header with empty length field panics upon serialization if we don't
+    /// specify the length field explicitely during serialization
+    #[test]
+    #[should_panic]
+    fn test_header_serialization_panic() {
+        let header = Header::new(true, 0, 0x16, None);
+
+        let mut header_bytes = BytesMut::new();
+        header.serialize(&mut header_bytes, None);
+    }
+
+    #[test]
+    fn test_frame_deserialize() {
+        let frame_bytes = [0x00u8, 0x80, 0x16, 0x04, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef];
+        let mut frame_bytes_buf = BytesMut::new();
+        frame_bytes_buf.extend_from_slice(&frame_bytes);
+
+        let mut expected_payload = BytesMut::new();
+        expected_payload.extend_from_slice(&frame_bytes[frame_bytes.len() - 4..]);
+        let expected_frame = Frame::from_serialized_payload(true, 0, 0x16, expected_payload);
+
+        let frame = Frame::deserialize(&mut frame_bytes_buf).expect("Building frame failed");
+
+        assert_eq!(expected_frame, frame, "Frames don't match");
+    }
+
+    #[test]
+    fn test_frame_from_serializable_payload() {
+        const EXPECTED_FRAME_BYTES: &'static [u8] =
+            &[0x00u8, 0x80, 0x16, 0x04, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef];
+        //#[derive(Clone)]
+        struct TestPayload;
+        impl SerializablePayload for TestPayload {
+            fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
+                writer
+                    .write(&EXPECTED_FRAME_BYTES[6..])
+                    .context("TestPayload")?;
+                Ok(())
+            }
+        }
+        let frame = Frame::from_serializable_payload(true, 0, 0x16, TestPayload);
+
+        let mut dst_frame_bytes = BytesMut::new();
+        assert!(frame.serialize(&mut dst_frame_bytes).is_ok());
+        assert_eq!(
+            BytesMut::from(EXPECTED_FRAME_BYTES),
+            dst_frame_bytes,
+            "Frames don't match, expected: {:x?}, generated: {:x?}",
+            EXPECTED_FRAME_BYTES,
+            // convert to vec as it has same Debug representation
+            dst_frame_bytes.to_vec()
         );
     }
 }

@@ -56,7 +56,8 @@ async fn test_v2server() {
     // with SetupConnectionSuccess
     tokio::spawn(async move {
         let mut conn = server.next().await.unwrap().unwrap();
-        let msg = conn.next().await.unwrap().unwrap();
+        let frame = conn.next().await.unwrap().unwrap();
+        let msg = v2::build_message_from_frame(frame).expect("Failed to build message from frame");
         // test handler verifies that the message
         msg.accept(&mut test_utils::v2::TestIdentityHandler).await;
 
@@ -75,7 +76,10 @@ async fn test_v2server() {
         .await
         .expect("Could not send message");
 
-    let response = connection.next().await.unwrap().unwrap();
+    let response_frame = connection.next().await.unwrap().unwrap();
+    let response = v2::build_message_from_frame(response_frame).expect(
+        "Failed to build response message from frame",
+    );
     response
         .accept(&mut test_utils::v2::TestIdentityHandler)
         .await;

@@ -20,13 +20,13 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use std::convert::TryInto;
+use bytes::{buf::BufMutExt, BytesMut};
 
-use byte_string::ByteStr;
+use ii_async_compat::bytes;
 
 use super::*;
 use crate::test_utils::v2::*;
-use crate::v2::framing;
+use crate::v2::framing::SerializablePayload;
 
 #[test]
 fn test_deserialize_setup_connection() {
@@ -42,13 +42,16 @@ fn test_deserialize_setup_connection() {
 
 #[test]
 fn test_serialize_setup_connection() {
-    let frame: TxFrame = build_setup_connection()
-        .try_into()
-        .expect("Could not serialize message");
+    let message = build_setup_connection();
+    let mut writer = bytes::BytesMut::new().writer();
+    message
+        .serialize_to_writer(&mut writer)
+        .expect("Cannot serialize message");
+    let serialized_message = writer.into_inner();
 
-    // The message has ben serialized completely, let's skip the header for now
+    // The message has been serialized completely, let's skip the header for now
     assert_eq!(
-        ByteStr::new(SETUP_CONNECTION_SERIALIZED),
-        ByteStr::new(&frame[framing::Header::SIZE..])
+        BytesMut::from(&SETUP_CONNECTION_SERIALIZED[..]),
+        serialized_message
     );
 }
