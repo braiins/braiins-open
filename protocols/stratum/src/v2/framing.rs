@@ -358,6 +358,43 @@ mod test {
         assert_eq!(expected_frame, frame, "Frames don't match");
     }
 
+    fn build_large_payload(length: usize) -> BytesMut {
+        const CHUNK_SIZE: usize = 256;
+        let chunk = [0xaa_u8; CHUNK_SIZE];
+        let mut payload = BytesMut::with_capacity(length);
+        for _i in 0..length / CHUNK_SIZE {
+            payload.extend_from_slice(&chunk[..])
+        }
+        // Append the last chunk
+        payload.extend_from_slice(&chunk[..length - payload.len()]);
+
+        payload
+    }
+
+    #[test]
+    fn test_large_frame() {
+        let mut frame_bytes_buf = BytesMut::new();
+
+        let payload = build_large_payload(Header::MAX_LEN as usize);
+        let expected_frame =
+            Frame::from_serialized_payload(true, 0, 0x16, BytesMut::from(&payload[..]));
+        expected_frame
+            .serialize(&mut frame_bytes_buf)
+            .expect("Expected frame serialization failed");
+
+        let frame = Frame::deserialize(&mut frame_bytes_buf).expect("Cannot deserialize frame");
+
+        assert_eq!(expected_frame, frame, "Frames don't match");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_too_large_frame() {
+        let payload = build_large_payload(Header::MAX_LEN as usize + 1);
+        let _expected_frame =
+            Frame::from_serialized_payload(true, 0, 0x16, BytesMut::from(&payload[..]));
+    }
+
     #[test]
     fn test_frame_from_serializable_payload() {
         const EXPECTED_FRAME_BYTES: &'static [u8] =
