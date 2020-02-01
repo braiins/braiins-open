@@ -41,6 +41,7 @@ use std::str::FromStr;
 use super::{Handler, Protocol};
 use crate::error::{Result, ResultExt};
 
+//pub struct Frame {}
 pub const MAX_MESSAGE_LENGTH: usize = 16384;
 
 pub type TxFrame = Box<[u8]>;
@@ -132,7 +133,7 @@ pub struct StratumError(pub i32, pub String, pub Option<String>);
 //    pub trace_back: Option<String>,
 //}
 
-/// Specific protocol implementation for any stratum result
+/// Specific protocol implementation for any stratum error
 #[async_trait::async_trait]
 impl ii_wire::Payload<Protocol> for StratumError {
     async fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut dyn Handler) {

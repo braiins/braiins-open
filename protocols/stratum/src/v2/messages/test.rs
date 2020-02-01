@@ -25,8 +25,8 @@ use bytes::{buf::BufMutExt, BytesMut};
 use ii_async_compat::bytes;
 
 use super::*;
+use crate::payload::SerializablePayload;
 use crate::test_utils::v2::*;
-use crate::v2::framing::SerializablePayload;
 
 #[test]
 fn test_deserialize_setup_connection() {

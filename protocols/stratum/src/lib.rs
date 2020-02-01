@@ -20,9 +20,8 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-// TODO: is it best practice to reexport this?
-pub use packed_struct;
 pub mod error;
+pub mod payload;
 pub mod v1;
 pub mod v2;
 

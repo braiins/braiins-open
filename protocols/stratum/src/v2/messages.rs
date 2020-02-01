@@ -61,7 +61,7 @@ macro_rules! impl_conversion {
         }
 
         /// Each message is a `SerializablePayload` object that can be serialized into `writer`
-        impl framing::SerializablePayload for $message {
+        impl crate::payload::SerializablePayload for $message {
             fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
                 serialization::to_writer(writer, self).map_err(Into::into)
             }

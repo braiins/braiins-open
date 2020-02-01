@@ -26,13 +26,13 @@ use bytes::{
     buf::{Buf, BufMut, BufMutExt},
     BytesMut,
 };
-use std::fmt;
 use std::io::Write;
 
 use ii_async_compat::bytes;
 use ii_logging::macros::*;
 
 use crate::error::{Error, Result, ResultExt};
+use crate::payload::{Payload, SerializablePayload};
 
 pub mod codec;
 
@@ -112,81 +112,6 @@ impl Header {
             extension_type: extension_field & !Self::CHANNEL_MSG_MASK,
             msg_type,
             msg_length: Some(length),
-        }
-    }
-}
-
-pub trait SerializablePayload: Send + Sync {
-    /// The payload is serialized to a specified `writer`
-    fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()>;
-}
-
-/// Frame payload that either consists of a series of bytes or a dynamic payload that can be
-/// serialized on demand
-pub enum Payload {
-    SerializedBytes(BytesMut),
-    LazyBytes(Box<dyn SerializablePayload>),
-}
-
-impl Payload {
-    /// Helper associated method that converts `serializable_payload` to `BytesMut`
-    fn serializable_payload_to_bytes_mut(
-        payload: &Box<dyn SerializablePayload>,
-    ) -> Result<BytesMut> {
-        // TODO: use some default capacity
-        let payload_bytes = BytesMut::new();
-        let mut writer = payload_bytes.writer();
-        payload.serialize_to_writer(&mut writer)?;
-        Ok(writer.into_inner())
-    }
-
-    /// Consumes the payload and transforms it into a `BytesMut`
-    /// TODO: consider returning a read-only buffer
-    pub fn into_bytes_mut(self) -> Result<BytesMut> {
-        match self {
-            Self::SerializedBytes(payload) => Ok(payload),
-            Self::LazyBytes(payload) => Self::serializable_payload_to_bytes_mut(&payload),
-        }
-    }
-
-    /// Expensive variant for converting the payload into `BytesMut`. It creates a copy of the
-    /// payload should the frame be already in serialized variant. The reason why we cannot use
-    /// `into_bytes_mut(self.clone())` is that the LazyBytes variant is not easily clonable as it
-    /// is a trait object. We would have to provide a custom clone method for it.
-    /// TODO: consider returning a read-only buffer
-    pub fn to_bytes_mut(&self) -> Result<BytesMut> {
-        match self {
-            Self::SerializedBytes(ref payload) => Ok(payload.clone()),
-            Self::LazyBytes(ref payload) => Self::serializable_payload_to_bytes_mut(payload),
-        }
-    }
-}
-
-/// Comparing 2 payloads is expensive as it results converting the payload into a BytesMut to
-/// cover both variants of the Payload. The advantage of this uniform approach is that we can
-/// compare Payloads created under different circumstances (`SerializedBytes` or `LazyBytes`
-/// variants).
-impl PartialEq for Payload {
-    fn eq(&self, other: &Self) -> bool {
-        // We have to successfully unwrap both conversion results before proceeding with comparison.
-        // Any error results in indicating a mismatch
-        if let Ok(self_bytes) = self.to_bytes_mut() {
-            if let Ok(other_bytes) = other.to_bytes_mut() {
-                self_bytes == other_bytes
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
-}
-
-impl fmt::Debug for Payload {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::SerializedBytes(payload) => write!(f, "S{:x?}", payload.to_vec()),
-            Self::LazyBytes(_) => write!(f, "L{:x?}", self.to_bytes_mut().map_err(|_| fmt::Error)?),
         }
     }
 }
