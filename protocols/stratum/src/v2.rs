@@ -37,8 +37,8 @@ use std::convert::TryFrom;
 use ii_logging::macros::*;
 use ii_wire::{self, Message};
 
-pub use self::framing::codec::{Codec, Framing};
-pub use self::framing::Frame;
+pub use self::framing::codec::Codec;
+pub use self::framing::{Frame, Framing};
 
 /// Protocol associates a custom handler with it
 pub struct Protocol;

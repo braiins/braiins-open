@@ -25,7 +25,6 @@ use tokio_util::codec::length_delimited::{self, LengthDelimitedCodec};
 use tokio_util::codec::{Decoder, Encoder};
 
 use ii_async_compat::{bytes, tokio_util};
-use ii_wire;
 
 use super::{Frame, Header};
 use crate::error::Error;
@@ -75,19 +74,6 @@ impl Default for Codec {
             // because normally the 'length' is the size of part after the 'length' field.
         )
     }
-}
-
-/// Helper struct that groups all framing related associated types (Frame + Error +
-/// Codec) for the `ii_wire::Framing` trait
-/// TODO: move to 'framing' module
-#[derive(Debug)]
-pub struct Framing;
-
-impl ii_wire::Framing for Framing {
-    type Tx = Frame;
-    type Rx = Frame;
-    type Error = Error;
-    type Codec = Codec;
 }
 
 #[cfg(test)]

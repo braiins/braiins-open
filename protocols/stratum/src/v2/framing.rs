@@ -32,7 +32,7 @@ use std::io::Write;
 use ii_async_compat::bytes;
 use ii_logging::macros::*;
 
-use crate::error::{Result, ResultExt};
+use crate::error::{Error, Result, ResultExt};
 
 pub mod codec;
 
@@ -300,6 +300,18 @@ impl Frame {
     pub fn split(self) -> (Header, Payload) {
         (self.header, self.payload)
     }
+}
+
+/// Helper struct that groups all framing related associated types (Frame + Error +
+/// Codec) for the `ii_wire::Framing` trait
+#[derive(Debug)]
+pub struct Framing;
+
+impl ii_wire::Framing for Framing {
+    type Tx = Frame;
+    type Rx = Frame;
+    type Error = Error;
+    type Codec = codec::Codec;
 }
 
 pub const PAYLOAD_CHANNEL_OFFSET: usize = 4;
