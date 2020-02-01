@@ -163,8 +163,8 @@ impl<F: Framing> Connection<F> {
         F::Error: From<E>,
         M: TryInto<F::Tx, Error = E>,
     {
-        let message = message.try_into()?;
-        self.tx.send(message).await?;
+        let frame = message.try_into()?;
+        self.tx.send(frame).await?;
         Ok(())
     }
 
