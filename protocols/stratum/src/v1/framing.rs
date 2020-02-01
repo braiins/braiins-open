@@ -219,45 +219,6 @@ impl FromStr for Frame {
     }
 }
 
-/// ?? To be removed
-//pub trait ReceivedRpc {
-//    type Item;
-//    type Error;
-//
-//    fn handle_request(&mut self) -> Result<Self::Item, Self::Error>;
-//    fn handle_response(&mut self) -> Result<Self::Item, Self::Error>;
-//}
-
-//impl Rpc {
-//    pub fn handle_received(self, &mut handler: impl ReceivedRpc) {
-//        match self {
-//            Rpc::RpcRequest(req) => handler.handle_request(self),
-//            Rpc::RpcResponse(resp) => handler.handle,
-//        }
-//        // Check for any reported error from the server and convert it into V1 error
-//        if let Some(err) = rpc.error {
-//            Err(crate::error::ErrorKind::V1(super::error::ErrorKind::Rpc(
-//                format!("{:?}", err),
-//            )))?
-//        }
-//
-//        // Missing result in response means an invalid response as there was no error detected
-//        // either.
-//        let result =
-//            response
-//                .result
-//                .ok_or(crate::error::ErrorKind::V1(super::error::ErrorKind::Rpc(
-//                    "Missing result".into(),
-//                )))?;
-//
-//        // Extract response ID or generate an error
-//        let id = response
-//            .id
-//            .ok_or(crate::error::ErrorKind::V1(ErrorKind::Subscribe(
-//                "Missing ID".into(),
-//            )))?;
-//    }
-//}
 
 #[cfg(test)]
 mod test {
