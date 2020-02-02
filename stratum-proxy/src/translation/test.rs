@@ -68,18 +68,6 @@ async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<v2::Fra
         .await;
 }
 
-//fn verify_message_from_frame<F, T, P: ProtocolBase, H>(
-//    frame: Frame,
-//    deserialize_message: F,
-//    &mut handler: P::Handler,
-//) where
-//    F: Fn(T) -> Message<P>,
-//{
-//    let message = deserialize_message(&frame).expect("Deserialization failed");
-//    // verify the response using testing identity handler
-//    message.accept(handler);
-//}
-
 async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<v1::Frame>) {
     // Pickup the response and verify it
     // TODO add timeout
