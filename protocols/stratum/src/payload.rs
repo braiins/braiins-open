@@ -27,7 +27,7 @@ use std::fmt;
 
 use ii_async_compat::bytes;
 
-use crate::error::Result;
+use crate::error::{Result, ResultExt};
 
 /// This trait allows lazy serialization of a frame payload
 pub trait SerializablePayload: Send + Sync {
@@ -74,6 +74,21 @@ impl Payload {
             Self::LazyBytes(ref payload) => Self::serializable_payload_to_bytes_mut(payload),
         }
     }
+
+    /// Serializes the payload directly into the `writer` without creating any intermediate buffers
+    pub fn serialize_to_writer<T: std::io::Write>(&self, writer: &mut T) -> Result<()> {
+        match &self {
+            Self::SerializedBytes(payload) => writer
+                .write(payload)
+                .context("Serialize static payload")
+                .map(|_| ())
+                .map_err(Into::into),
+            Self::LazyBytes(payload) => payload
+                .serialize_to_writer(writer)
+                .context("Serialize dynamic payload")
+                .map_err(Into::into),
+        }
+    }
 }
 
 /// Comparing 2 payloads is expensive as it results converting the payload into a BytesMut to
@@ -93,6 +108,12 @@ impl PartialEq for Payload {
         } else {
             false
         }
+    }
+}
+
+impl From<BytesMut> for Payload {
+    fn from(payload: BytesMut) -> Self {
+        Self::SerializedBytes(payload)
     }
 }
 

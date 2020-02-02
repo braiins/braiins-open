@@ -26,12 +26,11 @@ use bytes::{
     buf::{Buf, BufMut, BufMutExt},
     BytesMut,
 };
-use std::io::Write;
 
 use ii_async_compat::bytes;
 use ii_logging::macros::*;
 
-use crate::error::{Error, Result, ResultExt};
+use crate::error::{Error, Result};
 use crate::payload::{Payload, SerializablePayload};
 
 pub mod codec;
@@ -150,7 +149,7 @@ impl Frame {
         let payload = src.split();
         Ok(Self {
             header,
-            payload: Payload::SerializedBytes(payload),
+            payload: payload.into(),
         })
     }
 
@@ -168,7 +167,7 @@ impl Frame {
         );
         Self {
             header,
-            payload: Payload::SerializedBytes(payload),
+            payload: payload.into(),
         }
     }
 
@@ -195,19 +194,7 @@ impl Frame {
         // TODO reserve a reasonable chunk in the buffer - make it a constant
         dst.reserve(128);
         let mut payload_writer = dst.split_off(Header::SIZE).writer();
-        // Static payload is sent directly to the writer whereas the dynamically
-        // `SerializablePayload` is asked to perform serialization
-        match &self.payload {
-            Payload::SerializedBytes(payload) => {
-                payload_writer
-                    .write(payload)
-                    .context("Serialize static frame payload")?;
-                ()
-            }
-            Payload::LazyBytes(payload) => payload
-                .serialize_to_writer(&mut payload_writer)
-                .context("Serialize dynamic frame payload")?,
-        }
+        self.payload.serialize_to_writer(&mut payload_writer)?;
         // Writer not needed anymore, the underlying BytesMut now contains the serialized payload
         let payload_buf = payload_writer.into_inner();
         // Serialize the header since now can determine the actual payload length
@@ -244,6 +231,7 @@ pub const PAYLOAD_CHANNEL_OFFSET: usize = 4;
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::error::ResultExt;
 
     #[test]
     fn test_header_serialization() {
