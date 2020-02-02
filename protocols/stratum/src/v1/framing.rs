@@ -28,7 +28,7 @@ use bytes::{buf::BufMutExt, BytesMut};
 
 use ii_async_compat::bytes;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::payload::{Payload, SerializablePayload};
 
 /// Protocol frame consists solely from the payload
@@ -106,4 +106,14 @@ mod test {
             dst_frame_bytes.to_vec()
         );
     }
+}
+
+#[derive(Debug)]
+pub struct Framing;
+
+impl ii_wire::Framing for Framing {
+    type Tx = Frame;
+    type Rx = Frame;
+    type Error = Error;
+    type Codec = codec::Codec;
 }

@@ -20,12 +20,10 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use ii_async_compat::{bytes, tokio_util};
-
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder, LinesCodec};
 
-use ii_wire;
+use ii_async_compat::{bytes, tokio_util};
 
 use super::Frame;
 use crate::error::Error;
@@ -70,14 +68,4 @@ impl Default for Codec {
         // TODO: limit line length with new_with_max_length() ?
         Codec(LinesCodec::new())
     }
-}
-
-#[derive(Debug)]
-pub struct Framing;
-
-impl ii_wire::Framing for Framing {
-    type Tx = Frame;
-    type Rx = Frame;
-    type Error = Error;
-    type Codec = Codec;
 }

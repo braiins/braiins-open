@@ -31,7 +31,6 @@ pub use self::framing::{Frame, Framing};
 use self::rpc::*;
 use crate::error::{Result, ResultExt};
 
-
 use async_trait::async_trait;
 use bitcoin_hashes::hex::{FromHex, ToHex};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
