@@ -55,7 +55,7 @@ pub struct V2ToV1Translation {
     state: V2ToV1TranslationState,
 
     /// Channel for sending out V1 responses
-    v1_tx: mpsc::Sender<v1::TxFrame>,
+    v1_tx: mpsc::Sender<v1::Frame>,
     /// Unique request ID generator
     v1_req_id: MessageId,
     /// Mapping for pairing of incoming V1 message with original requests
@@ -108,14 +108,14 @@ enum V2ToV1TranslationState {
 type V1StratumResultHandler = fn(
     &mut V2ToV1Translation,
     &ii_wire::Message<v1::Protocol>,
-    &v1::framing::StratumResult,
+    &v1::rpc::StratumResult,
 ) -> ii_stratum::error::Result<()>;
 
 /// Represents a handler method that can process a particular ii_stratum error.
 type V1StratumErrorHandler = fn(
     &mut V2ToV1Translation,
     &ii_wire::Message<v1::Protocol>,
-    &v1::framing::StratumError,
+    &v1::rpc::StratumError,
 ) -> ii_stratum::error::Result<()>;
 
 /// Custom mapping of V1 request id onto result/error handlers
@@ -132,7 +132,7 @@ struct V1SubmitTemplate {
 /// Maps V2 job ID to V1 job ID so that we can submit mining results upstream to V1 server
 type JobMap = HashMap<u32, V1SubmitTemplate>;
 
-//type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &ii_wire::Message<Protocol>, &v1::framing::StratumResult)>;
+//type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &ii_wire::Message<Protocol>, &v1::rpc::StratumResult)>;
 
 impl V2ToV1Translation {
     const PROTOCOL_VERSION: usize = 0;
@@ -147,7 +147,7 @@ impl V2ToV1Translation {
     /// TODO: DIFF1 const target is broken, the last U64 word gets actually initialized to 0xffffffff, not sure why
     const DIFF1_TARGET: uint::U256 = uint::U256([0, 0, 0, 0xffff0000u64]);
 
-    pub fn new(v1_tx: mpsc::Sender<v1::TxFrame>, v2_tx: mpsc::Sender<v2::Frame>) -> Self {
+    pub fn new(v1_tx: mpsc::Sender<v1::Frame>, v2_tx: mpsc::Sender<v2::Frame>) -> Self {
         Self {
             v2_conn_details: None,
             v2_channel_details: None,
@@ -186,10 +186,10 @@ impl V2ToV1Translation {
         method: M,
         result_handler: V1StratumResultHandler,
         error_handler: V1StratumErrorHandler,
-    ) -> v1::framing::Frame
+    ) -> v1::rpc::Rpc
     where
         E: fmt::Debug,
-        M: TryInto<v1::framing::RequestPayload, Error = E>,
+        M: TryInto<v1::rpc::RequestPayload, Error = E>,
     {
         let payload = method
             .try_into()
@@ -208,7 +208,7 @@ impl V2ToV1Translation {
             panic!("V1 id already exists");
         }
 
-        v1::framing::Request {
+        v1::rpc::Request {
             id: Some(id),
             payload,
         }
@@ -297,7 +297,7 @@ impl V2ToV1Translation {
     fn handle_configure_result(
         &mut self,
         msg: &ii_wire::Message<v1::Protocol>,
-        payload: &v1::framing::StratumResult,
+        payload: &v1::rpc::StratumResult,
     ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_configure_result() msg.id={:?} state={:?} payload:{:?}",
@@ -346,7 +346,7 @@ impl V2ToV1Translation {
     fn handle_configure_error(
         &mut self,
         msg: &ii_wire::Message<v1::Protocol>,
-        payload: &v1::framing::StratumError,
+        payload: &v1::rpc::StratumError,
     ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_configure_error() msg.id={:?} state={:?} payload:{:?}",
@@ -369,7 +369,7 @@ impl V2ToV1Translation {
     fn handle_subscribe_result(
         &mut self,
         msg: &ii_wire::Message<v1::Protocol>,
-        payload: &v1::framing::StratumResult,
+        payload: &v1::rpc::StratumResult,
     ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_subscribe_result() msg.id={:?} state={:?} payload:{:?}",
@@ -402,7 +402,7 @@ impl V2ToV1Translation {
     fn handle_authorize_result(
         &mut self,
         msg: &ii_wire::Message<v1::Protocol>,
-        payload: &v1::framing::StratumResult,
+        payload: &v1::rpc::StratumResult,
     ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_authorize_result() msg.id={:?} state={:?} payload:{:?}",
@@ -442,7 +442,7 @@ impl V2ToV1Translation {
     fn handle_authorize_or_subscribe_error(
         &mut self,
         msg: &ii_wire::Message<v1::Protocol>,
-        payload: &v1::framing::StratumError,
+        payload: &v1::rpc::StratumError,
     ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_authorize_or_subscribe_error() msg.id={:?} state={:?} payload:{:?}",
@@ -467,7 +467,7 @@ impl V2ToV1Translation {
     fn handle_submit_result(
         &mut self,
         msg: &ii_wire::Message<v1::Protocol>,
-        payload: &v1::framing::StratumResult,
+        payload: &v1::rpc::StratumResult,
     ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_submit_result() msg.id={:?} state={:?} payload:{:?}",
@@ -511,7 +511,7 @@ impl V2ToV1Translation {
     fn handle_submit_error(
         &mut self,
         msg: &ii_wire::Message<v1::Protocol>,
-        payload: &v1::framing::StratumError,
+        payload: &v1::rpc::StratumError,
     ) -> ii_stratum::error::Result<()> {
         trace!(
             "handle_submit_error() msg.id={:?} state={:?} payload:{:?}",
@@ -714,7 +714,7 @@ impl v1::Handler for V2ToV1Translation {
     async fn visit_stratum_result(
         &mut self,
         msg: &ii_wire::Message<v1::Protocol>,
-        payload: &v1::framing::StratumResult,
+        payload: &v1::rpc::StratumResult,
     ) {
         trace!(
             "visit_stratum_result() msg.id={:?} state={:?} payload:{:?}",

@@ -21,17 +21,17 @@
 // contact us at opensource@braiins.com.
 
 use async_trait::async_trait;
+use bytes::BytesMut;
 use serde::Serialize;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 use std::str::FromStr;
 
+use ii_async_compat::bytes;
 use ii_logging::macros::*;
 
 use super::common::*;
-use crate::v1::framing::*;
-use crate::v1::messages::*;
-use crate::v1::{ExtraNonce1, Handler, HexBytes, Protocol};
+use crate::v1::{framing::*, messages::*, rpc::*, ExtraNonce1, Handler, HexBytes, Protocol};
 
 pub const MINING_CONFIGURE_REQ_JSON: &str = concat!(
     r#"{"id":0,"method":"mining.configure","#,
@@ -39,7 +39,7 @@ pub const MINING_CONFIGURE_REQ_JSON: &str = concat!(
     r#"{"version-rolling.mask":"1fffe000","version-rolling.min-bit-count":16}]}"#
 );
 
-pub fn build_configure_request_frame() -> Frame {
+pub fn build_configure_request() -> Rpc {
     build_request_message(Some(0), build_configure())
 }
 
@@ -62,7 +62,7 @@ pub const MINING_CONFIGURE_OK_RESP_JSON: &str = concat!(
     r#""version-rolling.mask":"1fffe000"}}"#
 );
 
-pub fn build_configure_ok_response_message() -> Frame {
+pub fn build_configure_ok_response_message() -> Rpc {
     let cfg: ConfigureResult =
         serde_json::from_str(r#"{"version-rolling":true,"version-rolling.mask":"1fffe000"}"#)
             .expect("configure_ok_response deserialization failed");
@@ -79,18 +79,18 @@ pub const MINING_SUBSCRIBE_REQ_JSON: &str = concat!(
 const EXTRA_NONCE_1: &str = "6c6f010000000c";
 const EXTRA_NONCE_2_SIZE: usize = 4;
 
-fn build_request_message<T>(id: Option<u32>, payload: T) -> Frame
+fn build_request_message<T>(id: Option<u32>, payload: T) -> Rpc
 where
     T: TryInto<RequestPayload> + std::fmt::Debug,
     <T as std::convert::TryInto<RequestPayload>>::Error: std::fmt::Debug,
 {
-    Frame::RpcRequest(Request {
+    Rpc::from(Request {
         id,
         payload: payload.try_into().expect("Cannot serialize request"),
     })
 }
 
-pub fn build_subscribe_request_frame() -> Frame {
+pub fn build_subscribe_request_frame() -> Rpc {
     build_request_message(Some(1), build_subscribe())
 }
 
@@ -118,8 +118,8 @@ pub const MINING_SUBSCRIBE_OK_RESULT_JSON: &str = concat!(
     r#""error":null}"#
 );
 
-fn build_result_response_message<T: Serialize>(id: u32, result: T) -> Frame {
-    Frame::RpcResponse(Response {
+fn build_result_response_message<T: Serialize>(id: u32, result: T) -> Rpc {
+    Rpc::Response(Response {
         id,
         payload: ResponsePayload {
             result: Some(
@@ -131,19 +131,19 @@ fn build_result_response_message<T: Serialize>(id: u32, result: T) -> Frame {
 }
 
 /// Special case for simple 'OK' response
-fn build_ok_response_message(id: u32) -> Frame {
+fn build_ok_response_message(id: u32) -> Rpc {
     build_result_response_message(id, BooleanResult(true))
 }
 
-pub fn build_subscribe_ok_response_frame() -> Frame {
+pub fn build_subscribe_ok_response_message() -> Rpc {
     build_result_response_message(1, build_subscribe_ok_result())
 }
 
-pub fn build_authorize_ok_response_message() -> Frame {
+pub fn build_authorize_ok_response_message() -> Rpc {
     build_ok_response_message(2)
 }
 
-pub fn build_mining_submit_ok_response_message() -> Frame {
+pub fn build_mining_submit_ok_response_message() -> Rpc {
     build_ok_response_message(3)
 }
 
@@ -170,20 +170,20 @@ pub fn build_stratum_error() -> StratumError {
     StratumError(20, "Other/Unknown".into(), None)
 }
 
-pub fn build_stratum_err_response_frame() -> Response {
-    Response {
+pub fn build_stratum_err_response() -> Rpc {
+    Rpc::from(Response {
         id: 1,
         payload: ResponsePayload {
             result: None,
             error: Some(build_stratum_error()),
         },
-    }
+    })
 }
 
 pub const MINING_SET_DIFFICULTY_JSON: &str =
     r#"{"id":null,"method":"mining.set_difficulty","params":[4.0]}"#;
 
-pub fn build_set_difficulty_request_message() -> Frame {
+pub fn build_set_difficulty_request_message() -> Rpc {
     build_request_message(None, build_set_difficulty())
 }
 
@@ -208,14 +208,14 @@ pub const MINING_NOTIFY_MERKLE_ROOT: &str =
 // Original merkle root (doesn't match)
 //    "a4eedd0736c8e5d316bbd77f683ce932e96f4cc8ac54159bdc8575903f0013f3";
 
-pub fn build_mining_notify_request_message() -> Frame {
+pub fn build_mining_notify_request_message() -> Rpc {
     build_request_message(None, build_mining_notify())
 }
 
 pub fn build_mining_notify() -> Notify {
-    let deserialized = Frame::from_str(MINING_NOTIFY_JSON).expect("Cannot parse mining job");
+    let deserialized = Rpc::from_str(MINING_NOTIFY_JSON).expect("Cannot parse mining job");
 
-    let notify = if let Frame::RpcRequest(req) = deserialized {
+    let notify = if let Rpc::Request(req) = deserialized {
         Notify::try_from(req).expect("Cannot build mining notify message")
     } else {
         panic!("Wrong notification message");
@@ -232,14 +232,14 @@ pub const MINING_SUBMIT_JSON: &str = concat!(
     r#"}"#
 );
 
-pub fn build_mining_submit_request_message() -> Frame {
+pub fn build_mining_submit_request_message() -> Rpc {
     build_request_message(None, build_mining_submit())
 }
 
 pub fn build_mining_submit() -> Submit {
-    let deserialized = Frame::from_str(MINING_SUBMIT_JSON).expect("Cannot parse mining job");
+    let deserialized = Rpc::from_str(MINING_SUBMIT_JSON).expect("Cannot parse mining job");
 
-    let submit = if let Frame::RpcRequest(req) = deserialized {
+    let submit = if let Rpc::Request(req) = deserialized {
         Submit::try_from(req).expect("Cannot build mining submit message")
     } else {
         panic!("Wrong notification message");
@@ -251,7 +251,7 @@ pub fn build_mining_submit() -> Submit {
 pub const MINING_AUTHORIZE_JSON: &str =
     r#"{"id":2,"method":"mining.authorize","params":["braiins.worker0",""]}"#;
 
-pub fn build_authorize_request_message() -> Frame {
+pub fn build_authorize_request_message() -> Rpc {
     build_request_message(Some(1), build_authorize())
 }
 
@@ -279,7 +279,7 @@ impl TestIdentityHandler {
         msg: &ii_wire::Message<Protocol>,
         payload: &P,
         build_payload: F,
-        full_message: Frame,
+        full_message: Rpc,
         json_message: &str,
     ) where
         P: Debug + PartialEq,
@@ -294,10 +294,17 @@ impl TestIdentityHandler {
         );
         assert_eq!(expected_payload, *payload, "Message payloads don't match");
 
-        let serialized_message: TxFrame = full_message.try_into().expect("Cannot serialize");
+        // Build frame from the provided Rpc message and use its serialization for test evaluation
+        let message_frame: Frame = full_message
+            .try_into()
+            .expect("Cannot build frame from Rpc");
+        let mut serialized_frame = BytesMut::new();
+        message_frame
+            .serialize(&mut serialized_frame)
+            .expect("Cannot serialize frame");
         assert_eq!(
             json_message,
-            std::str::from_utf8(&serialized_message)
+            std::str::from_utf8(&serialized_frame[..])
                 .expect("Can't convert serialized message to str"),
             "Serialized messages don't match"
         );

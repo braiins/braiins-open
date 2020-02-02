@@ -23,12 +23,14 @@
 pub mod error;
 pub mod framing;
 pub mod messages;
+pub mod rpc;
 
+use self::error::ErrorKind;
+pub use self::framing::codec::Codec;
+pub use self::framing::{Frame, Framing};
+use self::rpc::*;
 use crate::error::{Result, ResultExt};
-use crate::v1::error::ErrorKind;
 
-use crate::v1::framing::Frame;
-use crate::v1::framing::Method;
 
 use async_trait::async_trait;
 use bitcoin_hashes::hex::{FromHex, ToHex};
@@ -37,13 +39,9 @@ use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::mem::size_of;
-use std::str::FromStr;
 
 use ii_logging::macros::*;
 use ii_wire::{self, Message, Payload};
-
-pub use self::framing::codec::{Codec, Framing};
-pub use self::framing::TxFrame;
 
 pub struct Protocol;
 impl ii_wire::Protocol for Protocol {
@@ -57,14 +55,14 @@ pub trait Handler: 'static + Send {
     async fn visit_stratum_result(
         &mut self,
         _msg: &Message<Protocol>,
-        _payload: &framing::StratumResult,
+        _payload: &rpc::StratumResult,
     ) {
     }
     /// Handles the error part of the response
     async fn visit_stratum_error(
         &mut self,
         _msg: &Message<Protocol>,
-        _payload: &framing::StratumError,
+        _payload: &rpc::StratumError,
     ) {
     }
 
@@ -94,12 +92,12 @@ pub trait Handler: 'static + Send {
 }
 
 /// TODO: deserialization should be done from &[u8] so that it is consistent with V2
-pub fn deserialize_message(src: &str) -> Result<Message<Protocol>> {
-    let deserialized = framing::Frame::from_str(src)?;
+pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protocol>> {
+    let rpc = Rpc::try_from(frame)?;
 
-    trace!("V1: Deserialized V1 message payload: {:?}", deserialized);
-    let (id, payload) = match deserialized {
-        Frame::RpcRequest(request) => match request.payload.method {
+    trace!("V1: Deserialized V1 message payload: {:?}", rpc);
+    let (id, payload) = match rpc {
+        Rpc::Request(request) => match request.payload.method {
             Method::Configure => (
                 request.id,
                 Ok(Box::new(messages::Configure::try_from(request)?) as Box<dyn Payload<Protocol>>),
@@ -137,7 +135,7 @@ pub fn deserialize_message(src: &str) -> Result<Message<Protocol>> {
         },
         // This is not ideal implementation as we clone() the result or error parts of the response.
         // Note, however, the unwrap() is safe as the error/result are 'Some'
-        Frame::RpcResponse(response) => {
+        Rpc::Response(response) => {
             let msg = if response.payload.error.is_some() {
                 Ok(Box::new(response.payload.error.unwrap().clone()) as Box<dyn Payload<Protocol>>)
             } else if response.payload.result.is_some() {
@@ -357,8 +355,9 @@ impl Into<String> for HexU32Be {
 mod test {
     use super::*;
     use crate::test_utils::v1::*;
+    use bytes::BytesMut;
 
-    use ii_async_compat::tokio;
+    use ii_async_compat::{bytes, tokio};
 
     /// Test traits that will be used by serded for HexBytes when converting from/to string
     #[test]
@@ -399,22 +398,23 @@ mod test {
         )
     }
 
-    /// This test demonstrates an actual implementation of protocol handler (aka visitor to a set of
-    /// desired messsages
+    /// This test demonstrates an actual implementation of protocol handler for a set of
+    /// messsages
     #[tokio::test]
-    async fn test_deserialize_serialize_request_message() {
-        for req in V1_TEST_REQUESTS.iter() {
-            let msg = deserialize_message(req).expect("Deserialization failed");
+    async fn test_build_message_from_frame() {
+        for &req in V1_TEST_REQUESTS.iter() {
+            let msg = build_message_from_frame(Frame::from_serialized_payload(BytesMut::from(req)))
+                .expect("Deserialization failed");
             msg.accept(&mut TestIdentityHandler).await;
         }
     }
 
     #[tokio::test]
     async fn test_deserialize_response_message() {
-        let msg =
-            deserialize_message(MINING_SUBSCRIBE_OK_RESULT_JSON).expect("Deserialization failed");
-        msg.accept(&mut TestIdentityHandler).await;
-        // TODO also perform serialization and check the output matches
+        let _msg = build_message_from_frame(Frame::from_serialized_payload(BytesMut::from(
+            MINING_SUBSCRIBE_OK_RESULT_JSON,
+        )))
+        .expect("Deserialization failed");
     }
 
     // add also a separate stratum error test as per above response

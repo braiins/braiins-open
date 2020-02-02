@@ -27,20 +27,20 @@ use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 
 use super::error::ErrorKind;
-use super::framing;
 use super::{ExtraNonce1, Handler, Protocol};
 use crate::error::{Result, ResultExt};
-use crate::v1::framing::Method;
+use crate::v1::rpc::{self, Method};
 use crate::v1::{HexBytes, HexU32Be, PrevHash};
 
 #[cfg(test)]
 pub mod test;
 
+/// Generates implementation of conversions for various protocol request messages
 macro_rules! impl_conversion_request {
     ($request:tt, $method:path, $handler_fn:tt) => {
         // NOTE: $request and $handler_fn need to be tt because of https://github.com/dtolnay/async-trait/issues/46
 
-        impl TryFrom<$request> for framing::RequestPayload {
+        impl TryFrom<$request> for rpc::RequestPayload {
             type Error = crate::error::Error;
 
             fn try_from(msg: $request) -> Result<Self> {
@@ -53,10 +53,10 @@ macro_rules! impl_conversion_request {
             }
         }
 
-        impl TryFrom<framing::Request> for $request {
+        impl TryFrom<rpc::Request> for $request {
             type Error = crate::error::Error;
 
-            fn try_from(req: framing::Request) -> std::result::Result<Self, Self::Error> {
+            fn try_from(req: rpc::Request) -> std::result::Result<Self, Self::Error> {
                 // Invariant: it's caller's responsibility to ensure not to pass wrong request
                 // for conversion
                 assert_eq!(req.payload.method, $method);
@@ -76,25 +76,25 @@ macro_rules! impl_conversion_request {
 
 macro_rules! impl_conversion_response {
     ($response:ty) => {
-        impl TryFrom<$response> for framing::ResponsePayload {
+        impl TryFrom<$response> for rpc::ResponsePayload {
             type Error = crate::error::Error;
 
-            fn try_from(resp: $response) -> Result<framing::ResponsePayload> {
-                let result = framing::StratumResult(
+            fn try_from(resp: $response) -> Result<rpc::ResponsePayload> {
+                let result = rpc::StratumResult(
                     serde_json::to_value(resp).context("Cannot parse response")?,
                 );
 
-                Ok(framing::ResponsePayload {
+                Ok(rpc::ResponsePayload {
                     result: Some(result),
                     error: None,
                 })
             }
         }
 
-        impl TryFrom<framing::Response> for $response {
+        impl TryFrom<rpc::Response> for $response {
             type Error = crate::error::Error;
 
-            fn try_from(resp: framing::Response) -> Result<Self> {
+            fn try_from(resp: rpc::Response) -> Result<Self> {
                 let result = resp
                     .payload
                     .result
@@ -103,10 +103,10 @@ macro_rules! impl_conversion_response {
             }
         }
 
-        impl TryFrom<&framing::StratumResult> for $response {
+        impl TryFrom<&rpc::StratumResult> for $response {
             type Error = crate::error::Error;
 
-            fn try_from(result: &framing::StratumResult) -> Result<Self> {
+            fn try_from(result: &rpc::StratumResult) -> Result<Self> {
                 // TODO this is needs to be fixed within the deserialization stack with regards
                 // to the visitor pattern. We shouldn't clone any part of the incoming message
                 // However, since the result is being passed by reference

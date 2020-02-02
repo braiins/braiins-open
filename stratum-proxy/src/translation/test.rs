@@ -29,7 +29,7 @@ use ii_stratum::test_utils;
 use ii_stratum::v1;
 use ii_stratum::v2;
 
-/// Simulates incoming message by converting it into a TxFrame and running the deserialization
+/// Simulates incoming message by converting it into a `Frame` and running the deserialization
 /// chain from that point on
 async fn v2_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
 where
@@ -44,15 +44,12 @@ where
 
 async fn v1_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
 where
-    M: TryInto<v1::TxFrame, Error = ii_stratum::error::Error>,
+    M: TryInto<v1::Frame, Error = ii_stratum::error::Error>,
 {
     // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait) as if it arrived to translation
-    let frame: v1::TxFrame = message.try_into().expect("Could not serialize message");
+    let frame: v1::Frame = message.try_into().expect("Deserialization failed");
 
-    let msg = v1::deserialize_message(
-        std::str::from_utf8(&frame).expect("Cannot convert frame to utf-8 str"),
-    )
-    .expect("Deserialization failed");
+    let msg = v1::build_message_from_frame(frame).expect("Deserialization failed");
     msg.accept(translation).await;
 }
 
@@ -72,7 +69,7 @@ async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<v2::Fra
 }
 
 //fn verify_message_from_frame<F, T, P: ProtocolBase, H>(
-//    frame: TxFrame,
+//    frame: Frame,
 //    deserialize_message: F,
 //    &mut handler: P::Handler,
 //) where
@@ -83,15 +80,12 @@ async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<v2::Fra
 //    message.accept(handler);
 //}
 
-async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<v1::TxFrame>) {
+async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<v1::Frame>) {
     // Pickup the response and verify it
     // TODO add timeout
     let frame = v1_rx.next().await.expect("At least 1 message was expected");
 
-    let msg = v1::deserialize_message(
-        std::str::from_utf8(&frame).expect("Cannot convert frame to utf-8 str"),
-    )
-    .expect("Deserialization failed");
+    let msg = v1::build_message_from_frame(frame).expect("Deserialization failed");
     msg.accept(&mut test_utils::v1::TestIdentityHandler).await;
 }
 
@@ -123,7 +117,7 @@ async fn test_setup_connection_translate() {
     // Subscribe response
     v1_simulate_incoming_message(
         &mut translation,
-        test_utils::v1::build_subscribe_ok_response_frame(),
+        test_utils::v1::build_subscribe_ok_response_message(),
     )
     .await;
     // Authorize response

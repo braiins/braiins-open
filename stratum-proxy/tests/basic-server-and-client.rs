@@ -77,9 +77,8 @@ async fn test_v2server() {
         .expect("Could not send message");
 
     let response_frame = connection.next().await.unwrap().unwrap();
-    let response = v2::build_message_from_frame(response_frame).expect(
-        "Failed to build response message from frame",
-    );
+    let response = v2::build_message_from_frame(response_frame)
+        .expect("Failed to build response message from frame");
     response
         .accept(&mut test_utils::v2::TestIdentityHandler)
         .await;
@@ -91,7 +90,7 @@ async fn test_v2server() {
 //    F: ii_wire::Framing,
 //    P: ii_wire::ProtocolBase,
 //    <F as ii_wire::Framing>::Error: std::fmt::Debug,
-//    <F as ii_wire::Framing>::Tx: std::convert::From<ii_wire::TxFrame>,
+//    <F as ii_wire::Framing>::Tx: std::convert::From<ii_wire::Frame>,
 //    <F as ii_wire::Framing>::Rx:
 //{
 //    ii_async_compat::run(
@@ -109,7 +108,7 @@ async fn test_v2server() {
 //                msg.accept(server_handler);
 //
 //                // test response frame
-//                let response: TxFrame =
+//                let response: Frame =
 //                    RpcResponse(test_utils::v1::build_subscribe_ok_rpc_response())
 //                        .try_into()
 //                        .expect("Cannot serialize response");
@@ -138,13 +137,15 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
         while let Some(conn) = server.next().await {
             let mut conn = conn.unwrap();
 
-            while let Some(msg) = conn.next().await {
-                let msg: ii_wire::Message<v1::Protocol> = msg.unwrap();
+            while let Some(frame) = conn.next().await {
+                let frame = frame.expect("Receiving frame failed");
+                let msg: ii_wire::Message<v1::Protocol> =
+                    v1::build_message_from_frame(frame).expect("Cannot deserialize frame");
                 // test handler verifies that the message
                 msg.accept(&mut test_utils::v1::TestIdentityHandler).await;
 
                 // test response frame
-                let response = test_utils::v1::build_subscribe_ok_response_frame();
+                let response = test_utils::v1::build_subscribe_ok_response_message();
                 conn.send_msg(response)
                     .await
                     .expect("Could not send response");
@@ -175,7 +176,8 @@ async fn test_v1server() {
         .await
         .expect("Could not send request");
 
-    let response = connection.next().await.unwrap().unwrap();
+    let response_frame = connection.next().await.unwrap().unwrap();
+    let response = v1::build_message_from_frame(response_frame).expect("Cannot deserialize frame");
     response
         .accept(&mut test_utils::v1::TestIdentityHandler)
         .await;

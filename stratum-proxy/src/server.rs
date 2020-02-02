@@ -45,7 +45,7 @@ struct ConnTranslation {
     // TODO to be removed as the translator may send out items directly via a particular connection
     // (when treated as a sink)
     /// Frames from the translator to be sent out via V1 connection
-    v1_translation_rx: mpsc::Receiver<v1::TxFrame>,
+    v1_translation_rx: mpsc::Receiver<v1::Frame>,
     /// Downstream connection
     v2_conn: Connection<v2::Framing>,
     /// Frames from the translator to be sent out via V2 connection
@@ -103,7 +103,15 @@ impl ConnTranslation {
             let v1_or_v2 = future::select(v1_conn_rx.next(), v2_conn_rx.next()).await;
             match v1_or_v2 {
                 // Ok path
-                Either::Left((Some(Ok(v1_msg)), _)) => v1_msg.accept(&mut self.translation).await,
+                Either::Left((Some(Ok(v1_frame)), _)) => {
+                    match v1::build_message_from_frame(v1_frame) {
+                        Ok(v1_msg) => v1_msg.accept(&mut self.translation).await,
+                        Err(err) => {
+                            error!("Cannot build V1 message from frame: {}", err);
+                            break;
+                        }
+                    }
+                }
                 Either::Right((Some(Ok(v2_frame)), _)) => {
                     match v2::build_message_from_frame(v2_frame) {
                         Ok(v2_msg) => v2_msg.accept(&mut self.translation).await,

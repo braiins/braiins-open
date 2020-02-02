@@ -20,46 +20,48 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use std::str;
-
 use ii_async_compat::{bytes, tokio_util};
 
-use bytes::BytesMut;
+use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder, LinesCodec};
 
-use ii_wire::{self, Message};
+use ii_wire;
 
-use super::TxFrame;
+use super::Frame;
 use crate::error::Error;
-use crate::v1::{deserialize_message, Protocol};
 
 // FIXME: check bytesmut capacity when encoding (use BytesMut::remaining_mut())
 
+/// TODO consider generalizing the codec
 #[derive(Debug)]
 pub struct Codec(LinesCodec);
 
 impl Decoder for Codec {
-    type Item = Message<Protocol>;
+    type Item = Frame;
     type Error = Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let line = self.0.decode(src)?;
-        match line {
-            Some(line) => deserialize_message(&line).map(Some),
-            None => Ok(None),
-        }
+        let frame_str = self.0.decode(src)?;
+        let mut bytes = match frame_str {
+            // Note, creating `BytesMut` instance this way creates another copy of the incoming
+            // data. We would have to implement a custom decode that would buffer the data
+            // directly in 1BytesMut`
+            // this copies the frame into the
+            Some(frame_str) => BytesMut::from(frame_str.as_bytes()),
+            None => return Ok(None),
+        };
+        Frame::deserialize(&mut bytes).map(Some)
     }
 }
 
 impl Encoder for Codec {
-    type Item = TxFrame;
+    type Item = Frame;
     type Error = Error;
 
     fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let data: &Box<[u8]> = &item;
-        self.0
-            .encode(str::from_utf8(data)?.to_string(), dst)
-            .map_err(Into::into)
+        item.serialize(dst)?;
+        dst.put_u8(b'\n');
+        Ok(())
     }
 }
 
@@ -74,8 +76,8 @@ impl Default for Codec {
 pub struct Framing;
 
 impl ii_wire::Framing for Framing {
-    type Tx = TxFrame;
-    type Rx = Message<Protocol>;
+    type Tx = Frame;
+    type Rx = Frame;
     type Error = Error;
     type Codec = Codec;
 }
