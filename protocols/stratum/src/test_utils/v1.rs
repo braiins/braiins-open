@@ -297,15 +297,15 @@ impl TestIdentityHandler {
         // Build frame from the provided Rpc message and use its serialization for test evaluation
         let message_frame: Frame = full_message
             .try_into()
-            .expect("Cannot build frame from Rpc");
+            .expect("BUG: Cannot build frame from Rpc");
         let mut serialized_frame = BytesMut::new();
         message_frame
             .serialize(&mut serialized_frame)
-            .expect("Cannot serialize frame");
+            .expect("BUG: Cannot serialize frame");
         assert_eq!(
             json_message,
             std::str::from_utf8(&serialized_frame[..])
-                .expect("Can't convert serialized message to str"),
+                .expect("BUG: Can't convert serialized message to str"),
             "Serialized messages don't match"
         );
     }
