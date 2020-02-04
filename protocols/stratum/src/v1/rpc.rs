@@ -230,7 +230,7 @@ mod test {
 
     #[test]
     fn test_deserialize_serialize_request() {
-        for &req in V1_TEST_REQUESTS.iter() {
+        for &req in V1_TEST_REQUESTS {
             let deserialized_request = Rpc::try_from(req.as_bytes()).unwrap();
 
             let request_frame: framing::Frame = deserialized_request

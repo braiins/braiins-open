@@ -401,7 +401,7 @@ mod test {
     /// messsages
     #[tokio::test]
     async fn test_build_message_from_frame() {
-        for &req in V1_TEST_REQUESTS.iter() {
+        for &req in V1_TEST_REQUESTS {
             let msg = build_message_from_frame(Frame::from_serialized_payload(BytesMut::from(req)))
                 .expect("Deserialization failed");
             msg.accept(&mut TestIdentityHandler).await;
