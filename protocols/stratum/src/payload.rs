@@ -36,7 +36,12 @@ pub trait SerializablePayload: Send + Sync {
 }
 
 /// Frame payload that either consists of a series of bytes or a dynamic payload that can be
-/// serialized on demand
+/// serialized on demand.
+///
+/// NOTE: The dynamic payload is currently not intentionally cached when being physically
+/// serialized via `Payload::to_bytes_mut()` as the case of repeatedly serializing the same frame is
+/// rather rare.
+/// Should this become a performance issue, we can wrap it into `once_cell::{un,}sync::Lazy`.
 pub enum Payload {
     SerializedBytes(BytesMut),
     LazyBytes(Box<dyn SerializablePayload>),
