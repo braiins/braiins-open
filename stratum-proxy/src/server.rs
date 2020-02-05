@@ -79,8 +79,8 @@ impl ConnTranslation {
 
         // V1 message send out loop
         let v1_send_task = async move {
-            while let Some(msg) = v1_translation_rx.next().await {
-                if let Err(err) = v1_conn_tx.send(msg).await {
+            while let Some(frame) = v1_translation_rx.next().await {
+                if let Err(err) = v1_conn_tx.send(frame).await {
                     error!("V1 connection failed: {}", err);
                     break;
                 }
@@ -90,8 +90,8 @@ impl ConnTranslation {
 
         // V2 message send out loop
         let v2_send_task = async move {
-            while let Some(msg) = v2_translation_rx.next().await {
-                if let Err(err) = v2_conn_tx.send(msg).await {
+            while let Some(frame) = v2_translation_rx.next().await {
+                if let Err(err) = v2_conn_tx.send(frame).await {
                     error!("V2 connection failed: {}", err);
                     break;
                 }

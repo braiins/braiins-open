@@ -176,8 +176,10 @@ impl V2ToV1Translation {
         E: fmt::Debug,
         T: TryInto<F, Error = E>,
     {
-        let msg = msg.try_into().expect("Could not serialize message");
-        tx.try_send(msg).expect("Cannot send message")
+        let frame = msg
+            .try_into()
+            .expect("BUG: Could convert the message to frame");
+        tx.try_send(frame).expect("TODO: Cannot send message");
     }
 
     /// Builds a V1 request from V1 method and assigns a unique identifier to it
