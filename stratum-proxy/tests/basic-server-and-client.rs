@@ -27,6 +27,7 @@
 //! NOTE: currently this test must be run with --nocapture flag as there is no reasonable way of
 //! communicating any failures/panics to the test harness.
 
+use std::convert::TryInto;
 use std::net::SocketAddr;
 
 use ii_async_compat::prelude::*;
@@ -62,9 +63,13 @@ async fn test_v2server() {
         msg.accept(&mut test_utils::v2::TestIdentityHandler).await;
 
         // test response frame
-        conn.send_msg(test_utils::v2::build_setup_connection_success())
-            .await
-            .expect("Could not send message");
+        conn.send(
+            test_utils::v2::build_setup_connection_success()
+                .try_into()
+                .expect("BUG: Cannot convert to frame"),
+        )
+        .await
+        .expect("BUG: Could not send message");
     });
 
     // Testing client
@@ -72,9 +77,13 @@ async fn test_v2server() {
         .await
         .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
     connection
-        .send_msg(test_utils::v2::build_setup_connection())
+        .send(
+            test_utils::v2::build_setup_connection()
+                .try_into()
+                .expect("BUG: Cannot convert to frame"),
+        )
         .await
-        .expect("Could not send message");
+        .expect("BUG: Could not send message");
 
     let response_frame = connection.next().await.unwrap().unwrap();
     let response = v2::build_message_from_frame(response_frame)
@@ -146,9 +155,9 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
 
                 // test response frame
                 let response = test_utils::v1::build_subscribe_ok_response_message();
-                conn.send_msg(response)
+                conn.send(response.try_into().expect("BUG: Cannot convert to frame"))
                     .await
-                    .expect("Could not send response");
+                    .expect("BUG: Could not send response");
             }
         }
     }
@@ -172,9 +181,9 @@ async fn test_v1server() {
 
     let request = test_utils::v1::build_subscribe_request_frame();
     connection
-        .send_msg(request)
+        .send(request.try_into().expect("BUG: Cannot convert to frame"))
         .await
-        .expect("Could not send request");
+        .expect("BUG: Could not send request");
 
     let response_frame = connection.next().await.unwrap().unwrap();
     let response = v1::build_message_from_frame(response_frame).expect("Cannot deserialize frame");
@@ -191,9 +200,13 @@ async fn test_v2_client(server_addr: String) {
             let mut conn = Connection::<v2::Framing>::connect(&sock_server_addr).await?;
 
             // Initialize server connection
-            conn.send_msg(test_utils::v2::build_setup_connection())
-                .await
-                .expect("Could not send message");
+            conn.send(
+                test_utils::v2::build_setup_connection()
+                    .try_into()
+                    .expect("BUG: Cannot convert to frame"),
+            )
+            .await
+            .expect("BUG: Could not send message");
 
             // let response = await!(conn.next()).unwrap().unwrap();
             // response.accept(&test_utils::v2::TestIdentityHandler);
