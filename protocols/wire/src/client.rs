@@ -51,12 +51,15 @@ struct DefaultBackoff {
 
 impl DefaultBackoff {
     pub fn new(unit: Duration, max: Duration) -> Self {
-        DefaultBackoff {
-            current: 1,
-            prev: 1,
+        let mut res = DefaultBackoff {
+            current: 0,
+            prev: 0,
             unit,
             max,
-        }
+        };
+
+        res.reset();
+        res
     }
 }
 
