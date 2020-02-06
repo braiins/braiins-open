@@ -111,17 +111,17 @@ pub struct AttemptError<F: Framing> {
     /// The instant when the first re-connection attempt was started after the connection broke.
     /// (You can use this to compute how long it has been in total since the connection broke
     /// by subtracting this from `Instant::now()`)
-    pub error_time: Instant,
+    pub start_time: Instant,
     /// The I/O error returned by the underlying `Connection`.
     pub error: F::Error,
 }
 
 impl<F: Framing> AttemptError<F> {
-    fn new(next_attempt_in: Duration, retries: u32, error_time: Instant, error: F::Error) -> Self {
+    fn new(next_attempt_in: Duration, retries: u32, start_time: Instant, error: F::Error) -> Self {
         Self {
             next_attempt_in,
             retries,
-            error_time,
+            start_time,
             error,
         }
     }
@@ -140,8 +140,8 @@ pub struct Client<F: Framing> {
     /// Number of connection retries, reset when connection is established
     retries: u32,
     /// Time of the first attempt, reset if the connection is established,
-    /// see AttemptError::error_time
-    error_time: Option<Instant>,
+    /// see AttemptError::start_time
+    start_time: Option<Instant>,
     _marker: PhantomData<&'static F>,
 }
 
@@ -160,7 +160,7 @@ impl<F: Framing> Client<F> {
             backoff: Box::new(backoff),
             next_delay: None,
             retries: 0,
-            error_time: None,
+            start_time: None,
             _marker: PhantomData,
         }
     }
@@ -174,7 +174,7 @@ impl<F: Framing> Client<F> {
     }
 
     pub async fn next(&mut self) -> Result<Connection<F>, AttemptError<F>> {
-        self.error_time.get_or_insert(Instant::now());
+        self.start_time.get_or_insert(Instant::now());
 
         if let Some((when, delay)) = self.next_delay.take() {
             let since_last_attempt = Instant::now().duration_since(when);
@@ -187,15 +187,15 @@ impl<F: Framing> Client<F> {
             Ok(conn) => {
                 self.backoff.reset();
                 self.retries = 0;
-                self.error_time = None;
+                self.start_time = None;
                 Ok(conn)
             }
             Err(err) => {
                 let backoff = self.backoff.next();
                 self.next_delay = Some((Instant::now(), backoff));
                 self.retries += 1;
-                let error_time = self.error_time.unwrap();
-                Err(AttemptError::new(backoff, self.retries, error_time, err))
+                let start_time = self.start_time.unwrap();
+                Err(AttemptError::new(backoff, self.retries, start_time, err))
             }
         }
     }
