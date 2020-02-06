@@ -20,19 +20,112 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use std::fmt::Debug;
+use std::fmt;
+use std::io;
 use std::marker::PhantomData;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs as StdToSocketAddrs};
+use std::str::FromStr;
 use std::time::{Duration, Instant};
+use std::vec;
 
 use ii_async_compat::prelude::*;
+use thiserror::Error;
 use tokio::time;
 
 use crate::Connection;
 use crate::Framing;
 
+#[derive(Error, PartialEq, Eq, Debug)]
+pub struct AddressParseError;
+
+impl fmt::Display for AddressParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Invalid endpoint address syntax (host:port)")
+    }
+}
+
+/// This is a tuple of a `String` holding a hostname/IP address
+/// and a port number. `Address` can be parsed from a string in the
+/// `"hostanem:port"` format using `from_str()` (from the `FromStr` trait).
+///
+/// `Address` does not and can not imeplement Tokio's asynchronous `ToSockAddrs` because `ToSockAddrs` is sealed in Tokio,
+/// instead, use the `as_ref()` method to get `(&str, u16)` which implements `tokio::net::ToSockAddrs`.
+/// `Address` does implement the synchronous `std::net::ToSockAddrs` though, which is useful for
+/// server sockets.
+///
+/// You can also use `connect()` to create a `Connection` directly.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Address(pub String, pub u16);
+
+impl Address {
+    /// Returns a `(&str, u16)` tuple, where the `&str` references the `String`.
+    /// This is used to pass `(&str, u16)` to connection methods which require `ToSockAddrs`.
+    pub fn as_ref(&self) -> (&str, u16) {
+        (self.0.as_str(), self.1)
+    }
+
+    /// Create a `Connection` with `F: Framing` connected to this address
+    pub async fn connect<F: Framing>(&self) -> Result<Connection<F>, F::Error> {
+        Connection::connect(self.as_ref()).await
+    }
+}
+
+impl StdToSocketAddrs for Address {
+    type Iter = vec::IntoIter<SocketAddr>;
+
+    fn to_socket_addrs(&self) -> io::Result<Self::Iter> {
+        self.as_ref().to_socket_addrs()
+    }
+}
+
+impl From<(String, u16)> for Address {
+    fn from(tuple: (String, u16)) -> Self {
+        Address(tuple.0, tuple.1)
+    }
+}
+
+impl<'a> From<(&'a str, u16)> for Address {
+    fn from(tuple: (&'a str, u16)) -> Self {
+        Address(tuple.0.to_string(), tuple.1)
+    }
+}
+
+impl From<Address> for (String, u16) {
+    fn from(addr: Address) -> Self {
+        (addr.0, addr.1)
+    }
+}
+
+impl<'a> From<&'a Address> for (&'a str, u16) {
+    fn from(addr: &'a Address) -> Self {
+        addr.as_ref()
+    }
+}
+
+impl FromStr for Address {
+    type Err = AddressParseError;
+
+    fn from_str(src: &str) -> Result<Self, AddressParseError> {
+        let col_pos = src.find(':').ok_or(AddressParseError)?;
+        if col_pos == 0 {
+            return Err(AddressParseError);
+        }
+
+        let port = u16::from_str(&src[col_pos + 1..]).map_err(|_| AddressParseError)?;
+        let host = src[..col_pos].to_string();
+
+        Ok(Address(host, port))
+    }
+}
+
+impl fmt::Display for Address {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.0, self.1)
+    }
+}
+
 /// Backoff generation for `ReConnection`.
-pub trait Backoff: Debug {
+pub trait Backoff: fmt::Debug {
     /// Called by `ReConnection` when next sleep duration is required.
     fn next(&mut self) -> Duration;
 
@@ -130,7 +223,7 @@ impl<F: Framing> AttemptError<F> {
 #[derive(Debug)]
 pub struct Client<F: Framing> {
     /// Server address to connect to
-    addr: SocketAddr,
+    addr: Address,
     /// Backoff strategy trait object
     backoff: Box<dyn Backoff>,
     /// When connection attempt fails, current time (Instant) and a backoff Duration
@@ -148,13 +241,16 @@ pub struct Client<F: Framing> {
 impl<F: Framing> Client<F> {
     /// Create a new `Client` that will connect to `addr` with
     /// the default backoff.
-    pub fn new(addr: SocketAddr) -> Self {
+    pub fn new(addr: Address) -> Self {
         Self::with_backoff(addr, DefaultBackoff::default())
     }
 
     /// Create a new `Client` that will connecto to `addr` with
     /// the supplied backoff.
-    pub fn with_backoff<B: Backoff + 'static>(addr: SocketAddr, backoff: B) -> Self {
+    pub fn with_backoff<B>(addr: Address, backoff: B) -> Self
+    where
+        B: Backoff + 'static,
+    {
         Self {
             addr,
             backoff: Box::new(backoff),
@@ -165,7 +261,7 @@ impl<F: Framing> Client<F> {
         }
     }
 
-    pub fn set_addr(&mut self, addr: SocketAddr) {
+    pub fn set_addr(&mut self, addr: Address) {
         self.addr = addr;
     }
 
@@ -183,7 +279,7 @@ impl<F: Framing> Client<F> {
             }
         }
 
-        match Connection::connect(&self.addr).await {
+        match self.addr.connect().await {
             Ok(conn) => {
                 self.backoff.reset();
                 self.retries = 0;
@@ -198,5 +294,28 @@ impl<F: Framing> Client<F> {
                 Err(AttemptError::new(backoff, self.retries, start_time, err))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wire_address_parsing() {
+        assert_eq!(
+            Address::from_str("localhost:443"),
+            Ok(Address("localhost".into(), 443))
+        );
+        assert_eq!(
+            Address::from_str("127.0.0.1:443"),
+            Ok(Address("127.0.0.1".into(), 443))
+        );
+
+        assert_eq!(Address::from_str("localhost:xxx"), Err(AddressParseError));
+        assert_eq!(Address::from_str("localhost"), Err(AddressParseError));
+        assert_eq!(Address::from_str("localhost:"), Err(AddressParseError));
+        assert_eq!(Address::from_str(":"), Err(AddressParseError));
+        assert_eq!(Address::from_str(":123"), Err(AddressParseError));
     }
 }

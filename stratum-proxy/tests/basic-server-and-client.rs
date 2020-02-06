@@ -37,20 +37,20 @@ use ii_stratum::test_utils;
 use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_stratum_proxy::server;
-use ii_wire::{Connection, Server};
+use ii_wire::{Address, Connection, Server};
 
 mod utils;
 
 static ADDR: &'static str = "127.0.0.1";
-static PORT_V1: usize = 9001;
-static PORT_V2: usize = 9002;
-static PORT_V2_FULL: usize = 9003;
+static PORT_V1: u16 = 9001;
+static PORT_V2: u16 = 9002;
+static PORT_V2_FULL: u16 = 9003;
 
 #[tokio::test]
 async fn test_v2server() {
     // FIXME: unwraps
 
-    let addr = format!("{}:{}", ADDR, PORT_V2).parse().unwrap();
+    let addr = Address(ADDR.into(), PORT_V2);
     let mut server = Server::<v2::Framing>::bind(&addr).unwrap();
 
     // Spawn server task that reacts to any incoming message and responds
@@ -73,7 +73,8 @@ async fn test_v2server() {
     });
 
     // Testing client
-    let mut connection = Connection::<v2::Framing>::connect(&addr)
+    let mut connection = addr
+        .connect::<v2::Framing>()
         .await
         .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
     connection
@@ -127,7 +128,7 @@ async fn test_v2server() {
 //
 //            // Testing client
 //            let mut connection =
-//                await!(Connection::<F>::connect(&addr)).expect("Could not connect");
+//                await!(Connection::<F>::connect(addr)).expect("Could not connect");
 //            let request: TxFrame = RpcRequest(test_utils::v1::build_subscribe_rpc_request())
 //                .try_into()
 //                .expect("Cannot serialize request frame");
@@ -192,12 +193,11 @@ async fn test_v1server() {
         .await;
 }
 
-async fn test_v2_client(server_addr: String) {
-    let sock_server_addr = server_addr.parse().expect("Invalid server address");
+async fn test_v2_client(server_addr: &Address) {
     // Test client for V2
     utils::backoff(50, 4, move || {
         async move {
-            let mut conn = Connection::<v2::Framing>::connect(&sock_server_addr).await?;
+            let mut conn = server_addr.connect::<v2::Framing>().await?;
 
             // Initialize server connection
             conn.send(
@@ -221,18 +221,18 @@ async fn test_v2_client(server_addr: String) {
 
 #[tokio::test]
 async fn test_v2server_full() {
+    // TODO: Remove the String addresses once proxy uses Address
     // This resolves to dbg.stratum.slushpool.com
     let addr_v1 = format!("{}:{}", "52.212.249.159", 3333);
-    //            let addr_v1 = format!("{}:{}", ADDR, PORT_V1);
-    //            tokio::spawn(v1server_task(addr_v1.parse().unwrap()));
+    let addr_v2_str = format!("{}:{}", ADDR, PORT_V2_FULL);
+    let addr_v2 = Address(ADDR.into(), PORT_V2_FULL);
 
-    let addr_v2 = format!("{}:{}", ADDR, PORT_V2_FULL);
     let v2server =
-        server::ProxyServer::listen(addr_v2.clone(), addr_v1).expect("Could not bind v2server");
+        server::ProxyServer::listen(addr_v2_str, addr_v1).expect("Could not bind v2server");
     let mut v2server_quit = v2server.quit_channel();
 
     tokio::spawn(v2server.run());
-    test_v2_client(addr_v2).await;
+    test_v2_client(&addr_v2).await;
 
     // Signal the server to shut down
     let _ = v2server_quit.try_send(());

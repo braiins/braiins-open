@@ -28,7 +28,7 @@ use std::task::{Context, Poll};
 
 use ii_async_compat::prelude::*;
 use pin_project::{pin_project, pinned_drop};
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 use crate::framing::Framing;
@@ -153,7 +153,7 @@ impl<F: Framing> Connection<F> {
 
     /// Connects to a remote address `addr` and creates two halves
     /// which perfom full message serialization / desrialization
-    pub async fn connect(addr: &SocketAddr) -> Result<Self, F::Error> {
+    pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self, F::Error> {
         let stream = TcpStream::connect(addr).await?;
         Ok(Connection::new(stream))
     }

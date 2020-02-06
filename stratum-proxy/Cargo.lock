@@ -489,6 +489,7 @@ dependencies = [
  "failure",
  "ii-async-compat",
  "pin-project",
+ "thiserror",
 ]
 
 [[package]]
@@ -1075,6 +1076,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d326610f408c7a4eb6f51c37c330e496b08506c9457c9d34287ecc38809fb060"
 dependencies = [
  "unicode-width",
+]
+
+[[package]]
+name = "thiserror"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc6b305ec0e323c7b6cfff6098a22516e0063d0bb7c3d88660a890217dca099a"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45ba8d810d9c48fc456b7ad54574e8bfb7c7918a57ad7a6e6a0985d7959e8597"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.2",
+ "syn 1.0.7",
 ]
 
 [[package]]

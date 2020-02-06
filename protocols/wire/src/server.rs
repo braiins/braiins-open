@@ -21,8 +21,8 @@
 // contact us at opensource@braiins.com.
 
 use std::marker::PhantomData;
-use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
+use std::net::ToSocketAddrs as StdToSocketAddrs;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -41,7 +41,7 @@ pub struct Server<F: Framing> {
 }
 
 impl<F: Framing> Server<F> {
-    pub fn bind(addr: &SocketAddr) -> Result<Server<F>, F::Error> {
+    pub fn bind<A: StdToSocketAddrs>(addr: A) -> Result<Server<F>, F::Error> {
         let tcp = StdTcpListener::bind(addr)?;
         let tcp = TcpListener::from_std(tcp)?;
 
