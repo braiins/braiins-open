@@ -41,6 +41,7 @@ pub trait Backoff: Debug {
     fn reset(&mut self);
 }
 
+/// Default `Backoff` implementation, based on the fibonacci sequence.
 #[derive(Debug)]
 struct DefaultBackoff {
     current: u32,
@@ -50,6 +51,12 @@ struct DefaultBackoff {
 }
 
 impl DefaultBackoff {
+    /// Constructor. As `DefaultBackoff` produces numbers of the fibonacci sequence,
+    /// each is multiplied by `unit` before being returned. In the `Default` implementation,
+    /// the `unit` is 100 ms. This generates backoff of 100, 100, 200, 300, 500, ... milliseconds.
+    ///
+    /// `max` is the maximum backoff ever returned (after multiplication by `unit`). In the `Default`
+    /// implementation this is 5 seconds.
     pub fn new(unit: Duration, max: Duration) -> Self {
         let mut res = DefaultBackoff {
             current: 0,
@@ -90,9 +97,13 @@ impl Default for DefaultBackoff {
     }
 }
 
+/// The error type returned when a connection attempt fails.
+///
+/// The structure holds a few items related to backoff state
+/// and the original connection error as defined by the `Framing` trait.
 pub struct AttemptError<F: Framing> {
-    /// Duration since the last attempt when `next()` will
-    /// perform another retry
+    /// Duration since the this (failed) till next time the `next()`
+    /// will at the soonest perform another connection attempt.
     pub next_attempt_in: Duration,
     /// Number of failed reconnection attempts, including this one,
     /// since the connection broke.
@@ -118,22 +129,30 @@ impl<F: Framing> AttemptError<F> {
 
 #[derive(Debug)]
 pub struct Client<F: Framing> {
+    /// Server address to connect to
     addr: SocketAddr,
+    /// Backoff strategy trait object
     backoff: Box<dyn Backoff>,
+    /// When connection attempt fails, current time (Instant) and a backoff Duration
+    /// are saved here, this is used by next() to compute delay time before attempting
+    /// connection when called next time.
     next_delay: Option<(Instant, Duration)>,
+    /// Number of connection retries, reset when connection is established
     retries: u32,
+    /// Time of the first attempt, reset if the connection is established,
+    /// see AttemptError::error_time
     error_time: Option<Instant>,
     _marker: PhantomData<&'static F>,
 }
 
 impl<F: Framing> Client<F> {
-    /// Create a new `ReConnection` that will connect to `addr` with
+    /// Create a new `Client` that will connect to `addr` with
     /// the default backoff.
     pub fn new(addr: SocketAddr) -> Self {
         Self::with_backoff(addr, DefaultBackoff::default())
     }
 
-    /// Create a new `ReConnection` that will connecto to `addr` with
+    /// Create a new `Client` that will connecto to `addr` with
     /// the supplied backoff.
     pub fn with_backoff<B: Backoff + 'static>(addr: SocketAddr, backoff: B) -> Self {
         Self {
