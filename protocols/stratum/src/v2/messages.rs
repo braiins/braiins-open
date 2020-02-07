@@ -34,7 +34,9 @@ use super::framing;
 #[cfg(not(feature = "v2json"))]
 use super::serialization;
 use super::types::*;
+use super::Protocol;
 use crate::error::{Error, Result};
+use crate::AnyPayload;
 #[cfg(feature = "v2json")]
 use serde_json as serialization;
 
@@ -60,13 +62,6 @@ macro_rules! impl_conversion {
             }
         }
 
-        /// Each message is a `SerializablePayload` object that can be serialized into `writer`
-        impl crate::payload::SerializablePayload for $message {
-            fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
-                serialization::to_writer(writer, self).map_err(Into::into)
-            }
-        }
-
         impl TryFrom<&[u8]> for $message {
             type Error = Error;
 
@@ -85,15 +80,20 @@ macro_rules! impl_conversion {
             }
         }
 
-        //  specific protocol implementation
+        /// Each message is a `AnyPayload/SerializablePayload` object that can be serialized into
+        /// `writer`
         #[async_trait]
-        impl ii_wire::Payload<super::Protocol> for $message {
+        impl AnyPayload<Protocol> for $message {
             async fn accept(
                 &self,
-                msg: &ii_wire::Message<super::Protocol>,
-                handler: &mut <super::Protocol as ii_wire::Protocol>::Handler,
+                header: &<Protocol as crate::Protocol>::Header,
+                handler: &mut <Protocol as crate::Protocol>::Handler,
             ) {
-                handler.$handler_fn(msg, self).await;
+                handler.$handler_fn(header, self).await;
+            }
+
+            fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
+                serialization::to_writer(writer, self).map_err(Into::into)
             }
         }
     };

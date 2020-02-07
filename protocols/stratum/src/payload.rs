@@ -28,12 +28,15 @@ use std::fmt;
 use ii_async_compat::bytes;
 
 use crate::error::{Result, ResultExt};
+use crate::Protocol;
 
-/// This trait allows lazy serialization of a frame payload
-pub trait SerializablePayload: Send + Sync {
-    /// The payload is serialized to a specified `writer`
-    fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()>;
-}
+pub use crate::AnyPayload as SerializablePayload;
+
+///// This trait allows lazy serialization of a frame payload
+//pub trait SerializablePayload: Send + Sync {
+//    /// The payload is serialized to a specified `writer`
+//    fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()>;
+//}
 
 /// Frame payload that either consists of a series of bytes or a dynamic payload that can be
 /// serialized on demand.
@@ -42,15 +45,17 @@ pub trait SerializablePayload: Send + Sync {
 /// serialized via `Payload::to_bytes_mut()` as the case of repeatedly serializing the same frame is
 /// rather rare.
 /// Should this become a performance issue, we can wrap it into `once_cell::{un,}sync::Lazy`.
-pub enum Payload {
+///
+/// TODO: consider splitting this into 2 structs - one for SerializedBytes and one for LazyBytes
+pub enum Payload<P> {
     SerializedBytes(BytesMut),
-    LazyBytes(Box<dyn SerializablePayload>),
+    LazyBytes(Box<dyn SerializablePayload<P>>),
 }
 
-impl Payload {
+impl<P: Protocol> Payload<P> {
     /// Helper associated method that converts `serializable_payload` to `BytesMut`
     fn serializable_payload_to_bytes_mut(
-        payload: &Box<dyn SerializablePayload>,
+        payload: &Box<dyn SerializablePayload<P>>,
     ) -> Result<BytesMut> {
         // TODO: use some default capacity
         let payload_bytes = BytesMut::new();
@@ -59,8 +64,9 @@ impl Payload {
         Ok(writer.into_inner())
     }
 
-    /// Checks whether the payload contains already a deserialized object.
-    pub fn is_deserialized_message(&self) -> bool {
+    /// Checks whether the payload contains already a deserialized object (= the payload is
+    /// serializable).
+    pub fn is_serializable(&self) -> bool {
         match self {
             Self::LazyBytes(_) => true,
             Self::SerializedBytes(_) => false,
@@ -68,7 +74,7 @@ impl Payload {
     }
 
     /// Consumes the payload and provides the serializable inner variant of the payload or None
-    pub fn into_message(self) -> Option<Box<dyn SerializablePayload<P>>> {
+    pub fn into_serializable(self) -> Option<Box<dyn SerializablePayload<P>>> {
         match self {
             Self::SerializedBytes(_) => None,
             Self::LazyBytes(payload) => Some(payload),
@@ -115,7 +121,7 @@ impl Payload {
 /// cover both variants of the Payload. The advantage of this uniform approach is that we can
 /// compare Payloads created under different circumstances (`SerializedBytes` or `LazyBytes`
 /// variants).
-impl PartialEq for Payload {
+impl<P: Protocol> PartialEq for Payload<P> {
     fn eq(&self, other: &Self) -> bool {
         // We have to successfully unwrap both conversion results before proceeding with comparison.
         // Any error results in indicating a mismatch
@@ -131,13 +137,24 @@ impl PartialEq for Payload {
     }
 }
 
-impl From<BytesMut> for Payload {
+impl<P: Protocol> From<BytesMut> for Payload<P> {
     fn from(payload: BytesMut) -> Self {
         Self::SerializedBytes(payload)
     }
 }
 
-impl fmt::Debug for Payload {
+/// TODO: currently doesn't compile due to conflict with core implementation
+///  `impl<T> std::convert::From<T> for T;`
+//impl<P: Protocol, T> From<T> for Payload<P>
+//where
+//    T: SerializablePayload<P>,
+//{
+//    fn from(payload: T) -> Self {
+//        Self::LazyBytes(Box::new(payload))
+//    }
+//}
+
+impl<P: Protocol> fmt::Debug for Payload<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::SerializedBytes(payload) => write!(f, "S{:x?}", payload.to_vec()),

@@ -30,6 +30,7 @@ pub use self::framing::codec::Codec;
 pub use self::framing::{Frame, Framing};
 use self::rpc::*;
 use crate::error::{Result, ResultExt};
+use crate::{AnyPayload, Message};
 
 use async_trait::async_trait;
 use bitcoin_hashes::hex::{FromHex, ToHex};
@@ -40,118 +41,104 @@ use std::convert::TryFrom;
 use std::mem::size_of;
 
 use ii_logging::macros::*;
-use ii_wire::{self, Message, Payload};
 
+/// Message Id is used for pairing request/response messages
+/// TODO spread this type across the protocol and eliminate the `Option<u32>`
+pub type MessageId = Option<u32>;
+
+/// Protocol associates a custom handler with it
 pub struct Protocol;
-impl ii_wire::Protocol for Protocol {
+impl crate::Protocol for Protocol {
     type Handler = dyn Handler;
+    /// Simplified protocol 'header' really contains only an optional message ID
+    type Header = MessageId;
 }
 
 /// Specifies all messages to be visited
 #[async_trait]
 pub trait Handler: 'static + Send {
     /// Handles the result part of the response
-    async fn visit_stratum_result(
-        &mut self,
-        _msg: &Message<Protocol>,
-        _payload: &rpc::StratumResult,
-    ) {
-    }
+    async fn visit_stratum_result(&mut self, _id: &MessageId, _payload: &rpc::StratumResult) {}
     /// Handles the error part of the response
-    async fn visit_stratum_error(
-        &mut self,
-        _msg: &Message<Protocol>,
-        _payload: &rpc::StratumError,
-    ) {
-    }
+    async fn visit_stratum_error(&mut self, _id: &MessageId, _payload: &rpc::StratumError) {}
 
-    async fn visit_configure(&mut self, _msg: &Message<Protocol>, _payload: &messages::Configure) {}
+    async fn visit_configure(&mut self, _id: &MessageId, _payload: &messages::Configure) {}
 
-    async fn visit_subscribe(&mut self, _msg: &Message<Protocol>, _payload: &messages::Subscribe) {}
+    async fn visit_subscribe(&mut self, _id: &MessageId, _payload: &messages::Subscribe) {}
 
-    async fn visit_authorize(&mut self, _msg: &Message<Protocol>, _payload: &messages::Authorize) {}
+    async fn visit_authorize(&mut self, _id: &MessageId, _payload: &messages::Authorize) {}
 
-    async fn visit_set_difficulty(
-        &mut self,
-        _msg: &Message<Protocol>,
-        _payload: &messages::SetDifficulty,
-    ) {
-    }
+    async fn visit_set_difficulty(&mut self, _id: &MessageId, _payload: &messages::SetDifficulty) {}
 
-    async fn visit_notify(&mut self, _msg: &Message<Protocol>, _payload: &messages::Notify) {}
+    async fn visit_notify(&mut self, _id: &MessageId, _payload: &messages::Notify) {}
 
     async fn visit_set_version_mask(
         &mut self,
-        _msg: &Message<Protocol>,
+        _id: &MessageId,
         _payload: &messages::SetVersionMask,
     ) {
     }
 
-    async fn visit_submit(&mut self, _msg: &Message<Protocol>, _payload: &messages::Submit) {}
+    async fn visit_submit(&mut self, _id: &MessageId, _payload: &messages::Submit) {}
 }
 
-/// TODO: deserialization should be done from &[u8] so that it is consistent with V2
 pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protocol>> {
+    // TODO extend try_from to implement downcast from SerializablePayload/AnyPayload to Rpc (that
+    //  implements SerializablePayload, too).
     let rpc = Rpc::try_from(frame)?;
 
+    // The rest of the deserialization needs to be take care of also in case the Rpc was present
+    // in the frame in deserialized form.
     trace!("V1: Deserialized V1 message payload: {:?}", rpc);
     let (id, payload) = match rpc {
-        Rpc::Request(request) => match request.payload.method {
-            Method::Configure => (
-                request.id,
-                Ok(Box::new(messages::Configure::try_from(request)?) as Box<dyn Payload<Protocol>>),
-            ),
-            Method::Subscribe => (
-                request.id,
-                Ok(Box::new(messages::Subscribe::try_from(request)?) as Box<dyn Payload<Protocol>>),
-            ),
-            Method::Submit => (
-                request.id,
-                Ok(Box::new(messages::Submit::try_from(request)?) as Box<dyn Payload<Protocol>>),
-            ),
-            Method::Authorize => (
-                request.id,
-                Ok(Box::new(messages::Authorize::try_from(request)?) as Box<dyn Payload<Protocol>>),
-            ),
-            Method::SetDifficulty => (
-                request.id,
-                Ok(Box::new(messages::SetDifficulty::try_from(request)?)
-                    as Box<dyn Payload<Protocol>>),
-            ),
-            Method::Notify => (
-                request.id,
-                Ok(Box::new(messages::Notify::try_from(request)?) as Box<dyn Payload<Protocol>>),
-            ),
-            Method::SetVersionMask => (
-                request.id,
-                Ok(Box::new(messages::SetVersionMask::try_from(request)?)
-                    as Box<dyn Payload<Protocol>>),
-            ),
-            _ => (
-                None,
-                Err(ErrorKind::Rpc(format!("Unsupported request {:?}", request))),
-            ),
-        },
+        Rpc::Request(request) => {
+            let id = request.id;
+            let payload = match request.payload.method {
+                Method::Configure => Box::new(messages::Configure::try_from(request)?)
+                    as Box<dyn AnyPayload<Protocol>>,
+                Method::Subscribe => Box::new(messages::Subscribe::try_from(request)?)
+                    as Box<dyn AnyPayload<Protocol>>,
+                Method::Submit => {
+                    Box::new(messages::Submit::try_from(request)?) as Box<dyn AnyPayload<Protocol>>
+                }
+                Method::Authorize => Box::new(messages::Authorize::try_from(request)?)
+                    as Box<dyn AnyPayload<Protocol>>,
+                Method::SetDifficulty => Box::new(messages::SetDifficulty::try_from(request)?)
+                    as Box<dyn AnyPayload<Protocol>>,
+                Method::Notify => {
+                    Box::new(messages::Notify::try_from(request)?) as Box<dyn AnyPayload<Protocol>>
+                }
+                Method::SetVersionMask => Box::new(messages::SetVersionMask::try_from(request)?)
+                    as Box<dyn AnyPayload<Protocol>>,
+                _ => {
+                    return Err(ErrorKind::Rpc(format!("Unsupported request {:?}", request)).into())
+                }
+            };
+            (id, payload)
+        }
         // This is not ideal implementation as we clone() the result or error parts of the response.
         // Note, however, the unwrap() is safe as the error/result are 'Some'
         Rpc::Response(response) => {
+            let id = response.id;
             let msg = if response.payload.error.is_some() {
-                Ok(Box::new(response.payload.error.unwrap().clone()) as Box<dyn Payload<Protocol>>)
+                Box::new(response.payload.error.unwrap().clone()) as Box<dyn AnyPayload<Protocol>>
             } else if response.payload.result.is_some() {
-                Ok(Box::new(response.payload.result.unwrap().clone())
-                    as Box<dyn Payload<Protocol>>)
+                Box::new(response.payload.result.unwrap().clone()) as Box<dyn AnyPayload<Protocol>>
             } else {
-                Err(ErrorKind::Rpc(format!(
+                return Err(ErrorKind::Rpc(format!(
                     "Malformed response no error, no result specified {:?}",
                     response
-                )))
+                ))
+                .into());
             };
-            (Some(response.id), msg)
+            (Some(id), msg)
         }
     };
     trace!("V1: Deserialized message ID {:?}", id);
-    // convert the payload into message
-    Ok(payload.map(|p| Message::new(id, p))?)
+    Ok(Message {
+        header: id,
+        payload,
+    })
 }
 
 /// Extranonce 1 introduced as new type to provide shared conversions to/from string

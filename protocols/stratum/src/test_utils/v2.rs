@@ -29,9 +29,7 @@ use ii_logging::macros::*;
 
 use crate::test_utils::common::*;
 use crate::test_utils::v1;
-use crate::v2::messages::*;
-use crate::v2::types::*;
-use crate::v2::{Handler, Protocol};
+use crate::v2::{framing, messages::*, types::*, Handler};
 
 /// Message payload visitor that compares the payload of the visited message (e.g. after
 /// deserialization test) with the payload built.
@@ -40,7 +38,7 @@ use crate::v2::{Handler, Protocol};
 pub struct TestIdentityHandler;
 
 impl TestIdentityHandler {
-    fn visit_and_check<P, F>(&self, msg: &ii_wire::Message<Protocol>, payload: &P, build: F)
+    fn visit_and_check<P, F>(&self, header: &framing::Header, payload: &P, build: F)
     where
         P: Debug + PartialEq,
         F: FnOnce() -> P,
@@ -48,8 +46,8 @@ impl TestIdentityHandler {
         // Build expected payload for verifying correct deserialization
         let expected_payload = build();
         trace!(
-            "V2 TestIdentityHandler: Message ID {:?} {:?}",
-            msg.id,
+            "V2 TestIdentityHandler: Header: {:x?} Message {:?}",
+            header,
             payload
         );
         assert_eq!(expected_payload, *payload, "Message payloads don't match");
@@ -60,58 +58,54 @@ impl TestIdentityHandler {
 impl Handler for TestIdentityHandler {
     async fn visit_setup_connection(
         &mut self,
-        msg: &ii_wire::Message<Protocol>,
+        header: &framing::Header,
         payload: &SetupConnection,
     ) {
-        self.visit_and_check(msg, payload, build_setup_connection);
+        self.visit_and_check(header, payload, build_setup_connection);
     }
 
     async fn visit_setup_connection_success(
         &mut self,
-        msg: &ii_wire::Message<Protocol>,
+        header: &framing::Header,
         payload: &SetupConnectionSuccess,
     ) {
-        self.visit_and_check(msg, payload, build_setup_connection_success);
+        self.visit_and_check(header, payload, build_setup_connection_success);
     }
 
     async fn visit_open_standard_mining_channel(
         &mut self,
-        msg: &ii_wire::Message<Protocol>,
+        header: &framing::Header,
         payload: &OpenStandardMiningChannel,
     ) {
-        self.visit_and_check(msg, payload, build_open_channel);
+        self.visit_and_check(header, payload, build_open_channel);
     }
 
     async fn visit_open_standard_mining_channel_success(
         &mut self,
-        msg: &ii_wire::Message<Protocol>,
+        header: &framing::Header,
         payload: &OpenStandardMiningChannelSuccess,
     ) {
-        self.visit_and_check(msg, payload, build_open_channel_success);
+        self.visit_and_check(header, payload, build_open_channel_success);
     }
 
-    async fn visit_new_mining_job(
-        &mut self,
-        msg: &ii_wire::Message<Protocol>,
-        payload: &NewMiningJob,
-    ) {
-        self.visit_and_check(msg, payload, build_new_mining_job);
+    async fn visit_new_mining_job(&mut self, header: &framing::Header, payload: &NewMiningJob) {
+        self.visit_and_check(header, payload, build_new_mining_job);
     }
 
     async fn visit_set_new_prev_hash(
         &mut self,
-        msg: &ii_wire::Message<Protocol>,
+        header: &framing::Header,
         payload: &SetNewPrevHash,
     ) {
-        self.visit_and_check(msg, payload, build_set_new_prev_hash);
+        self.visit_and_check(header, payload, build_set_new_prev_hash);
     }
 
     async fn visit_submit_shares_standard(
         &mut self,
-        msg: &ii_wire::Message<Protocol>,
+        header: &framing::Header,
         payload: &SubmitSharesStandard,
     ) {
-        self.visit_and_check(msg, payload, build_submit_shares);
+        self.visit_and_check(header, payload, build_submit_shares);
     }
 }
 

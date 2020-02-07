@@ -28,12 +28,13 @@ use bytes::{buf::BufMutExt, BytesMut};
 
 use ii_async_compat::bytes;
 
+use super::Protocol;
 use crate::error::{Error, Result};
 use crate::payload::{Payload, SerializablePayload};
 
 /// Protocol frame consists solely from the payload
 #[derive(Debug, PartialEq)]
-pub struct Frame(Payload);
+pub struct Frame(Payload<Protocol>);
 
 impl Frame {
     /// TODO use this constant
@@ -52,7 +53,7 @@ impl Frame {
     pub fn from_serializable_payload<T>(payload: T) -> Self
     // TODO review the static lifetime
     where
-        T: 'static + SerializablePayload,
+        T: 'static + SerializablePayload<Protocol>,
     {
         Self(Payload::LazyBytes(Box::new(payload)))
     }
@@ -73,21 +74,29 @@ impl Frame {
     }
 
     /// Consumes the frame providing its payload
-    pub fn into_inner(self) -> Payload {
+    pub fn into_inner(self) -> Payload<Protocol> {
         self.0
     }
 }
 
 #[cfg(test)]
 mod test {
+    use super::super::{Handler, MessageId};
     use super::*;
     use crate::error::ResultExt;
+    use async_trait::async_trait;
 
     #[test]
     fn test_frame_from_serializable_payload() {
         const EXPECTED_FRAME_BYTES: &'static [u8] = &[0xde, 0xad, 0xbe, 0xef, 0x0a];
         struct TestPayload;
-        impl SerializablePayload for TestPayload {
+
+        #[async_trait]
+        impl SerializablePayload<Protocol> for TestPayload {
+            async fn accept(&self, _id: &MessageId, _handler: &mut dyn Handler) {
+                panic!("BUG: no handling for TestPayload");
+            }
+
             fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
                 writer.write(&EXPECTED_FRAME_BYTES).context("TestPayload")?;
                 Ok(())

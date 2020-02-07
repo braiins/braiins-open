@@ -31,7 +31,7 @@ use ii_async_compat::bytes;
 use ii_logging::macros::*;
 
 use super::common::*;
-use crate::v1::{framing::*, messages::*, rpc::*, ExtraNonce1, Handler, HexBytes, Protocol};
+use crate::v1::{framing::*, messages::*, rpc::*, ExtraNonce1, Handler, HexBytes, MessageId};
 
 pub const MINING_CONFIGURE_REQ_JSON: &str = concat!(
     r#"{"id":0,"method":"mining.configure","#,
@@ -79,7 +79,7 @@ pub const MINING_SUBSCRIBE_REQ_JSON: &str = concat!(
 const EXTRA_NONCE_1: &str = "6c6f010000000c";
 const EXTRA_NONCE_2_SIZE: usize = 4;
 
-fn build_request_message<T>(id: Option<u32>, payload: T) -> Rpc
+fn build_request_message<T>(id: MessageId, payload: T) -> Rpc
 where
     T: TryInto<RequestPayload> + std::fmt::Debug,
     <T as std::convert::TryInto<RequestPayload>>::Error: std::fmt::Debug,
@@ -276,7 +276,7 @@ impl TestIdentityHandler {
     /// representation
     fn visit_and_check<P, F>(
         &mut self,
-        msg: &ii_wire::Message<Protocol>,
+        id: &MessageId,
         payload: &P,
         build_payload: F,
         full_message: Rpc,
@@ -287,11 +287,7 @@ impl TestIdentityHandler {
     {
         // Build expected payload for verifying correct deserialization
         let expected_payload = build_payload();
-        trace!(
-            "V1 TestIdentityHandler: Message ID {:?} {:?}",
-            msg.id,
-            payload
-        );
+        trace!("V1 TestIdentityHandler: Message ID {:?} {:?}", id, payload);
         assert_eq!(expected_payload, *payload, "Message payloads don't match");
 
         // Build frame from the provided Rpc message and use its serialization for test evaluation
@@ -312,7 +308,7 @@ impl TestIdentityHandler {
 
     fn visit_and_check_request<P, F>(
         &mut self,
-        msg: &ii_wire::Message<Protocol>,
+        id: &MessageId,
         payload: &P,
         build_payload: F,
         json_message: &str,
@@ -322,10 +318,10 @@ impl TestIdentityHandler {
         F: FnOnce() -> P,
     {
         self.visit_and_check(
-            msg,
+            id,
             payload,
             build_payload,
-            build_request_message(msg.id, payload.clone()),
+            build_request_message(*id, payload.clone()),
             json_message,
         );
     }
@@ -333,54 +329,46 @@ impl TestIdentityHandler {
 
 #[async_trait]
 impl Handler for TestIdentityHandler {
-    async fn visit_stratum_result(
-        &mut self,
-        msg: &ii_wire::Message<Protocol>,
-        payload: &StratumResult,
-    ) {
+    async fn visit_stratum_result(&mut self, id: &MessageId, payload: &StratumResult) {
         self.visit_and_check(
-            msg,
+            id,
             payload,
             || {
                 StratumResult::new_from(build_subscribe_ok_result())
                     .expect("Cannot convert to stratum result")
             },
-            build_result_response_message(msg.id.expect("Message ID missing"), payload),
+            build_result_response_message(id.expect("Message ID missing"), payload),
             MINING_SUBSCRIBE_OK_RESULT_JSON,
         );
     }
 
-    async fn visit_configure(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Configure) {
-        self.visit_and_check_request(msg, payload, build_configure, MINING_CONFIGURE_REQ_JSON);
+    async fn visit_configure(&mut self, id: &MessageId, payload: &Configure) {
+        self.visit_and_check_request(id, payload, build_configure, MINING_CONFIGURE_REQ_JSON);
     }
 
-    async fn visit_subscribe(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Subscribe) {
-        self.visit_and_check_request(msg, payload, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
+    async fn visit_subscribe(&mut self, id: &MessageId, payload: &Subscribe) {
+        self.visit_and_check_request(id, payload, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
     }
 
-    async fn visit_authorize(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Authorize) {
-        self.visit_and_check_request(msg, payload, build_authorize, MINING_AUTHORIZE_JSON);
+    async fn visit_authorize(&mut self, id: &MessageId, payload: &Authorize) {
+        self.visit_and_check_request(id, payload, build_authorize, MINING_AUTHORIZE_JSON);
     }
 
-    async fn visit_set_difficulty(
-        &mut self,
-        msg: &ii_wire::Message<Protocol>,
-        payload: &SetDifficulty,
-    ) {
+    async fn visit_set_difficulty(&mut self, id: &MessageId, payload: &SetDifficulty) {
         self.visit_and_check_request(
-            msg,
+            id,
             payload,
             build_set_difficulty,
             MINING_SET_DIFFICULTY_JSON,
         );
     }
 
-    async fn visit_notify(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Notify) {
-        self.visit_and_check_request(msg, payload, build_mining_notify, MINING_NOTIFY_JSON);
+    async fn visit_notify(&mut self, id: &MessageId, payload: &Notify) {
+        self.visit_and_check_request(id, payload, build_mining_notify, MINING_NOTIFY_JSON);
     }
 
-    async fn visit_submit(&mut self, msg: &ii_wire::Message<Protocol>, payload: &Submit) {
-        self.visit_and_check_request(msg, payload, build_mining_submit, MINING_SUBMIT_JSON);
+    async fn visit_submit(&mut self, id: &MessageId, payload: &Submit) {
+        self.visit_and_check_request(id, payload, build_mining_submit, MINING_SUBMIT_JSON);
     }
 }
 

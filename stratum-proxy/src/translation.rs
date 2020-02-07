@@ -38,11 +38,13 @@ use failure::ResultExt;
 use serde_json;
 
 use ii_stratum::v1;
-use ii_stratum::v2;
-use ii_stratum::v2::types::{Bytes0_32, Uint256Bytes};
+use ii_stratum::v2::{
+    self,
+    types::{Bytes0_32, Uint256Bytes},
+};
 
 use ii_logging::macros::*;
-use ii_wire::{Message, MessageId};
+use ii_wire::MessageId;
 
 #[cfg(test)]
 mod test;
@@ -107,14 +109,14 @@ enum V2ToV1TranslationState {
 /// Represents a handler method that can process a particular ii_stratum result.
 type V1StratumResultHandler = fn(
     &mut V2ToV1Translation,
-    &ii_wire::Message<v1::Protocol>,
+    &v1::MessageId,
     &v1::rpc::StratumResult,
 ) -> ii_stratum::error::Result<()>;
 
 /// Represents a handler method that can process a particular ii_stratum error.
 type V1StratumErrorHandler = fn(
     &mut V2ToV1Translation,
-    &ii_wire::Message<v1::Protocol>,
+    &v1::MessageId,
     &v1::rpc::StratumError,
 ) -> ii_stratum::error::Result<()>;
 
@@ -132,7 +134,7 @@ struct V1SubmitTemplate {
 /// Maps V2 job ID to V1 job ID so that we can submit mining results upstream to V1 server
 type JobMap = HashMap<u32, V1SubmitTemplate>;
 
-//type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &ii_wire::Message<Protocol>, &v1::rpc::StratumResult)>;
+//type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &ii_stratum::Message<Protocol>, &v1::rpc::StratumResult)>;
 
 impl V2ToV1Translation {
     const PROTOCOL_VERSION: usize = 0;
@@ -298,12 +300,12 @@ impl V2ToV1Translation {
     /// mining configuration of version rolling bits
     fn handle_configure_result(
         &mut self,
-        msg: &ii_wire::Message<v1::Protocol>,
+        id: &v1::MessageId,
         payload: &v1::rpc::StratumResult,
     ) -> ii_stratum::error::Result<()> {
         trace!(
-            "handle_configure_result() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "handle_configure_result() id={:?} state={:?} payload:{:?}",
+            id,
             self.state,
             payload,
         );
@@ -347,12 +349,12 @@ impl V2ToV1Translation {
 
     fn handle_configure_error(
         &mut self,
-        msg: &ii_wire::Message<v1::Protocol>,
+        id: &v1::MessageId,
         payload: &v1::rpc::StratumError,
     ) -> ii_stratum::error::Result<()> {
         trace!(
-            "handle_configure_error() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "handle_configure_error() id={:?} state={:?} payload:{:?}",
+            id,
             self.state,
             payload,
         );
@@ -370,12 +372,12 @@ impl V2ToV1Translation {
 
     fn handle_subscribe_result(
         &mut self,
-        msg: &ii_wire::Message<v1::Protocol>,
+        id: &v1::MessageId,
         payload: &v1::rpc::StratumResult,
     ) -> ii_stratum::error::Result<()> {
         trace!(
-            "handle_subscribe_result() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "handle_subscribe_result() id={:?} state={:?} payload:{:?}",
+            id,
             self.state,
             payload,
         );
@@ -403,12 +405,12 @@ impl V2ToV1Translation {
     /// An authorize result should be true, any other problem results in aborting the channel
     fn handle_authorize_result(
         &mut self,
-        msg: &ii_wire::Message<v1::Protocol>,
+        id: &v1::MessageId,
         payload: &v1::rpc::StratumResult,
     ) -> ii_stratum::error::Result<()> {
         trace!(
-            "handle_authorize_result() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "handle_authorize_result() id={:?} state={:?} payload:{:?}",
+            id,
             self.state,
             payload,
         );
@@ -443,12 +445,12 @@ impl V2ToV1Translation {
 
     fn handle_authorize_or_subscribe_error(
         &mut self,
-        msg: &ii_wire::Message<v1::Protocol>,
+        id: &v1::MessageId,
         payload: &v1::rpc::StratumError,
     ) -> ii_stratum::error::Result<()> {
         trace!(
-            "handle_authorize_or_subscribe_error() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "handle_authorize_or_subscribe_error() id={:?} state={:?} payload:{:?}",
+            id,
             self.state,
             payload,
         );
@@ -468,12 +470,12 @@ impl V2ToV1Translation {
 
     fn handle_submit_result(
         &mut self,
-        msg: &ii_wire::Message<v1::Protocol>,
+        id: &v1::MessageId,
         payload: &v1::rpc::StratumResult,
     ) -> ii_stratum::error::Result<()> {
         trace!(
-            "handle_submit_result() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "handle_submit_result() id={:?} state={:?} payload:{:?}",
+            id,
             self.state,
             payload,
         );
@@ -512,12 +514,12 @@ impl V2ToV1Translation {
 
     fn handle_submit_error(
         &mut self,
-        msg: &ii_wire::Message<v1::Protocol>,
+        id: &v1::MessageId,
         payload: &v1::rpc::StratumError,
     ) -> ii_stratum::error::Result<()> {
         trace!(
-            "handle_submit_error() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "handle_submit_error() id={:?} state={:?} payload:{:?}",
+            id,
             self.state,
             payload,
         );
@@ -713,45 +715,40 @@ impl v1::Handler for V2ToV1Translation {
     /// The result visitor takes care of detecting a spurious response without matching request
     /// and passes processing further
     /// TODO write a solid unit test covering all 3 scenarios that can go wrong
-    async fn visit_stratum_result(
-        &mut self,
-        msg: &ii_wire::Message<v1::Protocol>,
-        payload: &v1::rpc::StratumResult,
-    ) {
+    async fn visit_stratum_result(&mut self, id: &v1::MessageId, payload: &v1::rpc::StratumResult) {
         trace!(
-            "visit_stratum_result() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "visit_stratum_result() id={:?} state={:?} payload:{:?}",
+            id,
             self.state,
             payload,
         );
         // Each response message should have an ID for pairing
-        msg.id
-            .ok_or(ii_stratum::error::Error::from(v1::error::ErrorKind::Rpc(
-                "Missing ID in ii_stratum result".to_string(),
-            )))
-            // find the ID in the request map
-            .and_then(|id| {
-                self.v1_req_map
-                    .remove(&id)
-                    .ok_or(ii_stratum::error::Error::from(v1::error::ErrorKind::Rpc(
-                        format!("Received invalid ID {}", id).into(),
-                    )))
-            })
-            // run the result through the result handler
-            .and_then(|handler| handler.0(self, msg, payload))
-            .map_err(|e| trace!("visit_stratum_result: {}", e))
-            // Consume the error as there is no way to return anything from the visitor for now.
-            .ok();
+        id.ok_or(ii_stratum::error::Error::from(v1::error::ErrorKind::Rpc(
+            "Missing ID in ii_stratum result".to_string(),
+        )))
+        // find the ID in the request map
+        .and_then(|id| {
+            self.v1_req_map
+                .remove(&id)
+                .ok_or(ii_stratum::error::Error::from(v1::error::ErrorKind::Rpc(
+                    format!("Received invalid ID {}", id).into(),
+                )))
+        })
+        // run the result through the result handler
+        .and_then(|handler| handler.0(self, id, payload))
+        .map_err(|e| trace!("visit_stratum_result: {}", e))
+        // Consume the error as there is no way to return anything from the visitor for now.
+        .ok();
     }
 
     async fn visit_set_difficulty(
         &mut self,
-        msg: &Message<v1::Protocol>,
+        id: &v1::MessageId,
         payload: &v1::messages::SetDifficulty,
     ) {
         trace!(
-            "visit_set_difficulty() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "visit_set_difficulty() id={:?} state={:?} payload:{:?}",
+            id,
             self.state,
             payload,
         );
@@ -775,10 +772,10 @@ impl v1::Handler for V2ToV1Translation {
 
     /// Composes a new mining job and sends it downstream
     /// TODO: Only 1 channel is supported
-    async fn visit_notify(&mut self, msg: &Message<v1::Protocol>, payload: &v1::messages::Notify) {
+    async fn visit_notify(&mut self, id: &v1::MessageId, payload: &v1::messages::Notify) {
         trace!(
-            "visit_notify() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "visit_notify() id={:?} state={:?} payload:{:?}",
+            id,
             self.state,
             payload,
         );
@@ -796,12 +793,12 @@ impl v1::Handler for V2ToV1Translation {
     /// report an error
     async fn visit_set_version_mask(
         &mut self,
-        msg: &Message<v1::Protocol>,
+        id: &v1::MessageId,
         payload: &v1::messages::SetVersionMask,
     ) {
         trace!(
-            "visit_set_version_mask() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "visit_set_version_mask() id={:?} state={:?} payload:{:?}",
+            id,
             self.state,
             payload,
         );
@@ -815,12 +812,12 @@ impl v1::Handler for V2ToV1Translation {
 impl v2::Handler for V2ToV1Translation {
     async fn visit_setup_connection(
         &mut self,
-        msg: &Message<v2::Protocol>,
+        header: &v2::framing::Header,
         payload: &v2::messages::SetupConnection,
     ) {
         trace!(
-            "visit_mining_connection() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "visit_setup_mining_connection() header={:x?} state={:?} payload:{:?}",
+            header,
             self.state,
             payload,
         );
@@ -864,12 +861,12 @@ impl v2::Handler for V2ToV1Translation {
     /// - start sending Jobs downstream to V2 client
     async fn visit_open_standard_mining_channel(
         &mut self,
-        msg: &Message<v2::Protocol>,
+        header: &v2::framing::Header,
         payload: &v2::messages::OpenStandardMiningChannel,
     ) {
         trace!(
-            "visit_open_standard_mining_channel() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "visit_open_standard_mining_channel() header={:x?} state={:?} payload:{:?}",
+            header,
             self.state,
             payload,
         );
@@ -936,12 +933,12 @@ impl v2::Handler for V2ToV1Translation {
     /// If any of the above points fail, reply with SubmitShareError + reasoning
     async fn visit_submit_shares_standard(
         &mut self,
-        msg: &Message<v2::Protocol>,
+        header: &v2::framing::Header,
         payload: &v2::messages::SubmitSharesStandard,
     ) {
         trace!(
-            "visit_submit_shares() msg.id={:?} state={:?} payload:{:?}",
-            msg.id,
+            "visit_submit_shares() header={:x?} state={:?} payload:{:?}",
+            header,
             self.state,
             payload,
         );

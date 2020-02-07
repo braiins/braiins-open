@@ -26,6 +26,7 @@
 //! - stratum request (with optional ID), request with NULL ID is considered a notification.
 //! - stratum response (associated with a previously issued request by the ID)
 
+use async_trait::async_trait;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -35,6 +36,7 @@ use std::str::FromStr;
 
 use super::{framing, Handler, Protocol};
 use crate::error::{Error, Result, ResultExt};
+use crate::AnyPayload;
 
 /// All recognized methods of the V1 protocol have the 'mining.' prefix in json.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -107,9 +109,16 @@ impl StratumResult {
 
 /// Specific protocol implementation for any stratum result
 #[async_trait::async_trait]
-impl ii_wire::Payload<Protocol> for StratumResult {
-    async fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut dyn Handler) {
-        handler.visit_stratum_result(msg, self).await;
+impl AnyPayload<Protocol> for StratumResult {
+    async fn accept(&self, id: &<Protocol as crate::Protocol>::Header, handler: &mut dyn Handler) {
+        handler.visit_stratum_result(id, self).await;
+    }
+
+    fn serialize_to_writer(&self, _writer: &mut dyn std::io::Write) -> Result<()> {
+        panic!(
+            "BUG: serialization of partial message without Rpc not supported {:?}",
+            self
+        );
     }
 }
 
@@ -125,9 +134,20 @@ pub struct StratumError(pub i32, pub String, pub Option<String>);
 
 /// Specific protocol implementation for any stratum error
 #[async_trait::async_trait]
-impl ii_wire::Payload<Protocol> for StratumError {
-    async fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut dyn Handler) {
-        handler.visit_stratum_error(msg, self).await;
+impl AnyPayload<Protocol> for StratumError {
+    async fn accept(
+        &self,
+        id: &<Protocol as crate::Protocol>::Header,
+        handler: &mut <Protocol as crate::Protocol>::Handler,
+    ) {
+        handler.visit_stratum_error(id, self).await;
+    }
+
+    fn serialize_to_writer(&self, _writer: &mut dyn std::io::Write) -> Result<()> {
+        panic!(
+            "BUG: serialization of partial message without Rpc not supported {:?}",
+            self
+        );
     }
 }
 
@@ -214,7 +234,18 @@ impl FromStr for Rpc {
 }
 
 /// Each RPC is a `SerializablePayload` object that can be serialized into `writer` on demand
-impl crate::payload::SerializablePayload for Rpc {
+#[async_trait]
+impl AnyPayload<Protocol> for Rpc {
+    /// This will never get used as we don't do any handling on Rpc level. Since the RPC is also a
+    /// SerializablePayload we have to provide a default implementation.
+    async fn accept(
+        &self,
+        _id: &<Protocol as crate::Protocol>::Header,
+        _handler: &mut <Protocol as crate::Protocol>::Handler,
+    ) {
+        panic!("BUG: Cannot accept handler for generic RPC {:?}", self);
+    }
+
     fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
         serde_json::to_writer(writer, self).map_err(Into::into)
     }

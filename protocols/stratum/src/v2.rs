@@ -29,21 +29,22 @@ pub mod types;
 
 use self::messages::MessageType;
 use crate::error::Result;
+use crate::{AnyPayload, Message};
 
 use async_trait::async_trait;
 use packed_struct::prelude::*;
 use std::convert::TryFrom;
 
 use ii_logging::macros::*;
-use ii_wire::{self, Message};
 
 pub use self::framing::codec::Codec;
 pub use self::framing::{Frame, Framing};
 
 /// Protocol associates a custom handler with it
 pub struct Protocol;
-impl ii_wire::Protocol for Protocol {
+impl crate::Protocol for Protocol {
     type Handler = dyn Handler;
+    type Header = framing::Header;
 }
 
 /// Specifies all messages to be visited
@@ -52,96 +53,101 @@ impl ii_wire::Protocol for Protocol {
 pub trait Handler: 'static + Send {
     async fn visit_setup_connection(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::SetupConnection,
     ) {
     }
 
     async fn visit_setup_connection_success(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::SetupConnectionSuccess,
     ) {
     }
 
     async fn visit_setup_connection_error(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::SetupConnectionError,
     ) {
     }
 
     async fn visit_open_standard_mining_channel(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::OpenStandardMiningChannel,
     ) {
     }
 
     async fn visit_open_standard_mining_channel_success(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::OpenStandardMiningChannelSuccess,
     ) {
     }
 
     async fn visit_open_standard_mining_channel_error(
         &mut self,
-        _msg: &Message<Protocol>,
+
+        _header: &framing::Header,
         _payload: &messages::OpenStandardMiningChannelError,
     ) {
     }
 
     async fn visit_update_channel(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::UpdateChannel,
     ) {
     }
 
     async fn visit_update_channel_error(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::UpdateChannelError,
     ) {
     }
 
     async fn visit_submit_shares_standard(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::SubmitSharesStandard,
     ) {
     }
 
     async fn visit_submit_shares_success(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::SubmitSharesSuccess,
     ) {
     }
 
     async fn visit_submit_shares_error(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::SubmitSharesError,
     ) {
     }
 
     async fn visit_new_mining_job(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::NewMiningJob,
     ) {
     }
 
     async fn visit_set_new_prev_hash(
         &mut self,
-        _msg: &Message<Protocol>,
+        _header: &framing::Header,
         _payload: &messages::SetNewPrevHash,
     ) {
     }
 
-    async fn visit_set_target(&mut self, _msg: &Message<Protocol>, _payload: &messages::SetTarget) {
+    async fn visit_set_target(
+        &mut self,
+        _header: &framing::Header,
+        _payload: &messages::SetTarget,
+    ) {
     }
 }
 
@@ -149,105 +155,80 @@ pub trait Handler: 'static + Send {
 pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protocol>> {
     trace!("V2: building message from frame {:x?}", frame);
 
-    // Build message based on its type specified in the header
-    let (id, payload) = match MessageType::from_primitive(frame.header.msg_type).ok_or(
+    // Payload that already contains deserialized message can be returned directly
+    if frame.payload.is_serializable() {
+        let (header, payload) = frame.split();
+        let serializable_payload = payload
+            .into_serializable()
+            .expect("BUG: cannot convert payload into serializable");
+
+        return Ok(Message {
+            header,
+            payload: serializable_payload,
+        });
+    }
+    // Header will be consumed by the subsequent transformation of the frame into the actual
+    // payload for further handling. Therefore we create a copy for constructing a
+    // Message<Protocol >
+    let header = frame.header.clone();
+    // Deserialize the payload;h based on its type specified in the header
+    let payload = match MessageType::from_primitive(frame.header.msg_type).ok_or(
         error::ErrorKind::UnknownMessage(
             format!("Unexpected payload type, full header: {:x?}", frame.header).into(),
         ),
     )? {
-        MessageType::SetupConnection => (
-            None,
-            Ok(Box::new(messages::SetupConnection::try_from(frame)?)
-                as Box<dyn ii_wire::Payload<Protocol>>),
-        ),
-        MessageType::SetupConnectionSuccess => (
-            None,
-            Ok(Box::new(messages::SetupConnectionSuccess::try_from(frame)?)
-                as Box<dyn ii_wire::Payload<Protocol>>),
-        ),
-        MessageType::SetupConnectionError => (
-            None,
-            Ok(Box::new(messages::SetupConnectionError::try_from(frame)?)
-                as Box<dyn ii_wire::Payload<Protocol>>),
-        ),
+        MessageType::SetupConnection => {
+            Box::new(messages::SetupConnection::try_from(frame)?) as Box<dyn AnyPayload<Protocol>>
+        }
+        MessageType::SetupConnectionSuccess => {
+            Box::new(messages::SetupConnectionSuccess::try_from(frame)?)
+                as Box<dyn AnyPayload<Protocol>>
+        }
+        MessageType::SetupConnectionError => {
+            Box::new(messages::SetupConnectionError::try_from(frame)?)
+                as Box<dyn AnyPayload<Protocol>>
+        }
         MessageType::OpenStandardMiningChannel => {
-            let channel = messages::OpenStandardMiningChannel::try_from(frame)?;
-            (
-                Some(channel.req_id),
-                Ok(Box::new(channel) as Box<dyn ii_wire::Payload<Protocol>>),
-            )
+            Box::new(messages::OpenStandardMiningChannel::try_from(frame)?)
+                as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::OpenStandardMiningChannelSuccess => {
-            let channel_success = messages::OpenStandardMiningChannelSuccess::try_from(frame)?;
-            (
-                Some(channel_success.req_id),
-                Ok(Box::new(channel_success) as Box<dyn ii_wire::Payload<Protocol>>),
-            )
+            Box::new(messages::OpenStandardMiningChannelSuccess::try_from(frame)?)
+                as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::OpenStandardMiningChannelError => {
-            let channel_error = messages::OpenStandardMiningChannelError::try_from(frame)?;
-            (
-                Some(channel_error.req_id),
-                Ok(Box::new(channel_error) as Box<dyn ii_wire::Payload<Protocol>>),
-            )
+            Box::new(messages::OpenStandardMiningChannelError::try_from(frame)?)
+                as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::NewMiningJob => {
-            let job = messages::NewMiningJob::try_from(frame)?;
-            (
-                None,
-                Ok(Box::new(job) as Box<dyn ii_wire::Payload<Protocol>>),
-            )
+            Box::new(messages::NewMiningJob::try_from(frame)?) as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::SetNewPrevHash => {
-            let prev_hash = messages::SetNewPrevHash::try_from(frame)?;
-            (
-                None,
-                Ok(Box::new(prev_hash) as Box<dyn ii_wire::Payload<Protocol>>),
-            )
+            Box::new(messages::SetNewPrevHash::try_from(frame)?) as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::SetTarget => {
-            let target = messages::SetTarget::try_from(frame)?;
-            (
-                None,
-                Ok(Box::new(target) as Box<dyn ii_wire::Payload<Protocol>>),
-            )
+            Box::new(messages::SetTarget::try_from(frame)?) as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::SubmitSharesStandard => {
-            let submit_shares_standard = messages::SubmitSharesStandard::try_from(frame)?;
-            (
-                // TODO possibly extract the sequence ID
-                None,
-                Ok(Box::new(submit_shares_standard) as Box<dyn ii_wire::Payload<Protocol>>),
-            )
+            Box::new(messages::SubmitSharesStandard::try_from(frame)?)
+                as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::SubmitSharesSuccess => {
-            let success = messages::SubmitSharesSuccess::try_from(frame)?;
-            (
-                // TODO what to do about the ID? - use sequence number?
-                None,
-                Ok(Box::new(success) as Box<dyn ii_wire::Payload<Protocol>>),
-            )
+            Box::new(messages::SubmitSharesSuccess::try_from(frame)?)
+                as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::SubmitSharesError => {
-            let err_msg = messages::SubmitSharesError::try_from(frame)?;
-            (
-                // TODO what to do about the ID?
-                None,
-                Ok(Box::new(err_msg) as Box<dyn ii_wire::Payload<Protocol>>),
-            )
+            Box::new(messages::SubmitSharesError::try_from(frame)?) as Box<dyn AnyPayload<Protocol>>
         }
-        _ => (
-            None,
-            Err(error::ErrorKind::UnknownMessage(
+        _ => {
+            return Err(error::ErrorKind::UnknownMessage(
                 format!("Unexpected payload type, full header: {:?}", frame.header).into(),
             )
-            .into()),
-        ),
+            .into())
+        }
     };
 
-    trace!("V2: message ID: {:?}", id);
-    // TODO: message ID handling is not implemented
-    payload.map(|p| Message::new(id, p))
+    Ok(Message { header, payload })
 }
 
 #[cfg(test)]

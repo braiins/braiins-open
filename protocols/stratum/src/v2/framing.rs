@@ -30,6 +30,7 @@ use bytes::{
 use ii_async_compat::bytes;
 use ii_logging::macros::*;
 
+use super::Protocol;
 use crate::error::{Error, Result};
 use crate::payload::{Payload, SerializablePayload};
 
@@ -122,9 +123,9 @@ impl Header {
 #[derive(Debug, PartialEq)]
 pub struct Frame {
     /// Allow public access to the header for payload dispatching etc.
-    pub header: Header,
+    pub(crate) header: Header,
     /// Keep payload
-    payload: Payload,
+    pub(crate) payload: Payload<Protocol>,
 }
 
 impl Frame {
@@ -179,12 +180,14 @@ impl Frame {
     ) -> Self
     // TODO review the static lifetime
     where
-        T: 'static + SerializablePayload,
+        T: 'static + SerializablePayload<Protocol>,
     {
         let header = Header::new(is_channel_msg, ext_type, msg_type, None);
         Self {
             header,
+            // TODO: implement Payload::from to hide LazyBytes
             payload: Payload::LazyBytes(Box::new(payload)),
+            //payload: Payload::from(payload),
         }
     }
 
@@ -209,7 +212,7 @@ impl Frame {
     }
 
     /// Consumes the frame providing its header and payload
-    pub fn split(self) -> (Header, Payload) {
+    pub fn split(self) -> (Header, Payload<Protocol>) {
         (self.header, self.payload)
     }
 }
@@ -232,6 +235,7 @@ pub const PAYLOAD_CHANNEL_OFFSET: usize = 4;
 mod test {
     use super::*;
     use crate::error::ResultExt;
+    use async_trait::async_trait;
 
     #[test]
     fn test_header_serialization() {
@@ -324,9 +328,19 @@ mod test {
     fn test_frame_from_serializable_payload() {
         const EXPECTED_FRAME_BYTES: &'static [u8] =
             &[0x00u8, 0x80, 0x16, 0x04, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef];
-        //#[derive(Clone)]
+
         struct TestPayload;
-        impl SerializablePayload for TestPayload {
+
+        #[async_trait]
+        impl SerializablePayload<Protocol> for TestPayload {
+            async fn accept(
+                &self,
+                _header: &<Protocol as crate::Protocol>::Header,
+                _handler: &mut <Protocol as crate::Protocol>::Handler,
+            ) {
+                panic!("BUG: no handling for TestPayload");
+            }
+
             fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
                 writer
                     .write(&EXPECTED_FRAME_BYTES[6..])

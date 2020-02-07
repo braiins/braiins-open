@@ -148,7 +148,7 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
 
             while let Some(frame) = conn.next().await {
                 let frame = frame.expect("Receiving frame failed");
-                let msg: ii_wire::Message<v1::Protocol> =
+                let msg: ii_stratum::Message<v1::Protocol> =
                     v1::build_message_from_frame(frame).expect("Cannot deserialize frame");
                 // test handler verifies that the message
                 msg.accept(&mut test_utils::v1::TestIdentityHandler).await;

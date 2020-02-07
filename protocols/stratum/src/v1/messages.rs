@@ -27,10 +27,12 @@ use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 
 use super::error::ErrorKind;
-use super::{ExtraNonce1, Handler, Protocol};
+
 use crate::error::{Result, ResultExt};
-use crate::v1::rpc::{self, Method};
-use crate::v1::{HexBytes, HexU32Be, PrevHash};
+use crate::v1::{
+    rpc::{self, Method},
+    ExtraNonce1, HexBytes, HexU32Be, PrevHash, Protocol,
+};
 
 #[cfg(test)]
 pub mod test;
@@ -66,9 +68,20 @@ macro_rules! impl_conversion_request {
         }
 
         #[async_trait]
-        impl ii_wire::Payload<Protocol> for $request {
-            async fn accept(&self, msg: &ii_wire::Message<Protocol>, handler: &mut dyn Handler) {
-                handler.$handler_fn(msg, self).await;
+        impl crate::payload::SerializablePayload<Protocol> for $request {
+            async fn accept(
+                &self,
+                id: &<Protocol as crate::Protocol>::Header,
+                handler: &mut <Protocol as crate::Protocol>::Handler,
+            ) {
+                handler.$handler_fn(id, self).await;
+            }
+
+            fn serialize_to_writer(&self, _writer: &mut dyn std::io::Write) -> Result<()> {
+                panic!(
+                    "BUG: serialization of partial request without Rpc not supported {:?}",
+                    self
+                );
             }
         }
     };
