@@ -119,7 +119,7 @@ pub const MINING_SUBSCRIBE_OK_RESULT_JSON: &str = concat!(
 );
 
 fn build_result_response_message<T: Serialize>(id: u32, result: T) -> Rpc {
-    Rpc::Response(Response {
+    Rpc::from(Response {
         id,
         payload: ResponsePayload {
             result: Some(
