@@ -59,6 +59,21 @@ impl Payload {
         Ok(writer.into_inner())
     }
 
+    /// Checks whether the payload contains already a deserialized object.
+    pub fn is_deserialized_message(&self) -> bool {
+        match self {
+            Self::LazyBytes(_) => true,
+            Self::SerializedBytes(_) => false,
+        }
+    }
+
+    /// Consumes the payload and provides the serializable inner variant of the payload or None
+    pub fn into_message(self) -> Option<Box<dyn SerializablePayload<P>>> {
+        match self {
+            Self::SerializedBytes(_) => None,
+            Self::LazyBytes(payload) => Some(payload),
+        }
+    }
     /// Consumes the payload and transforms it into a `BytesMut`
     /// TODO: consider returning a read-only buffer
     pub fn into_bytes_mut(self) -> Result<BytesMut> {
