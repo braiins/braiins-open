@@ -30,7 +30,7 @@ pub trait Framing: 'static {
     type Tx: Send + Sync;
     /// Receive message type
     type Rx: Send + Sync;
-    type Error: From<IOError>;
+    type Error: From<IOError> + failure::Fail;
     type Codec: Encoder<Item = Self::Tx, Error = Self::Error>
         + Decoder<Item = Self::Rx, Error = Self::Error>
         + Default
