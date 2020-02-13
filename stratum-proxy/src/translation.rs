@@ -167,16 +167,18 @@ impl V2ToV1Translation {
     /// Converts the response message into a `Frame` and submits it into the
     /// specified queue
     /// TODO: handle serialization errors (logger + terminate?)
-    fn submit_message<F, T, E>(tx: &mut mpsc::Sender<F>, msg: T)
+    fn submit_message<F, T, E>(tx: &mut mpsc::Sender<F>, msg: T) -> Result<()>
     where
-        F: Send + Sync,
+        F: Send + Sync + 'static,
         E: fmt::Debug,
         T: TryInto<F, Error = E>,
     {
         let frame = msg
             .try_into()
             .expect("BUG: Could convert the message to frame");
-        tx.try_send(frame).expect("TODO: Cannot send message");
+        tx.try_send(frame)
+            .context("submit v1 message")
+            .map_err(Into::into)
     }
 
     /// Builds a V1 request from V1 method and assigns a unique identifier to it
@@ -263,7 +265,7 @@ impl V2ToV1Translation {
             max_target,
         };
 
-        Self::submit_message(&mut self.v2_tx, msg);
+        Self::submit_message(&mut self.v2_tx, msg)
     }
 
     /// Reports failure to open the channel and changes the translation state
