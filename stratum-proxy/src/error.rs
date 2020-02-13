@@ -27,6 +27,8 @@ use std;
 use std::fmt::{self, Display};
 use std::io;
 
+use ii_async_compat::prelude::*;
+
 #[derive(Debug)]
 pub struct Error {
     inner: Context<ErrorKind>,
@@ -98,6 +100,18 @@ impl From<ii_stratum::error::Error> for Error {
     fn from(e: ii_stratum::error::Error) -> Self {
         Self {
             inner: e.into_inner().map(|kind| ErrorKind::Stratum(kind)),
+        }
+    }
+}
+
+impl<T> From<futures::channel::mpsc::TrySendError<T>> for Error
+where
+    T: failure::Fail,
+{
+    fn from(e: futures::channel::mpsc::TrySendError<T>) -> Self {
+        let msg = e.to_string();
+        Self {
+            inner: e.context(ErrorKind::Io(msg)),
         }
     }
 }
