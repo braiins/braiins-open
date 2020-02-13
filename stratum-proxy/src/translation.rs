@@ -194,7 +194,7 @@ impl V2ToV1Translation {
     {
         let payload = method
             .try_into()
-            .expect("Cannot convert V1 method into a message");
+            .expect("BUG: Cannot convert V1 method into a message");
 
         // TODO: decorate the request with a new unique ID -> this is the request ID
         let id = self.v1_req_id.next();
