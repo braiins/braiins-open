@@ -45,7 +45,7 @@ use ii_stratum::v2::{
 use ii_logging::macros::*;
 use ii_wire::MessageId;
 
-use crate::error::{Error, ErrorKind, Result, ResultExt};
+use crate::error::{Error, Result, ResultExt};
 
 #[cfg(test)]
 mod test;
@@ -225,30 +225,30 @@ impl V2ToV1Translation {
             .to_little_endian(init_target.as_mut());
 
         // when V1 authorization has already taken place, report channel opening success
-        // TODO: this is a workaround, eliminate the clone()
-        self.v2_channel_details
-            .clone()
-            .and_then(|v2_channel_details| {
-                self.state = V2ToV1TranslationState::Operational;
-                let msg = v2::messages::OpenStandardMiningChannelSuccess {
-                    req_id: v2_channel_details.req_id,
-                    channel_id: Self::CHANNEL_ID,
-                    target: init_target.clone(),
-                    extranonce_prefix: Bytes0_32::new(),
-                    group_channel_id: 0,
-                };
-                Self::submit_message(&mut self.v2_tx, msg);
-                if let Some(notify_payload) = self.v1_deferred_notify.take() {
-                    self.perform_notify(&notify_payload);
-                }
-                Some(())
-            })
-            .ok_or(
+        if let Some(v2_channel_details) = self.v2_channel_details.as_ref() {
+            self.state = V2ToV1TranslationState::Operational;
+            let msg = v2::messages::OpenStandardMiningChannelSuccess {
+                req_id: v2_channel_details.req_id,
+                channel_id: Self::CHANNEL_ID,
+                target: init_target.clone(),
+                extranonce_prefix: Bytes0_32::new(),
+                group_channel_id: 0,
+            };
+            Self::submit_message(&mut self.v2_tx, msg)?;
+
+            // If mining.notify is pending, process it now as part of open channel finalization
+            if let Some(notify_payload) = self.v1_deferred_notify.take() {
+                self.perform_notify(&notify_payload)?;
+            }
+            return Ok(());
+        } else {
+            Err(
                 ii_stratum::error::Error::from(v2::error::ErrorKind::ChannelNotOperational(
                     "Channel details missing".to_string(),
                 ))
                 .into(),
             )
+        }
     }
 
     /// Send new target
@@ -277,22 +277,32 @@ impl V2ToV1Translation {
             err_msg
         );
         self.state = V2ToV1TranslationState::V1SubscribeOrAuthorizeFail;
-        // TODO eliminate the unnecessary clone
-        self.v2_channel_details
-            .clone()
-            .and_then(|v2_channel_details| {
-                let msg = v2::messages::OpenStandardMiningChannelError {
-                    req_id: v2_channel_details.req_id,
-                    code: err_msg.try_into().unwrap(), // FIXME: error handling
-                };
-                Self::submit_message(&mut self.v2_tx, msg);
-                Some(())
-            });
+
         // Cleanup all parts associated with opening the channel
         self.v1_authorized = false;
         self.v1_extra_nonce1 = None;
         self.v1_extra_nonce2_size = 0;
-        self.v2_channel_details = None;
+
+        if let Some(v2_channel_details) = self.v2_channel_details.as_ref() {
+            let msg = v2::messages::OpenStandardMiningChannelError {
+                req_id: v2_channel_details.req_id,
+                code: err_msg.try_into().expect("BUG: incorrect error message"),
+            };
+            self.v2_channel_details = None;
+
+            if let Err(submit_err) = Self::submit_message(&mut self.v2_tx, msg) {
+                info!(
+                    "abort_open_channel() failed: {:?}, abort message: {}",
+                    submit_err, err_msg
+                );
+            }
+        } else {
+            error!(
+                "abort_open_channel(): no channel to abort, missing V2 channel details, message: \
+                 {}",
+                err_msg
+            );
+        }
     }
 
     /// Finalizes a pending SetupConnection upon successful negotiation of
@@ -311,40 +321,37 @@ impl V2ToV1Translation {
 
         // TODO review the use of serde_json here, it may be possible to eliminate this dependency
         // Extract version mask and verify it matches the maximum possible value
-        let proposed_version_mask: Result<v1::messages::VersionMask> =
+        let proposed_version_mask: v1::messages::VersionMask =
             serde_json::from_value(payload.0["version-rolling.mask"].clone())
                 .context("Failed to parse version-rolling mask")
-                .map_err(|e| ii_stratum::error::Error::from(e))
-                .map_err(Into::into);
-        proposed_version_mask.map(|proposed_version_mask| {
-            trace!(
-                "Evaluating: version-rolling state == {:?} && mask=={:x?}",
-                payload.0["version-rolling"].as_bool(),
-                proposed_version_mask
-            );
-            if payload.0["version-rolling"].as_bool() == Some(true)
-                && (proposed_version_mask.0).0 == ii_stratum::BIP320_N_VERSION_MASK
-            {
-                self.state = V2ToV1TranslationState::ConnectionSetup;
+                .map_err(|e| ii_stratum::error::Error::from(e))?;
 
-                let success = v2::messages::SetupConnectionSuccess {
-                    used_version: Self::PROTOCOL_VERSION as u16,
-                    flags: 0,
-                };
-                Self::submit_message(&mut self.v2_tx, success);
-            } else {
-                // TODO consolidate into abort_connection() + communicate shutdown of this
-                // connection similarly everywhere in the code
-                let response = v2::messages::SetupConnectionError {
-                    flags: 0, // TODO handle flags
-                    code: "Cannot negotiate upstream V1 version mask"
-                        .try_into()
-                        .unwrap(),
-                };
-                Self::submit_message(&mut self.v2_tx, response);
-            }
-            ()
-        })
+        trace!(
+            "Evaluating: version-rolling state == {:?} && mask=={:x?}",
+            payload.0["version-rolling"].as_bool(),
+            proposed_version_mask
+        );
+        if payload.0["version-rolling"].as_bool() == Some(true)
+            && (proposed_version_mask.0).0 == ii_stratum::BIP320_N_VERSION_MASK
+        {
+            self.state = V2ToV1TranslationState::ConnectionSetup;
+
+            let success = v2::messages::SetupConnectionSuccess {
+                used_version: Self::PROTOCOL_VERSION as u16,
+                flags: 0,
+            };
+            Self::submit_message(&mut self.v2_tx, success)
+        } else {
+            // TODO consolidate into abort_connection() + communicate shutdown of this
+            // connection similarly everywhere in the code
+            let response = v2::messages::SetupConnectionError {
+                flags: 0, // TODO handle flags
+                code: "Cannot negotiate upstream V1 version mask"
+                    .try_into()
+                    .unwrap(),
+            };
+            Self::submit_message(&mut self.v2_tx, response)
+        }
     }
 
     fn handle_configure_error(
@@ -364,10 +371,9 @@ impl V2ToV1Translation {
             flags: 0, // TODO handle flags
             code: "Cannot negotiate upstream V1 version mask"
                 .try_into()
-                .unwrap(),
+                .expect("BUG: incorrect error message"),
         };
-        Self::submit_message(&mut self.v2_tx, response);
-        Ok(())
+        Self::submit_message(&mut self.v2_tx, response)
     }
 
     fn handle_subscribe_result(
@@ -381,27 +387,24 @@ impl V2ToV1Translation {
             self.state,
             payload,
         );
-        v1::messages::SubscribeResult::try_from(payload)
-            // Convert ii-stratum error to proxy error
-            .map_err(Into::into)
-            .and_then(|subscribe_result| {
-                self.v1_extra_nonce1 = Some(subscribe_result.extra_nonce_1().clone());
-                self.v1_extra_nonce2_size = subscribe_result.extra_nonce_2_size().clone();
+        let subscribe_result = v1::messages::SubscribeResult::try_from(payload).map_err(|e| {
+            // Aborting channel failed, we can only log about it
+            self.abort_open_channel("Upstream subscribe failed");
+            e
+        })?;
 
-                // In order to finalize the opening procedure we need 3 items: authorization,
-                // subscription and difficulty
-                if self.v1_authorized && self.v2_target.is_some() {
-                    self.finalize_open_channel()
-                }
-                // Channel opening will be finalized by authorize success or failure
-                else {
-                    Ok(())
-                }
-            })
-            .map_err(|e| {
+        self.v1_extra_nonce1 = Some(subscribe_result.extra_nonce_1().clone());
+        self.v1_extra_nonce2_size = subscribe_result.extra_nonce_2_size().clone();
+
+        // In order to finalize the opening procedure we need 3 items: authorization,
+        // subscription and difficulty
+        if self.v1_authorized && self.v2_target.is_some() {
+            self.finalize_open_channel().map_err(|e| {
                 self.abort_open_channel("Upstream subscribe failed");
                 e
-            })
+            })?
+        }
+        Ok(())
     }
 
     /// An authorize result should be true, any other problem results in aborting the channel
@@ -489,7 +492,11 @@ impl V2ToV1Translation {
         );
         // Authorize is expected as a plain boolean answer
         v1::messages::BooleanResult::try_from(payload)
+            // Convert potential stratum error to proxy error first
+            .map_err(Into::into)
+            // Handle the actual submission result
             .and_then(|bool_result| {
+                trace!("Submit result: {:?}", bool_result);
                 if bool_result.0 {
                     // TODO this is currently incomplete, we have to track all pending mining
                     // results so that we can correlate the success message and ack
@@ -499,7 +506,7 @@ impl V2ToV1Translation {
                         new_submits_accepted_count: 1,
                         new_shares_sum: 1, // TODO is this really 1?
                     };
-                    Self::submit_message(&mut self.v2_tx, success_msg);
+                    Self::submit_message(&mut self.v2_tx, success_msg)
                 } else {
                     // TODO use reject_shares() method once we can track the original payload message
                     let err_msg = v2::messages::SubmitSharesError {
@@ -509,11 +516,8 @@ impl V2ToV1Translation {
                         seq_num: 0,
                         code: format!("ShareRjct:{:?}", payload)[..32].try_into().unwrap(), // FIXME: error code
                     };
-                    Self::submit_message(&mut self.v2_tx, err_msg);
+                    Self::submit_message(&mut self.v2_tx, err_msg)
                 }
-                trace!("Submit result: {:?}", bool_result);
-
-                Ok(())
             })
             // TODO what should be the behavior when the result is incorrectly passed, shall we
             // report it as a SubmitSharesError?
@@ -537,11 +541,12 @@ impl V2ToV1Translation {
             // TODO the sequence number needs to be determined from the failed submit, currently,
             // there is no infrastructure to get this
             seq_num: 0,
-            code: format!("ShareRjct:{:?}", payload)[..32].try_into().unwrap(), // FIXME: error code
+            code: format!("ShareRjct:{:?}", payload)[..32]
+                .try_into()
+                .expect("BUG: wrong error code string"),
         };
 
-        Self::submit_message(&mut self.v2_tx, err_msg);
-        Ok(())
+        Self::submit_message(&mut self.v2_tx, err_msg)
     }
 
     /// Iterates the merkle branches and calculates block merkle root using the extra nonce 1.
@@ -646,75 +651,75 @@ impl V2ToV1Translation {
     /// Generates log trace entry and reject shares error reply to the client
     fn reject_shares(&mut self, payload: &v2::messages::SubmitSharesStandard, err_msg: String) {
         trace!("Unrecognized channel ID: {}", payload.channel_id);
-        Self::submit_message(
-            &mut self.v2_tx,
-            v2::messages::SubmitSharesError {
-                channel_id: payload.channel_id,
-                seq_num: payload.seq_num,
-                code: err_msg[..32].try_into().unwrap(), // FIXME: error code,
-            },
-        );
+        let submit_shares_error_msg = v2::messages::SubmitSharesError {
+            channel_id: payload.channel_id,
+            seq_num: payload.seq_num,
+            code: err_msg[..32].try_into().expect(
+                format!(
+                    "BUG: cannot convert error message to V2 format: {}",
+                    err_msg
+                )
+                .as_str(),
+            ),
+        };
+
+        if let Err(submit_err) = Self::submit_message(&mut self.v2_tx, submit_shares_error_msg) {
+            info!("Cannot send 'SubmitSharesError': {:?}", submit_err);
+        }
     }
 
-    fn perform_notify(&mut self, payload: &v1::messages::Notify) {
-        self.calculate_merkle_root(payload)
-            .and_then(|merkle_root| {
-                let v2_job = v2::messages::NewMiningJob {
-                    channel_id: Self::CHANNEL_ID,
-                    job_id: self.v2_job_id.next(),
-                    future_job: payload.clean_jobs(),
-                    merkle_root: Uint256Bytes(merkle_root.into_inner()),
+    fn perform_notify(&mut self, payload: &v1::messages::Notify) -> Result<()> {
+        let merkle_root = self.calculate_merkle_root(payload)?;
+
+        let v2_job = v2::messages::NewMiningJob {
+            channel_id: Self::CHANNEL_ID,
+            job_id: self.v2_job_id.next(),
+            future_job: payload.clean_jobs(),
+            merkle_root: Uint256Bytes(merkle_root.into_inner()),
+            version: payload.version(),
+        };
+
+        // Make sure we generate new prev hash. Empty JobMap means this is the first mining.notify
+        // message and we also have to issue NewPrevHash. In addition to that, we also check the
+        // clean jobs flag that indicates a must for new prev hash, too.
+        let maybe_set_new_prev_hash = if self.v2_to_v1_job_map.is_empty() || payload.clean_jobs() {
+            self.v2_to_v1_job_map.clear();
+            // Any error means immediate termination
+            // TODO write a unit test for such scenario, too
+            Some(self.build_set_new_prev_hash(v2_job.job_id, payload)?)
+        } else {
+            None
+        };
+        trace!(
+            "Registering V2 job ID {:x?} -> V1 job ID {:x?}",
+            v2_job.job_id,
+            payload.job_id(),
+        );
+        // TODO extract this duplicate code, turn the map into a new type with this
+        // custom policy (attempt to insert with the same key is a bug)
+        if self
+            .v2_to_v1_job_map
+            .insert(
+                v2_job.job_id,
+                V1SubmitTemplate {
+                    job_id: v1::messages::JobId::from_slice(payload.job_id()),
+                    time: payload.time(),
                     version: payload.version(),
-                };
+                },
+            )
+            .is_some()
+        {
+            error!("BUG: V2 id {} already exists...", v2_job.job_id);
+            // TODO add graceful handling of this bug (shutdown?)
+            panic!("V2 id already exists");
+        }
 
-                // Make sure we generate new prev hash. Empty JobMap means this is the first
-                // mining.notify message and we also
-                // have to issue NewPrevHash. In addition to that, we also check the clean
-                // jobs flag that indicates a must for new prev hash, too.
-                let maybe_set_new_prev_hash =
-                    if self.v2_to_v1_job_map.is_empty() || payload.clean_jobs() {
-                        self.v2_to_v1_job_map.clear();
-                        // Any error means immediate termination
-                        // TODO write a unit test for such scenario, too
-                        Some(self.build_set_new_prev_hash(v2_job.job_id, payload)?)
-                    } else {
-                        None
-                    };
-                trace!(
-                    "Registering V2 job ID {:x?} -> V1 job ID {:x?}",
-                    v2_job.job_id,
-                    payload.job_id(),
-                );
-                // TODO extract this duplicate code, turn the map into a new type with this
-                // custom policy (attempt to insert with the same key is a bug)
-                if self
-                    .v2_to_v1_job_map
-                    .insert(
-                        v2_job.job_id,
-                        V1SubmitTemplate {
-                            job_id: v1::messages::JobId::from_slice(payload.job_id()),
-                            time: payload.time(),
-                            version: payload.version(),
-                        },
-                    )
-                    .is_some()
-                {
-                    error!("BUG: V2 id {} already exists...", v2_job.job_id);
-                    // TODO add graceful handling of this bug (shutdown?)
-                    panic!("V2 id already exists");
-                }
+        Self::submit_message(&mut self.v2_tx, v2_job)?;
 
-                Self::submit_message(&mut self.v2_tx, v2_job);
-
-                maybe_set_new_prev_hash.and_then(|set_new_prev_hash| {
-                    Self::submit_message(&mut self.v2_tx, set_new_prev_hash);
-                    Some(())
-                });
-                Ok(())
-            })
-            .map_err(|e| trace!("visit_notify: {}", e))
-            // Consume the result as we cannot perform any action
-            .ok();
+        if let Some(set_new_prev_hash) = maybe_set_new_prev_hash {
+            Self::submit_message(&mut self.v2_tx, set_new_prev_hash)?
+        }
+        Ok(())
     }
 }
 
@@ -744,7 +749,7 @@ impl v1::Handler for V2ToV1Translation {
         })
         // run the result through the result handler
         .and_then(|handler| handler.0(self, id, payload))
-        .map_err(|e| trace!("visit_stratum_result: {}", e))
+        .map_err(|e| info!("visit_stratum_result failed: {}", e))
         // Consume the error as there is no way to return anything from the visitor for now.
         .ok();
     }
@@ -773,7 +778,9 @@ impl v1::Handler for V2ToV1Translation {
             // Anything after that is standard difficulty adjustment
             else {
                 trace!("Sending current target: {:x?}", self.v2_target);
-                self.send_set_target();
+                if let Err(e) = self.send_set_target() {
+                    info!("Cannot send SetTarget: {}", e);
+                }
             }
         }
     }
@@ -794,8 +801,18 @@ impl v1::Handler for V2ToV1Translation {
             info!("Channel not yet operational, caching latest mining.notify from upstream");
             return;
         }
-        self.perform_notify(payload);
+        self.perform_notify(payload)
+            .map_err(|e| {
+                info!(
+                    "visit_notify: Sending new mining job failed error={:?} id={:?} state={:?} \
+                     payload:{:?}",
+                    e, id, self.state, payload,
+                )
+            })
+            // Consume the error as there is no way this can be communicated further
+            .ok();
     }
+
     /// TODO currently unimplemented, the proxy should refuse changing the version mask from the server
     /// Since this is a notification only, the only action that the translation can do is log +
     /// report an error
@@ -831,14 +848,14 @@ impl v2::Handler for V2ToV1Translation {
         );
         if self.state != V2ToV1TranslationState::Init {
             trace!("Cannot setup connection again, received: {:?}", payload);
-            Self::submit_message(
-                &mut self.v2_tx,
-                v2::messages::SetupConnectionError {
-                    code: "Connection can be setup only once".try_into().unwrap(),
-                    flags: payload.flags, // TODO Flags indicating features causing an error
-                },
-            );
-            return;
+            let err_msg = v2::messages::SetupConnectionError {
+                code: "Connection can be setup only once".try_into().unwrap(),
+                flags: payload.flags, // TODO Flags indicating features causing an error
+            };
+            if let Err(submit_err) = Self::submit_message(&mut self.v2_tx, err_msg) {
+                info!("Cannot submit SetupConnectionError: {:?}", submit_err);
+                return;
+            }
         }
 
         self.v2_conn_details = Some(payload.clone());
@@ -855,7 +872,10 @@ impl v2::Handler for V2ToV1Translation {
             Self::handle_configure_result,
             Self::handle_configure_error,
         );
-        Self::submit_message(&mut self.v1_tx, v1_configure_message);
+        if let Err(submit_err) = Self::submit_message(&mut self.v1_tx, v1_configure_message) {
+            info!("Cannot submit mining.configure: {:?}", submit_err);
+            return;
+        }
         self.state = V2ToV1TranslationState::V1Configure;
     }
 
@@ -885,25 +905,28 @@ impl v2::Handler for V2ToV1Translation {
                 "Out of sequence OpenStandardMiningChannel message, received: {:?}",
                 payload
             );
-            Self::submit_message(
-                &mut self.v2_tx,
-                v2::messages::OpenStandardMiningChannelError {
-                    req_id: payload.req_id,
-                    code: "Out of sequence OpenStandardMiningChannel msg"
-                        .try_into()
-                        .unwrap(),
-                },
-            );
-            return;
+            let err_msg = v2::messages::OpenStandardMiningChannelError {
+                req_id: payload.req_id,
+                code: "Out of sequence OpenStandardMiningChannel msg"
+                    .try_into()
+                    .expect("BUG: incorrect error message"),
+            };
+
+            if let Err(submit_err) = Self::submit_message(&mut self.v2_tx, err_msg) {
+                info!(
+                    "Cannot send OpenStandardMiningChannelError message: {:?}",
+                    submit_err
+                );
+                return;
+            }
         }
         // Connection details are present by now
-        // TODO eliminate the connection details clone()
-        self.v2_conn_details.clone().and_then(|conn_details| {
+        if let Some(conn_details) = self.v2_conn_details.as_ref() {
             self.v2_channel_details = Some(payload.clone());
             self.state = V2ToV1TranslationState::OpenStandardMiningChannelPending;
 
             // FIXME: error handling
-            let hostname: String = conn_details.endpoint_host.try_into().unwrap();
+            let hostname: String = conn_details.endpoint_host.clone().try_into().unwrap();
             let hostname_port = format!("{}:{}", hostname, conn_details.endpoint_port);
             let subscribe = v1::messages::Subscribe(
                 Some(conn_details.device.fw_ver.to_string()),
@@ -918,7 +941,10 @@ impl v2::Handler for V2ToV1Translation {
                 Self::handle_authorize_or_subscribe_error,
             );
 
-            Self::submit_message(&mut self.v1_tx, v1_subscribe_message);
+            if let Err(submit_err) = Self::submit_message(&mut self.v1_tx, v1_subscribe_message) {
+                info!("Cannot send V1 mining.subscribe: {:?}", submit_err);
+                return;
+            }
 
             let authorize = v1::messages::Authorize(payload.user.to_string(), "".to_string());
             let v1_authorize_message = self.v1_method_into_message(
@@ -926,16 +952,17 @@ impl v2::Handler for V2ToV1Translation {
                 Self::handle_authorize_result,
                 Self::handle_authorize_or_subscribe_error,
             );
-            Self::submit_message(&mut self.v1_tx, v1_authorize_message);
-            // TODO cleanup
-            Some(())
-        });
+            if let Err(submit_err) = Self::submit_message(&mut self.v1_tx, v1_authorize_message) {
+                info!("Cannot send V1 mining.authorized: {:?}", submit_err);
+                return;
+            }
+        }
     }
 
     /// The flow of share processing is as follows:
     ///
     /// - find corresponding job
-    /// - verify the share that it meets the target
+    /// - verify the share that it meets the target (NOTE: currently not implemented)
     /// - emit V1 Submit message
     ///
     /// If any of the above points fail, reply with SubmitShareError + reasoning
@@ -999,7 +1026,12 @@ impl v2::Handler for V2ToV1Translation {
                     Self::handle_submit_result,
                     Self::handle_submit_error,
                 );
-                Self::submit_message(&mut self.v1_tx, v1_submit_message);
+                if let Err(submit_err) = Self::submit_message(&mut self.v1_tx, v1_submit_message) {
+                    info!(
+                        "SubmitSharesStandard: cannot send translated V1 message: {:?}",
+                        submit_err
+                    );
+                }
             }
             Err(e) => self.reject_shares(payload, format!("{}", e)),
         }
