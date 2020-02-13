@@ -34,7 +34,6 @@ use bytes::BytesMut;
 use futures::channel::mpsc;
 
 use bitcoin_hashes::{sha256d, Hash, HashEngine};
-use failure::ResultExt;
 use serde_json;
 
 use ii_stratum::v1;
@@ -45,6 +44,8 @@ use ii_stratum::v2::{
 
 use ii_logging::macros::*;
 use ii_wire::MessageId;
+
+use crate::error::{Error, ErrorKind, Result, ResultExt};
 
 #[cfg(test)]
 mod test;
@@ -107,18 +108,12 @@ enum V2ToV1TranslationState {
 }
 
 /// Represents a handler method that can process a particular ii_stratum result.
-type V1StratumResultHandler = fn(
-    &mut V2ToV1Translation,
-    &v1::MessageId,
-    &v1::rpc::StratumResult,
-) -> ii_stratum::error::Result<()>;
+type V1StratumResultHandler =
+    fn(&mut V2ToV1Translation, &v1::MessageId, &v1::rpc::StratumResult) -> Result<()>;
 
 /// Represents a handler method that can process a particular ii_stratum error.
-type V1StratumErrorHandler = fn(
-    &mut V2ToV1Translation,
-    &v1::MessageId,
-    &v1::rpc::StratumError,
-) -> ii_stratum::error::Result<()>;
+type V1StratumErrorHandler =
+    fn(&mut V2ToV1Translation, &v1::MessageId, &v1::rpc::StratumError) -> Result<()>;
 
 /// Custom mapping of V1 request id onto result/error handlers
 type V1ReqMap = HashMap<u32, (V1StratumResultHandler, V1StratumErrorHandler)>;
@@ -220,7 +215,7 @@ impl V2ToV1Translation {
     }
 
     /// Sets the current pending channel to operational state and submits success message
-    fn finalize_open_channel(&mut self) -> ii_stratum::error::Result<()> {
+    fn finalize_open_channel(&mut self) -> Result<()> {
         trace!("finalize_open_channel()");
         let mut init_target: Uint256Bytes = Uint256Bytes([0; 32]);
         self.v2_target
@@ -247,14 +242,16 @@ impl V2ToV1Translation {
                 Some(())
             })
             .ok_or(
-                v2::error::ErrorKind::ChannelNotOperational("Channel details missing".to_string())
-                    .into(),
+                ii_stratum::error::Error::from(v2::error::ErrorKind::ChannelNotOperational(
+                    "Channel details missing".to_string(),
+                ))
+                .into(),
             )
     }
 
     /// Send new target
     /// TODO extend the translation unit test accordingly
-    fn send_set_target(&mut self) {
+    fn send_set_target(&mut self) -> Result<()> {
         trace!("send_set_target()");
         let max_target = Uint256Bytes::from(self.v2_target.expect(
             "Bug: initial target still not defined when attempting to finalize \
@@ -302,7 +299,7 @@ impl V2ToV1Translation {
         &mut self,
         id: &v1::MessageId,
         payload: &v1::rpc::StratumResult,
-    ) -> ii_stratum::error::Result<()> {
+    ) -> Result<()> {
         trace!(
             "handle_configure_result() id={:?} state={:?} payload:{:?}",
             id,
@@ -312,9 +309,10 @@ impl V2ToV1Translation {
 
         // TODO review the use of serde_json here, it may be possible to eliminate this dependency
         // Extract version mask and verify it matches the maximum possible value
-        let proposed_version_mask: ii_stratum::error::Result<v1::messages::VersionMask> =
+        let proposed_version_mask: Result<v1::messages::VersionMask> =
             serde_json::from_value(payload.0["version-rolling.mask"].clone())
                 .context("Failed to parse version-rolling mask")
+                .map_err(|e| ii_stratum::error::Error::from(e))
                 .map_err(Into::into);
         proposed_version_mask.map(|proposed_version_mask| {
             trace!(
@@ -351,7 +349,7 @@ impl V2ToV1Translation {
         &mut self,
         id: &v1::MessageId,
         payload: &v1::rpc::StratumError,
-    ) -> ii_stratum::error::Result<()> {
+    ) -> Result<()> {
         trace!(
             "handle_configure_error() id={:?} state={:?} payload:{:?}",
             id,
@@ -374,7 +372,7 @@ impl V2ToV1Translation {
         &mut self,
         id: &v1::MessageId,
         payload: &v1::rpc::StratumResult,
-    ) -> ii_stratum::error::Result<()> {
+    ) -> Result<()> {
         trace!(
             "handle_subscribe_result() id={:?} state={:?} payload:{:?}",
             id,
@@ -382,6 +380,8 @@ impl V2ToV1Translation {
             payload,
         );
         v1::messages::SubscribeResult::try_from(payload)
+            // Convert ii-stratum error to proxy error
+            .map_err(Into::into)
             .and_then(|subscribe_result| {
                 self.v1_extra_nonce1 = Some(subscribe_result.extra_nonce_1().clone());
                 self.v1_extra_nonce2_size = subscribe_result.extra_nonce_2_size().clone();
@@ -407,7 +407,7 @@ impl V2ToV1Translation {
         &mut self,
         id: &v1::MessageId,
         payload: &v1::rpc::StratumResult,
-    ) -> ii_stratum::error::Result<()> {
+    ) -> Result<()> {
         trace!(
             "handle_authorize_result() id={:?} state={:?} payload:{:?}",
             id,
@@ -416,6 +416,8 @@ impl V2ToV1Translation {
         );
         // Authorize is expected as a plain boolean answer
         v1::messages::BooleanResult::try_from(payload)
+            // Convert ii-stratum error to proxy error
+            .map_err(Into::into)
             .and_then(|bool_result| {
                 trace!("Authorize result: {:?}", bool_result);
                 self.v1_authorized = bool_result.0;
@@ -431,8 +433,10 @@ impl V2ToV1Translation {
                     }
                 } else {
                     Err(
-                        v1::error::ErrorKind::Subscribe("Authorize result is false".to_string())
-                            .into(),
+                        ii_stratum::error::Error::from(v1::error::ErrorKind::Subscribe(
+                            "Authorize result is false".to_string(),
+                        ))
+                        .into(),
                     )
                 }
             })
@@ -447,7 +451,7 @@ impl V2ToV1Translation {
         &mut self,
         id: &v1::MessageId,
         payload: &v1::rpc::StratumError,
-    ) -> ii_stratum::error::Result<()> {
+    ) -> Result<()> {
         trace!(
             "handle_authorize_or_subscribe_error() id={:?} state={:?} payload:{:?}",
             id,
@@ -461,7 +465,9 @@ impl V2ToV1Translation {
                 payload
             );
             self.abort_open_channel("Service not ready");
-            Err(v1::error::ErrorKind::Subscribe(format!("{:?}", payload)).into())
+            Err(Error::from(ii_stratum::error::Error::from(
+                v1::error::ErrorKind::Subscribe(format!("{:?}", payload)),
+            )))
         } else {
             trace!("Ok, received the second of subscribe/authorize failures, channel is already closed: {:?}", payload);
             Ok(())
@@ -472,7 +478,7 @@ impl V2ToV1Translation {
         &mut self,
         id: &v1::MessageId,
         payload: &v1::rpc::StratumResult,
-    ) -> ii_stratum::error::Result<()> {
+    ) -> Result<()> {
         trace!(
             "handle_submit_result() id={:?} state={:?} payload:{:?}",
             id,
@@ -509,14 +515,14 @@ impl V2ToV1Translation {
             })
             // TODO what should be the behavior when the result is incorrectly passed, shall we
             // report it as a SubmitSharesError?
-            .map_err(|e| e)
+            .map_err(Into::into)
     }
 
     fn handle_submit_error(
         &mut self,
         id: &v1::MessageId,
         payload: &v1::rpc::StratumError,
-    ) -> ii_stratum::error::Result<()> {
+    ) -> Result<()> {
         trace!(
             "handle_submit_error() id={:?} state={:?} payload:{:?}",
             id,
@@ -723,15 +729,15 @@ impl v1::Handler for V2ToV1Translation {
             payload,
         );
         // Each response message should have an ID for pairing
-        id.ok_or(ii_stratum::error::Error::from(v1::error::ErrorKind::Rpc(
-            "Missing ID in ii_stratum result".to_string(),
+        id.ok_or(Error::from(ii_stratum::error::Error::from(
+            v1::error::ErrorKind::Rpc("Missing ID in ii_stratum result".to_string()),
         )))
         // find the ID in the request map
         .and_then(|id| {
             self.v1_req_map
                 .remove(&id)
-                .ok_or(ii_stratum::error::Error::from(v1::error::ErrorKind::Rpc(
-                    format!("Received invalid ID {}", id).into(),
+                .ok_or(Error::from(ii_stratum::error::Error::from(
+                    v1::error::ErrorKind::Rpc(format!("Received invalid ID {}", id).into()),
                 )))
         })
         // run the result through the result handler
