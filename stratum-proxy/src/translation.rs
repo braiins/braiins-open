@@ -350,7 +350,7 @@ impl V2ToV1Translation {
                 flags: 0, // TODO handle flags
                 code: "Cannot negotiate upstream V1 version mask"
                     .try_into()
-                    .unwrap(),
+                    .expect("BUG: incorrect error message"),
             };
             Self::submit_message(&mut self.v2_tx, response)
         }
@@ -516,7 +516,9 @@ impl V2ToV1Translation {
                         // TODO the sequence number needs to be determined from the failed submit, currently,
                         // there is no infrastructure to get this
                         seq_num: 0,
-                        code: format!("ShareRjct:{:?}", payload)[..32].try_into().unwrap(), // FIXME: error code
+                        code: format!("ShareRjct:{:?}", payload)[..32]
+                            .try_into()
+                            .expect("BUG: incorrect error message"),
                     };
                     Self::submit_message(&mut self.v2_tx, err_msg)
                 }
@@ -851,7 +853,9 @@ impl v2::Handler for V2ToV1Translation {
         if self.state != V2ToV1TranslationState::Init {
             trace!("Cannot setup connection again, received: {:?}", payload);
             let err_msg = v2::messages::SetupConnectionError {
-                code: "Connection can be setup only once".try_into().unwrap(),
+                code: "Connection can be setup only once"
+                    .try_into()
+                    .expect("BUG: incorrect error message"),
                 flags: payload.flags, // TODO Flags indicating features causing an error
             };
             if let Err(submit_err) = Self::submit_message(&mut self.v2_tx, err_msg) {
@@ -927,8 +931,12 @@ impl v2::Handler for V2ToV1Translation {
             self.v2_channel_details = Some(payload.clone());
             self.state = V2ToV1TranslationState::OpenStandardMiningChannelPending;
 
-            // FIXME: error handling
-            let hostname: String = conn_details.endpoint_host.clone().try_into().unwrap();
+            let hostname: String = conn_details
+                .endpoint_host
+                .clone()
+                .try_into()
+                .expect("BUG: Cannot convert to string from connection details");
+
             let hostname_port = format!("{}:{}", hostname, conn_details.endpoint_port);
             let subscribe = v1::messages::Subscribe(
                 Some(conn_details.device.fw_ver.to_string()),
