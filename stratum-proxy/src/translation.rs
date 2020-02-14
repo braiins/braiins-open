@@ -138,6 +138,8 @@ impl V2ToV1Translation {
     const MAX_EXTRANONCE_SIZE: usize = 0;
     /// Currently, no support for multiple channels in the proxy
     const CHANNEL_ID: u32 = 0;
+    /// Default group channel
+    const DEFAULT_GROUP_CHANNEL_ID: u32 = 0;
 
     /// U256 in little endian
     /// TODO: consolidate into common part/generalize
@@ -232,7 +234,7 @@ impl V2ToV1Translation {
                 channel_id: Self::CHANNEL_ID,
                 target: init_target.clone(),
                 extranonce_prefix: Bytes0_32::new(),
-                group_channel_id: 0,
+                group_channel_id: Self::DEFAULT_GROUP_CHANNEL_ID,
             };
             Self::submit_message(&mut self.v2_tx, msg)?;
 
