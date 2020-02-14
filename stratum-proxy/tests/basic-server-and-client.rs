@@ -208,6 +208,7 @@ async fn test_v2_client(server_addr: String) {
             .await
             .expect("BUG: Could not send message");
 
+            // TODO: enable this part of the test that attempts to read the response
             // let response = await!(conn.next()).unwrap().unwrap();
             // response.accept(&test_utils::v2::TestIdentityHandler);
 
