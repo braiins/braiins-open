@@ -127,18 +127,16 @@ impl From<io::Error> for Error {
 
 impl From<std::str::Utf8Error> for Error {
     fn from(e: std::str::Utf8Error) -> Self {
-        let msg = e.to_string();
         Self {
-            inner: e.context(ErrorKind::General(msg)),
+            inner: e.context(ErrorKind::General(e.to_string())),
         }
     }
 }
 
 impl From<bitcoin_hashes::error::Error> for Error {
     fn from(e: bitcoin_hashes::error::Error) -> Self {
-        let msg = e.to_string();
         Self {
-            inner: e.context(ErrorKind::BitcoinHashes(msg)),
+            inner: e.context(ErrorKind::BitcoinHashes(e.to_string())),
         }
     }
 }
