@@ -64,6 +64,16 @@ impl<P: Protocol> Payload<P> {
         Ok(writer.into_inner())
     }
 
+    /// Build the payload from `SerializablePayload`. Note: we cannot use standard `From` trait
+    /// implementation for T due to conflicting blanket implementation in the std::convert module
+    /// TODO consider moving the 'static lifetime into `SerializablePayload`
+    pub fn from_serializable<T>(payload: T) -> Self
+    where
+        T: 'static + SerializablePayload<P>,
+    {
+        Self::LazyBytes(Box::new(payload))
+    }
+
     /// Checks whether the payload contains already a deserialized object (= the payload is
     /// serializable).
     pub fn is_serializable(&self) -> bool {

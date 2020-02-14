@@ -185,9 +185,7 @@ impl Frame {
         let header = Header::new(is_channel_msg, ext_type, msg_type, None);
         Self {
             header,
-            // TODO: implement Payload::from to hide LazyBytes
-            payload: Payload::LazyBytes(Box::new(payload)),
-            //payload: Payload::from(payload),
+            payload: Payload::from_serializable(payload),
         }
     }
 
