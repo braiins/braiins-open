@@ -492,13 +492,21 @@ impl V2ToV1Translation {
             self.state,
             payload,
         );
-        // Authorize is expected as a plain boolean answer
+        // mining.submit response is expected as a plain boolean answer
         v1::messages::BooleanResult::try_from(payload)
             // Convert potential stratum error to proxy error first
             .map_err(Into::into)
             // Handle the actual submission result
             .and_then(|bool_result| {
-                trace!("Submit result: {:?}", bool_result);
+                let v2_channel_details = self
+                    .v2_channel_details
+                    .as_ref()
+                    .expect("BUG: V2 channel details missing");
+                trace!(
+                    "Submit result: {:?}, V2 channel: {:?}",
+                    bool_result,
+                    v2_channel_details
+                );
                 if bool_result.0 {
                     // TODO this is currently incomplete, we have to track all pending mining
                     // results so that we can correlate the success message and ack
@@ -508,6 +516,10 @@ impl V2ToV1Translation {
                         new_submits_accepted_count: 1,
                         new_shares_sum: 1, // TODO is this really 1?
                     };
+                    info!(
+                        "Share accepted from {}",
+                        v2_channel_details.user.to_string()
+                    );
                     Self::submit_message(&mut self.v2_tx, success_msg)
                 } else {
                     // TODO use reject_shares() method once we can track the original payload message
@@ -520,6 +532,7 @@ impl V2ToV1Translation {
                             .try_into()
                             .expect("BUG: incorrect error message"),
                     };
+                    info!("Share rejected for {}", v2_channel_details.user.to_string());
                     Self::submit_message(&mut self.v2_tx, err_msg)
                 }
             })
