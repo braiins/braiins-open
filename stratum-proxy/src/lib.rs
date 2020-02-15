@@ -23,6 +23,10 @@
 //! Stratum proxy library provides functionality for proxying any combination of Stratum V1 and V2
 //! protocol version
 
+// Increase recursion limit as e.g. `select!` macro  and other complex macros quickly run out of
+// the default recursion limit if more complex statements are used
+#![recursion_limit = "256"]
+
 pub mod error;
 pub mod server;
 pub mod translation;
