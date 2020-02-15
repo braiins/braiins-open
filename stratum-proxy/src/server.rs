@@ -22,12 +22,13 @@
 
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
-
-use ii_async_compat::prelude::*;
+use std::time;
 
 use futures::channel::mpsc;
 use futures::future::{self, Either};
 
+use ii_async_compat::prelude::*;
+use ii_async_compat::select;
 use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
@@ -54,6 +55,8 @@ struct ConnTranslation {
 
 impl ConnTranslation {
     const MAX_TRANSLATION_CHANNEL_SIZE: usize = 10;
+    const V1_UPSTREAM_TIMEOUT: time::Duration = time::Duration::from_secs(60);
+    const V2_DOWNSTREAM_TIMEOUT: time::Duration = time::Duration::from_secs(60);
 
     fn new(v2_conn: Connection<v2::Framing>, v1_conn: Connection<v1::Framing>) -> Self {
         let (v1_translation_tx, v1_translation_rx) =
@@ -71,12 +74,14 @@ impl ConnTranslation {
         }
     }
 
-    async fn run(mut self) {
+    async fn run(mut self) -> Result<()> {
         let mut v1_translation_rx = self.v1_translation_rx;
         let mut v2_translation_rx = self.v2_translation_rx;
         let (mut v1_conn_rx, mut v1_conn_tx) = self.v1_conn.split();
         let (mut v2_conn_rx, mut v2_conn_tx) = self.v2_conn.split();
 
+        // TODO factor out the frame pumping functionality and append the JoinHandle of this task
+        //  to the select statement to detect any problems and to terminate the translation, too
         // V1 message send out loop
         let v1_send_task = async move {
             while let Some(frame) = v1_translation_rx.next().await {
@@ -99,45 +104,36 @@ impl ConnTranslation {
         };
         tokio::spawn(v2_send_task);
 
+        // TODO: add cancel handler into the select statement
         loop {
-            let v1_or_v2 = future::select(v1_conn_rx.next(), v2_conn_rx.next()).await;
-            match v1_or_v2 {
-                // Ok path
-                Either::Left((Some(Ok(v1_frame)), _)) => {
-                    match v1::build_message_from_frame(v1_frame) {
-                        Ok(v1_msg) => v1_msg.accept(&mut self.translation).await,
-                        Err(err) => {
-                            error!("Cannot build V1 message from frame: {}", err);
-                            break;
+            select! {
+                // Receive V1 frame and translate it to V2 message
+                v1_frame = v1_conn_rx.next().timeout(Self::V1_UPSTREAM_TIMEOUT).fuse()=> {
+                    // Unwrap the potentially elapsed timeout
+                    match v1_frame? {
+                        Some(v1_frame) => {
+                            let v1_msg = v1::build_message_from_frame(v1_frame?)?;
+                            v1_msg.accept(&mut self.translation).await;
+                        }
+                        None => {
+                            Err("Upstream V1 stratum connection dropped")?;
                         }
                     }
-                }
-                Either::Right((Some(Ok(v2_frame)), _)) => {
-                    match v2::build_message_from_frame(v2_frame) {
-                        Ok(v2_msg) => v2_msg.accept(&mut self.translation).await,
-                        Err(err) => {
-                            error!("Cannot build V2 message from frame: {}", err);
-                            break;
+                },
+                // Receive V2 frame and translate it to V1 message
+                v2_frame = v2_conn_rx.next().timeout(Self::V2_DOWNSTREAM_TIMEOUT).fuse() => {
+                    match v2_frame? {
+                        Some(v2_frame) => {
+                            let v2_msg = v2::build_message_from_frame(v2_frame?)?;
+                            v2_msg.accept(&mut self.translation).await;
+                        }
+                        None => {
+                            Err("V2 client disconnected")?;
                         }
                     }
-                }
-
-                // Connection close
-                Either::Left((None, _)) | Either::Right((None, _)) => break,
-
-                // Connection error
-                Either::Left((Some(Err(err)), _)) => {
-                    error!("V1 connection failed: {}", err);
-                    break;
-                }
-                Either::Right((Some(Err(err)), _)) => {
-                    error!("V2 connection failed: {}", err);
-                    break;
                 }
             }
         }
-
-        info!("Terminating connection from: {:?}", v2_conn_rx.peer_addr())
     }
 }
 
@@ -151,8 +147,13 @@ async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: Socke
         }
     };
     info!("V1 connection setup");
+    // At this point, we already know the peer address is valid
+    let peer_addr = conn_v2.peer_addr().expect("BUG: invalid peer address");
     let translation = ConnTranslation::new(conn_v2, conn_v1);
-    translation.run().await
+
+    if let Err(e) = translation.run().await {
+        info!("Terminating connection from: {:?} ({:?})", peer_addr, e);
+    }
 }
 
 /// Structure representing the main server task.

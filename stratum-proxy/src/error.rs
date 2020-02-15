@@ -125,11 +125,32 @@ impl From<io::Error> for Error {
     }
 }
 
+impl From<tokio::time::Elapsed> for Error {
+    fn from(e: tokio::time::Elapsed) -> Self {
+        let msg = e.to_string();
+        Self {
+            inner: e.context(ErrorKind::Io(msg)),
+        }
+    }
+}
+
 impl From<std::str::Utf8Error> for Error {
     fn from(e: std::str::Utf8Error) -> Self {
         Self {
             inner: e.context(ErrorKind::General(e.to_string())),
         }
+    }
+}
+
+impl From<&str> for Error {
+    fn from(msg: &str) -> Self {
+        ErrorKind::General(msg.to_string()).into()
+    }
+}
+
+impl From<String> for Error {
+    fn from(msg: String) -> Self {
+        ErrorKind::General(msg).into()
     }
 }
 
