@@ -23,11 +23,9 @@
 //! All stratum V2 protocol messages
 
 use async_trait::async_trait;
-use lazy_static::lazy_static;
 use packed_struct_codegen::PrimitiveEnum_u8;
 use serde;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::convert::TryFrom;
 
 use super::framing;
@@ -43,8 +41,16 @@ use serde_json as serialization;
 #[cfg(test)]
 mod test;
 
+/// Generates conversion for base protocol (extension 0)
+macro_rules! impl_base_conversion {
+    ($message:tt, $is_channel_msg:tt, $handler_fn:tt) => {
+        impl_conversion!(0, $message, $is_channel_msg, $handler_fn);
+    };
+}
+
+/// Generates conversion for a specified extension message
 macro_rules! impl_conversion {
-    ($message:tt, /*$msg_type:path,*/ $handler_fn:tt) => {
+    ($extension_id:tt, $message:tt, $is_channel_msg:expr, $handler_fn:tt) => {
         // NOTE: $message and $handler_fn need to be tt because of https://github.com/dtolnay/async-trait/issues/46
 
         impl TryFrom<$message> for framing::Frame {
@@ -54,8 +60,8 @@ macro_rules! impl_conversion {
             /// is treated as a `SerializablePayload`)
             fn try_from(m: $message) -> Result<Self> {
                 Ok(framing::Frame::from_serializable_payload(
-                    MessageType::$message.is_channel_message(),
-                    0, // TODO specify the extension ID
+                    $is_channel_msg,
+                    $extension_id,
                     MessageType::$message as framing::MsgType,
                     m,
                 ))
@@ -100,7 +106,7 @@ macro_rules! impl_conversion {
 }
 
 /// All message recognized by the protocol
-#[derive(PrimitiveEnum_u8, Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(PrimitiveEnum_u8, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MessageType {
     SetupConnection = 0x00,
     SetupConnectionSuccess = 0x01,
@@ -131,50 +137,6 @@ pub enum MessageType {
     SetCustomMiningError = 0x24,
     Reconnect = 0x25,
     SetGroupChannel = 0x26,
-}
-
-impl MessageType {
-    fn is_channel_message(&self) -> bool {
-        match IS_CHANNEL_MESSAGE.get(self) {
-            Some(&is_ch_msg) => is_ch_msg,
-            None => false,
-        }
-    }
-}
-
-lazy_static! {
-    static ref IS_CHANNEL_MESSAGE: HashMap<MessageType, bool> = [
-        (MessageType::SetupConnection, false),
-        (MessageType::SetupConnectionSuccess, false),
-        (MessageType::SetupConnectionError, false),
-        (MessageType::ChannelEndpointChanged, true),
-        (MessageType::OpenStandardMiningChannel, false),
-        (MessageType::OpenStandardMiningChannelSuccess, false),
-        (MessageType::OpenStandardMiningChannelError, false),
-        (MessageType::OpenExtendedMiningChannel, false),
-        (MessageType::OpenExtendedMiningChannelSuccess, false),
-        (MessageType::OpenExtendedMiningChannelError, false),
-        (MessageType::UpdateChannel, true),
-        (MessageType::UpdateChannelError, true),
-        (MessageType::CloseChannel, true),
-        (MessageType::SetExtranoncePrefix, true),
-        (MessageType::SubmitSharesStandard, true),
-        (MessageType::SubmitSharesExtended, true),
-        (MessageType::SubmitSharesSuccess, true),
-        (MessageType::SubmitSharesError, true),
-        (MessageType::NewMiningJob, true),
-        (MessageType::NewExtendedMiningJob, true),
-        (MessageType::SetNewPrevHash, true),
-        (MessageType::SetTarget, true),
-        (MessageType::SetCustomMiningJob, false),
-        (MessageType::SetCustomMiningJobSuccess, false),
-        (MessageType::SetCustomMiningError, false),
-        (MessageType::Reconnect, false),
-        (MessageType::SetGroupChannel, false),
-    ]
-    .iter()
-    .cloned()
-    .collect();
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -295,26 +257,33 @@ pub struct SetTarget {
 
 pub struct SetGroupChannel;
 
-impl_conversion!(SetupConnection, visit_setup_connection);
-impl_conversion!(SetupConnectionSuccess, visit_setup_connection_success);
-impl_conversion!(SetupConnectionError, visit_setup_connection_error);
-impl_conversion!(
+impl_base_conversion!(SetupConnection, false, visit_setup_connection);
+impl_base_conversion!(
+    SetupConnectionSuccess,
+    false,
+    visit_setup_connection_success
+);
+impl_base_conversion!(SetupConnectionError, false, visit_setup_connection_error);
+impl_base_conversion!(
     OpenStandardMiningChannel,
+    false,
     visit_open_standard_mining_channel
 );
-impl_conversion!(
+impl_base_conversion!(
     OpenStandardMiningChannelSuccess,
+    false,
     visit_open_standard_mining_channel_success
 );
-impl_conversion!(
+impl_base_conversion!(
     OpenStandardMiningChannelError,
+    false,
     visit_open_standard_mining_channel_error
 );
-impl_conversion!(UpdateChannel, visit_update_channel);
-impl_conversion!(UpdateChannelError, visit_update_channel_error);
-impl_conversion!(SubmitSharesStandard, visit_submit_shares_standard);
-impl_conversion!(SubmitSharesSuccess, visit_submit_shares_success);
-impl_conversion!(SubmitSharesError, visit_submit_shares_error);
-impl_conversion!(NewMiningJob, visit_new_mining_job);
-impl_conversion!(SetNewPrevHash, visit_set_new_prev_hash);
-impl_conversion!(SetTarget, visit_set_target);
+impl_base_conversion!(UpdateChannel, true, visit_update_channel);
+impl_base_conversion!(UpdateChannelError, true, visit_update_channel_error);
+impl_base_conversion!(SubmitSharesStandard, true, visit_submit_shares_standard);
+impl_base_conversion!(SubmitSharesSuccess, true, visit_submit_shares_success);
+impl_base_conversion!(SubmitSharesError, true, visit_submit_shares_error);
+impl_base_conversion!(NewMiningJob, true, visit_new_mining_job);
+impl_base_conversion!(SetNewPrevHash, true, visit_set_new_prev_hash);
+impl_base_conversion!(SetTarget, true, visit_set_target);
