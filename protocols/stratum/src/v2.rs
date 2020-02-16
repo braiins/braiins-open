@@ -23,6 +23,8 @@
 //! Stratum version 2 top level module
 pub mod error;
 pub mod framing;
+#[macro_use]
+pub mod macros;
 pub mod messages;
 pub mod serialization;
 pub mod types;
