@@ -27,6 +27,7 @@ pub mod framing;
 pub mod macros;
 pub mod messages;
 pub mod serialization;
+pub mod telemetry;
 pub mod types;
 
 use self::messages::MessageType;
@@ -149,6 +150,50 @@ pub trait Handler: 'static + Send {
         &mut self,
         _header: &framing::Header,
         _payload: &messages::SetTarget,
+    ) {
+    }
+
+    // TODO the methods below will be removed once we will split off a separate handler
+    //  type for the telemetry extension and refactor message handling completely
+    async fn visit_open_telemetry_channel(
+        &mut self,
+        _header: &framing::Header,
+        _payload: &telemetry::messages::OpenTelemetryChannel,
+    ) {
+    }
+
+    async fn visit_open_telemetry_channel_success(
+        &mut self,
+        _header: &framing::Header,
+        _payload: &telemetry::messages::OpenTelemetryChannelSuccess,
+    ) {
+    }
+
+    async fn visit_open_telemetry_channel_error(
+        &mut self,
+        _header: &framing::Header,
+        _payload: &telemetry::messages::OpenTelemetryChannelError,
+    ) {
+    }
+
+    async fn visit_submit_telemetry_data(
+        &mut self,
+        _header: &framing::Header,
+        _payload: &telemetry::messages::SubmitTelemetryData,
+    ) {
+    }
+
+    async fn visit_submit_telemetry_data_success(
+        &mut self,
+        _header: &framing::Header,
+        _payload: &telemetry::messages::SubmitTelemetryDataSuccess,
+    ) {
+    }
+
+    async fn visit_submit_telemetry_data_error(
+        &mut self,
+        _header: &framing::Header,
+        _payload: &telemetry::messages::SubmitTelemetryDataError,
     ) {
     }
 }
