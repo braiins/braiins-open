@@ -172,54 +172,38 @@ pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protoco
     // Message<Protocol >
     let header = frame.header.clone();
     // Deserialize the payload;h based on its type specified in the header
-    let payload = match MessageType::from_primitive(frame.header.msg_type).ok_or(
-        error::ErrorKind::UnknownMessage(
-            format!("Unexpected payload type, full header: {:x?}", frame.header).into(),
-        ),
-    )? {
-        MessageType::SetupConnection => {
-            Box::new(messages::SetupConnection::try_from(frame)?) as Box<dyn AnyPayload<Protocol>>
-        }
+    let payload: Box<dyn AnyPayload<Protocol>> = match MessageType::from_primitive(
+        frame.header.msg_type,
+    )
+    .ok_or(error::ErrorKind::UnknownMessage(
+        format!("Unexpected payload type, full header: {:x?}", frame.header).into(),
+    ))? {
+        MessageType::SetupConnection => Box::new(messages::SetupConnection::try_from(frame)?),
         MessageType::SetupConnectionSuccess => {
             Box::new(messages::SetupConnectionSuccess::try_from(frame)?)
-                as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::SetupConnectionError => {
             Box::new(messages::SetupConnectionError::try_from(frame)?)
-                as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::OpenStandardMiningChannel => {
             Box::new(messages::OpenStandardMiningChannel::try_from(frame)?)
-                as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::OpenStandardMiningChannelSuccess => {
             Box::new(messages::OpenStandardMiningChannelSuccess::try_from(frame)?)
-                as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::OpenStandardMiningChannelError => {
             Box::new(messages::OpenStandardMiningChannelError::try_from(frame)?)
-                as Box<dyn AnyPayload<Protocol>>
         }
-        MessageType::NewMiningJob => {
-            Box::new(messages::NewMiningJob::try_from(frame)?) as Box<dyn AnyPayload<Protocol>>
-        }
-        MessageType::SetNewPrevHash => {
-            Box::new(messages::SetNewPrevHash::try_from(frame)?) as Box<dyn AnyPayload<Protocol>>
-        }
-        MessageType::SetTarget => {
-            Box::new(messages::SetTarget::try_from(frame)?) as Box<dyn AnyPayload<Protocol>>
-        }
+        MessageType::NewMiningJob => Box::new(messages::NewMiningJob::try_from(frame)?),
+        MessageType::SetNewPrevHash => Box::new(messages::SetNewPrevHash::try_from(frame)?),
+        MessageType::SetTarget => Box::new(messages::SetTarget::try_from(frame)?),
         MessageType::SubmitSharesStandard => {
             Box::new(messages::SubmitSharesStandard::try_from(frame)?)
-                as Box<dyn AnyPayload<Protocol>>
         }
         MessageType::SubmitSharesSuccess => {
             Box::new(messages::SubmitSharesSuccess::try_from(frame)?)
-                as Box<dyn AnyPayload<Protocol>>
         }
-        MessageType::SubmitSharesError => {
-            Box::new(messages::SubmitSharesError::try_from(frame)?) as Box<dyn AnyPayload<Protocol>>
-        }
+        MessageType::SubmitSharesError => Box::new(messages::SubmitSharesError::try_from(frame)?),
         _ => {
             return Err(error::ErrorKind::UnknownMessage(
                 format!("Unexpected payload type, full header: {:?}", frame.header).into(),
