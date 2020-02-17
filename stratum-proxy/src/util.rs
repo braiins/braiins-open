@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Braiins Systems s.r.o.
+// Copyright (C) 2020  Braiins Systems s.r.o.
 //
 // This file is part of Braiins Open-Source Initiative (BOSI).
 //
@@ -20,14 +20,25 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-//! Stratum proxy library provides functionality for proxying any combination of Stratum V1 and V2
-//! protocol version
+use futures::channel::mpsc;
+use std::{convert::TryInto, fmt};
 
-// Increase recursion limit as e.g. `select!` macro  and other complex macros quickly run out of
-// the default recursion limit if more complex statements are used
-#![recursion_limit = "256"]
+use ii_async_compat::prelude::*;
 
-pub mod error;
-pub mod server;
-pub mod translation;
-pub(crate) mod util;
+use crate::error::{Result, ResultExt};
+
+/// Converts the response message into a `Frame` and submits it into the
+/// specified queue
+pub(crate) fn submit_message<F, T, E>(tx: &mut mpsc::Sender<F>, msg: T) -> Result<()>
+where
+    F: Send + Sync + 'static,
+    E: fmt::Debug,
+    T: TryInto<F, Error = E>,
+{
+    let frame = msg
+        .try_into()
+        .expect("BUG: Could convert the message to frame");
+    tx.try_send(frame)
+        .context("submit message")
+        .map_err(Into::into)
+}

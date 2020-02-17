@@ -46,6 +46,7 @@ use ii_logging::macros::*;
 use ii_wire::MessageId;
 
 use crate::error::{Error, Result, ResultExt};
+use crate::util;
 
 #[cfg(test)]
 mod test;
@@ -166,23 +167,6 @@ impl V2ToV1Translation {
         }
     }
 
-    /// Converts the response message into a `Frame` and submits it into the
-    /// specified queue
-    /// TODO: handle serialization errors (logger + terminate?)
-    fn submit_message<F, T, E>(tx: &mut mpsc::Sender<F>, msg: T) -> Result<()>
-    where
-        F: Send + Sync + 'static,
-        E: fmt::Debug,
-        T: TryInto<F, Error = E>,
-    {
-        let frame = msg
-            .try_into()
-            .expect("BUG: Could convert the message to frame");
-        tx.try_send(frame)
-            .context("submit v1 message")
-            .map_err(Into::into)
-    }
-
     /// Builds a V1 request from V1 method and assigns a unique identifier to it
     fn v1_method_into_message<M, E>(
         &mut self,
@@ -236,7 +220,7 @@ impl V2ToV1Translation {
                 extranonce_prefix: Bytes0_32::new(),
                 group_channel_id: Self::DEFAULT_GROUP_CHANNEL_ID,
             };
-            Self::submit_message(&mut self.v2_tx, msg)?;
+            util::submit_message(&mut self.v2_tx, msg)?;
 
             // If mining.notify is pending, process it now as part of open channel finalization
             if let Some(notify_payload) = self.v1_deferred_notify.take() {
@@ -267,7 +251,7 @@ impl V2ToV1Translation {
             max_target,
         };
 
-        Self::submit_message(&mut self.v2_tx, msg)
+        util::submit_message(&mut self.v2_tx, msg)
     }
 
     /// Reports failure to open the channel and changes the translation state
@@ -292,7 +276,7 @@ impl V2ToV1Translation {
             };
             self.v2_channel_details = None;
 
-            if let Err(submit_err) = Self::submit_message(&mut self.v2_tx, msg) {
+            if let Err(submit_err) = util::submit_message(&mut self.v2_tx, msg) {
                 info!(
                     "abort_open_channel() failed: {:?}, abort message: {}",
                     submit_err, err_msg
@@ -342,7 +326,7 @@ impl V2ToV1Translation {
                 used_version: Self::PROTOCOL_VERSION as u16,
                 flags: 0,
             };
-            Self::submit_message(&mut self.v2_tx, success)
+            util::submit_message(&mut self.v2_tx, success)
         } else {
             // TODO consolidate into abort_connection() + communicate shutdown of this
             // connection similarly everywhere in the code
@@ -352,7 +336,7 @@ impl V2ToV1Translation {
                     .try_into()
                     .expect("BUG: incorrect error message"),
             };
-            Self::submit_message(&mut self.v2_tx, response)
+            util::submit_message(&mut self.v2_tx, response)
         }
     }
 
@@ -375,7 +359,7 @@ impl V2ToV1Translation {
                 .try_into()
                 .expect("BUG: incorrect error message"),
         };
-        Self::submit_message(&mut self.v2_tx, response)
+        util::submit_message(&mut self.v2_tx, response)
     }
 
     fn handle_subscribe_result(
@@ -520,7 +504,7 @@ impl V2ToV1Translation {
                         "Share accepted from {}",
                         v2_channel_details.user.to_string()
                     );
-                    Self::submit_message(&mut self.v2_tx, success_msg)
+                    util::submit_message(&mut self.v2_tx, success_msg)
                 } else {
                     // TODO use reject_shares() method once we can track the original payload message
                     let err_msg = v2::messages::SubmitSharesError {
@@ -533,7 +517,7 @@ impl V2ToV1Translation {
                             .expect("BUG: incorrect error message"),
                     };
                     info!("Share rejected for {}", v2_channel_details.user.to_string());
-                    Self::submit_message(&mut self.v2_tx, err_msg)
+                    util::submit_message(&mut self.v2_tx, err_msg)
                 }
             })
             // TODO what should be the behavior when the result is incorrectly passed, shall we
@@ -563,7 +547,7 @@ impl V2ToV1Translation {
                 .expect("BUG: wrong error code string"),
         };
 
-        Self::submit_message(&mut self.v2_tx, err_msg)
+        util::submit_message(&mut self.v2_tx, err_msg)
     }
 
     /// Iterates the merkle branches and calculates block merkle root using the extra nonce 1.
@@ -680,7 +664,7 @@ impl V2ToV1Translation {
             ),
         };
 
-        if let Err(submit_err) = Self::submit_message(&mut self.v2_tx, submit_shares_error_msg) {
+        if let Err(submit_err) = util::submit_message(&mut self.v2_tx, submit_shares_error_msg) {
             info!("Cannot send 'SubmitSharesError': {:?}", submit_err);
         }
     }
@@ -731,10 +715,10 @@ impl V2ToV1Translation {
             panic!("V2 id already exists");
         }
 
-        Self::submit_message(&mut self.v2_tx, v2_job)?;
+        util::submit_message(&mut self.v2_tx, v2_job)?;
 
         if let Some(set_new_prev_hash) = maybe_set_new_prev_hash {
-            Self::submit_message(&mut self.v2_tx, set_new_prev_hash)?
+            util::submit_message(&mut self.v2_tx, set_new_prev_hash)?
         }
         Ok(())
     }
@@ -871,7 +855,7 @@ impl v2::Handler for V2ToV1Translation {
                     .expect("BUG: incorrect error message"),
                 flags: payload.flags, // TODO Flags indicating features causing an error
             };
-            if let Err(submit_err) = Self::submit_message(&mut self.v2_tx, err_msg) {
+            if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg) {
                 info!("Cannot submit SetupConnectionError: {:?}", submit_err);
                 return;
             }
@@ -891,7 +875,7 @@ impl v2::Handler for V2ToV1Translation {
             Self::handle_configure_result,
             Self::handle_configure_error,
         );
-        if let Err(submit_err) = Self::submit_message(&mut self.v1_tx, v1_configure_message) {
+        if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_configure_message) {
             info!("Cannot submit mining.configure: {:?}", submit_err);
             return;
         }
@@ -931,7 +915,7 @@ impl v2::Handler for V2ToV1Translation {
                     .expect("BUG: incorrect error message"),
             };
 
-            if let Err(submit_err) = Self::submit_message(&mut self.v2_tx, err_msg) {
+            if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg) {
                 info!(
                     "Cannot send OpenStandardMiningChannelError message: {:?}",
                     submit_err
@@ -964,7 +948,7 @@ impl v2::Handler for V2ToV1Translation {
                 Self::handle_authorize_or_subscribe_error,
             );
 
-            if let Err(submit_err) = Self::submit_message(&mut self.v1_tx, v1_subscribe_message) {
+            if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_subscribe_message) {
                 info!("Cannot send V1 mining.subscribe: {:?}", submit_err);
                 return;
             }
@@ -975,7 +959,7 @@ impl v2::Handler for V2ToV1Translation {
                 Self::handle_authorize_result,
                 Self::handle_authorize_or_subscribe_error,
             );
-            if let Err(submit_err) = Self::submit_message(&mut self.v1_tx, v1_authorize_message) {
+            if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_authorize_message) {
                 info!("Cannot send V1 mining.authorized: {:?}", submit_err);
                 return;
             }
@@ -1049,7 +1033,7 @@ impl v2::Handler for V2ToV1Translation {
                     Self::handle_submit_result,
                     Self::handle_submit_error,
                 );
-                if let Err(submit_err) = Self::submit_message(&mut self.v1_tx, v1_submit_message) {
+                if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_submit_message) {
                     info!(
                         "SubmitSharesStandard: cannot send translated V1 message: {:?}",
                         submit_err
