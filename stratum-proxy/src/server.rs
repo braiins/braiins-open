@@ -74,9 +74,42 @@ impl ConnTranslation {
         }
     }
 
-    async fn run(mut self) -> Result<()> {
+    async fn v1_handle_frame(
+        translation: &mut V2ToV1Translation,
+        frame: v1::framing::Frame,
+    ) -> Result<()> {
+        let v1_msg = v1::build_message_from_frame(frame)?;
+        v1_msg.accept(translation).await;
+        Ok(())
+    }
+
+    //    async fn handle_frame(&mut self, frame: v2::framing::Frame) -> Result<()> {
+    async fn v2_handle_frame(
+        translation: &mut V2ToV1Translation,
+        frame: v2::framing::Frame,
+    ) -> Result<()> {
+        match frame.header.extension_type {
+            v2::extensions::BASE => {
+                let event_msg = v2::build_message_from_frame(frame)?;
+                event_msg.accept(translation).await;
+            }
+            // Report any other extension down the line
+            _ => {
+                info!(
+                    "Received protocol extension frame: {:x?} passing down",
+                    frame
+                );
+            }
+        }
+        Ok(())
+    }
+
+    async fn run(self) -> Result<()> {
         let mut v1_translation_rx = self.v1_translation_rx;
         let mut v2_translation_rx = self.v2_translation_rx;
+        let mut translation = self.translation;
+        // TODO make connections 'optional' so that we can remove them from the instance and use
+        //  the rest of the instance in as 'borrowed mutable reference'.
         let (mut v1_conn_rx, mut v1_conn_tx) = self.v1_conn.split();
         let (mut v2_conn_rx, mut v2_conn_tx) = self.v2_conn.split();
 
@@ -112,8 +145,7 @@ impl ConnTranslation {
                     // Unwrap the potentially elapsed timeout
                     match v1_frame? {
                         Some(v1_frame) => {
-                            let v1_msg = v1::build_message_from_frame(v1_frame?)?;
-                            v1_msg.accept(&mut self.translation).await;
+                            Self::v1_handle_frame(&mut translation, v1_frame?).await?;
                         }
                         None => {
                             Err("Upstream V1 stratum connection dropped")?;
@@ -124,8 +156,7 @@ impl ConnTranslation {
                 v2_frame = v2_conn_rx.next().timeout(Self::V2_DOWNSTREAM_TIMEOUT).fuse() => {
                     match v2_frame? {
                         Some(v2_frame) => {
-                            let v2_msg = v2::build_message_from_frame(v2_frame?)?;
-                            v2_msg.accept(&mut self.translation).await;
+                            Self::v2_handle_frame(&mut translation, v2_frame?).await?;
                         }
                         None => {
                             Err("V2 client disconnected")?;
