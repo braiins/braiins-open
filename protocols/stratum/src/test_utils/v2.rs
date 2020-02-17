@@ -180,7 +180,7 @@ pub fn build_new_mining_job() -> NewMiningJob {
     NewMiningJob {
         channel_id: 0,
         job_id: 0,
-        future_job: false,
+        future_job: true,
         merkle_root: Uint256Bytes(expected_merkle_root.into_inner()),
         version: MINING_WORK_VERSION,
     }

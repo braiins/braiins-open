@@ -675,7 +675,7 @@ impl V2ToV1Translation {
         let v2_job = v2::messages::NewMiningJob {
             channel_id: Self::CHANNEL_ID,
             job_id: self.v2_job_id.next(),
-            future_job: payload.clean_jobs(),
+            future_job: self.v2_to_v1_job_map.is_empty() || payload.clean_jobs(),
             merkle_root: Uint256Bytes(merkle_root.into_inner()),
             version: payload.version(),
         };
@@ -683,7 +683,7 @@ impl V2ToV1Translation {
         // Make sure we generate new prev hash. Empty JobMap means this is the first mining.notify
         // message and we also have to issue NewPrevHash. In addition to that, we also check the
         // clean jobs flag that indicates a must for new prev hash, too.
-        let maybe_set_new_prev_hash = if self.v2_to_v1_job_map.is_empty() || payload.clean_jobs() {
+        let maybe_set_new_prev_hash = if v2_job.future_job {
             self.v2_to_v1_job_map.clear();
             // Any error means immediate termination
             // TODO write a unit test for such scenario, too
