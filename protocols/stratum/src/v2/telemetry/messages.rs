@@ -20,18 +20,21 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use async_trait::async_trait;
-use packed_struct_codegen::PrimitiveEnum_u8;
-use serde;
-use serde::{Deserialize, Serialize};
-
 #[cfg(not(feature = "v2json"))]
 use crate::v2::serialization;
 use crate::{
     error::{Error, Result},
-    v2::{extensions, framing, types::*, Protocol},
-    AnyPayload,
+    v2::{error, extensions, framing, types::*, Protocol},
+    AnyPayload, Message,
 };
+use async_trait::async_trait;
+use packed_struct::prelude::*;
+use packed_struct_codegen::PrimitiveEnum_u8;
+use serde;
+use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
+
+use ii_logging::macros::*;
 
 /// Generates conversion for telemetry protocol messages (extension 1)
 macro_rules! impl_telemetry_message_conversion {
@@ -119,3 +122,50 @@ impl_telemetry_message_conversion!(
     false,
     visit_submit_telemetry_data_error
 );
+
+/// Consumes `frame` and produces a Message object based on the payload type
+pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protocol>> {
+    trace!("V2: building telemetry message from frame {:x?}", frame);
+
+    // Payload that already contains deserialized message can be returned directly
+    // TODO this is duplicate chunk from v2::build_message_from_frame()
+    if frame.payload.is_serializable() {
+        let (header, payload) = frame.split();
+        let serializable_payload = payload
+            .into_serializable()
+            .expect("BUG: cannot convert payload into serializable");
+
+        return Ok(Message {
+            header,
+            payload: serializable_payload,
+        });
+    }
+    // Header will be consumed by the subsequent transformation of the frame into the actual
+    // payload for further handling. Therefore we create a copy for constructing a
+    // Message<Protocol >
+    let header = frame.header.clone();
+    // Deserialize the payload;h based on its type specified in the header
+    let payload: Box<dyn AnyPayload<Protocol>> = match MessageType::from_primitive(
+        frame.header.msg_type,
+    )
+    .ok_or(error::ErrorKind::UnknownMessage(
+        format!("Unexpected payload type, full header: {:x?}", frame.header).into(),
+    ))? {
+        MessageType::OpenTelemetryChannel => Box::new(OpenTelemetryChannel::try_from(frame)?),
+        MessageType::OpenTelemetryChannelSuccess => {
+            Box::new(OpenTelemetryChannelSuccess::try_from(frame)?)
+        }
+        MessageType::OpenTelemetryChannelError => {
+            Box::new(OpenTelemetryChannelError::try_from(frame)?)
+        }
+        MessageType::SubmitTelemetryData => Box::new(SubmitTelemetryData::try_from(frame)?),
+        MessageType::SubmitTelemetryDataSuccess => {
+            Box::new(SubmitTelemetryDataSuccess::try_from(frame)?)
+        }
+        MessageType::SubmitTelemetryDataError => {
+            Box::new(SubmitTelemetryDataError::try_from(frame)?)
+        }
+    };
+
+    Ok(Message { header, payload })
+}
