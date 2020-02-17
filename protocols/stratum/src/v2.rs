@@ -25,6 +25,7 @@ pub mod error;
 pub mod framing;
 #[macro_use]
 pub mod macros;
+pub mod extensions;
 pub mod messages;
 pub mod serialization;
 pub mod telemetry;

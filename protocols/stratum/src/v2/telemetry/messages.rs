@@ -29,14 +29,19 @@ use serde::{Deserialize, Serialize};
 use crate::v2::serialization;
 use crate::{
     error::{Error, Result},
-    v2::{framing, types::*, Protocol},
+    v2::{extensions, framing, types::*, Protocol},
     AnyPayload,
 };
 
 /// Generates conversion for telemetry protocol messages (extension 1)
 macro_rules! impl_telemetry_message_conversion {
-    ($message:tt, $is_channel_msg:tt, $handler_fn:tt) => {
-        impl_message_conversion!(1, $message, $is_channel_msg, $handler_fn);
+    ($message:tt, $is_channel_msg:expr, $handler_fn:tt) => {
+        impl_message_conversion!(
+            extensions::TELEMETRY,
+            $message,
+            $is_channel_msg,
+            $handler_fn
+        );
     };
 }
 

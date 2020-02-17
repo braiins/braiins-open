@@ -123,7 +123,7 @@ impl Header {
 #[derive(Debug, PartialEq)]
 pub struct Frame {
     /// Allow public access to the header for payload dispatching etc.
-    pub(crate) header: Header,
+    pub header: Header,
     /// Keep payload
     pub(crate) payload: Payload<Protocol>,
 }
