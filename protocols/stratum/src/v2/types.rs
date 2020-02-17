@@ -266,11 +266,12 @@ sized_bytes_type!(Bytes0_64k, 0, 65535);
 sized_bytes_type!(Bytes1_64k, 1, 65535);
 
 /// Device specific information - all parts are optional and could be empty strings
+/// TODO: Fix minimal string length in the Stratum V2 specification
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DeviceInfo {
-    pub vendor: Str1_255,
-    pub hw_rev: Str1_255,
-    pub fw_ver: Str1_255,
+    pub vendor: Str0_255,
+    pub hw_rev: Str0_255,
+    pub fw_ver: Str0_255,
     pub dev_id: Str0_255,
 }
 
