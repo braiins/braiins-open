@@ -314,11 +314,11 @@ impl_conversion_request!(SetDifficulty, Method::SetDifficulty, visit_set_difficu
 //let dur = serde_json::from_str(j).map(|Helper(dur)| dur)?;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct JobId(HexBytes);
+pub struct JobId(String);
 
 impl JobId {
-    pub fn from_slice(job_id: &[u8]) -> Self {
-        Self(HexBytes(Vec::from(job_id)))
+    pub fn from_str(job_id: &str) -> Self {
+        Self(String::from(job_id))
     }
 }
 
@@ -363,8 +363,8 @@ pub struct Notify(
 
 // TODO consider making the attributes return new type references, it would be less prone to typos
 impl Notify {
-    pub fn job_id(&self) -> &[u8] {
-        &((self.0).0).0
+    pub fn job_id(&self) -> &str {
+        &(self.0).0
     }
 
     pub fn prev_hash(&self) -> &[u8] {
@@ -460,8 +460,8 @@ impl Submit {
         &(self.0).0
     }
 
-    pub fn job_id(&self) -> &[u8] {
-        &((self.1).0).0
+    pub fn job_id(&self) -> &String {
+        &(self.1).0
     }
 
     pub fn extra_nonce_2(&self) -> &[u8] {

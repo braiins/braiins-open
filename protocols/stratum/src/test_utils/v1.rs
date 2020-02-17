@@ -191,11 +191,11 @@ pub fn build_set_difficulty() -> SetDifficulty {
     SetDifficulty([4f32])
 }
 
-pub const MINING_NOTIFY_JOB_ID: [u8; 3] = [0x01, 0x1d, 0xe9];
+pub const MINING_NOTIFY_JOB_ID: &str = "ahoj";
 pub const MINING_NOTIFY_JSON: &str = concat!(
     r#"{"#,
     r#""id":null,"method":"mining.notify","#,
-    r#""params":["011de9","13f46cc7bf03a16697170dbb9d15680b7e75fcf10846037f171d7f6b00000000","01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff44026d0cfabe6d6dc22da09055dabfce93b90fec9c53cbec5ace52248db605efe1d2f2c1bfc8f1260100000000000000","e91d012f736c7573682f000000000200f2052a010000001976a914505b9f58045298b98a7af6333445098ac700ac3088ac0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf900000000",[],"20000000","1d00ffff","5d10bc0a",false]"#,
+    r#""params":["ahoj","13f46cc7bf03a16697170dbb9d15680b7e75fcf10846037f171d7f6b00000000","01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff44026d0cfabe6d6dc22da09055dabfce93b90fec9c53cbec5ace52248db605efe1d2f2c1bfc8f1260100000000000000","e91d012f736c7573682f000000000200f2052a010000001976a914505b9f58045298b98a7af6333445098ac700ac3088ac0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf900000000",[],"20000000","1d00ffff","5d10bc0a",false]"#,
     r#"}"#,
 );
 
@@ -228,7 +228,7 @@ pub const MINING_SUBMIT_JSON: &str = concat!(
     r#"{"id":3,"method":"mining.submit","#,
     // TODO the correct share extra nonce 2 is 01000000, we have to replace the sample job
     // completely with a new none that has extra nonce 2 == 0
-    r#""params":["braiins.worker0","011de9","00000000","5d10bc0a","0443c37b","00000000"]"#,
+    r#""params":["braiins.worker0","ahoj","00000000","5d10bc0a","0443c37b","00000000"]"#,
     r#"}"#
 );
 
