@@ -69,6 +69,10 @@ pub struct V2ToV1Translation {
     v1_extra_nonce2_size: usize,
     v1_authorized: bool,
 
+    /// Whether to force future jobs: might be handy for v1 pools which don't accept solutions with
+    /// `ntime` less than specified on jobs they are solving (but greater than ntime on prevhash).
+    v1_force_future_jobs: bool,
+
     /// Latest mining.notify payload that arrived before V1 authorize has completed.
     /// This allows immediate completion of channel open on V2.
     v1_deferred_notify: Option<v1::messages::Notify>,
@@ -159,6 +163,7 @@ impl V2ToV1Translation {
             v1_extra_nonce1: None,
             v1_extra_nonce2_size: 0,
             v1_authorized: false,
+            v1_force_future_jobs: true,
             v1_deferred_notify: None,
             v2_tx,
             v2_req_id: MessageId::new(),
@@ -675,7 +680,9 @@ impl V2ToV1Translation {
         let v2_job = v2::messages::NewMiningJob {
             channel_id: Self::CHANNEL_ID,
             job_id: self.v2_job_id.next(),
-            future_job: self.v2_to_v1_job_map.is_empty() || payload.clean_jobs(),
+            future_job: self.v2_to_v1_job_map.is_empty()
+                || payload.clean_jobs()
+                || self.v1_force_future_jobs,
             merkle_root: Uint256Bytes(merkle_root.into_inner()),
             version: payload.version(),
         };
