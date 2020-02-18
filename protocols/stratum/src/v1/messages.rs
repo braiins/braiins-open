@@ -209,6 +209,16 @@ pub struct ConfigureResult(pub serde_json::Value);
 
 impl_conversion_response!(ConfigureResult);
 
+/// Extranonce subscriptionMessage
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct ExtranonceSubscribe();
+
+impl_conversion_request!(
+    ExtranonceSubscribe,
+    Method::ExtranonceSubscribe,
+    visit_extranonce_subscribe
+);
+
 /// Compounds all data required for mining subscription
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Subscribe(

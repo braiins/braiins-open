@@ -66,6 +66,13 @@ pub trait Handler: 'static + Send {
 
     async fn visit_subscribe(&mut self, _id: &MessageId, _payload: &messages::Subscribe) {}
 
+    async fn visit_extranonce_subscribe(
+        &mut self,
+        _id: &MessageId,
+        _payload: &messages::ExtranonceSubscribe,
+    ) {
+    }
+
     async fn visit_authorize(&mut self, _id: &MessageId, _payload: &messages::Authorize) {}
 
     async fn visit_set_difficulty(&mut self, _id: &MessageId, _payload: &messages::SetDifficulty) {}

@@ -43,6 +43,8 @@ use crate::AnyPayload;
 pub enum Method {
     #[serde(rename = "mining.subscribe")]
     Subscribe,
+    #[serde(rename = "mining.extranonce.subscribe")]
+    ExtranonceSubscribe,
     #[serde(rename = "mining.authorize")]
     Authorize,
     #[serde(rename = "mining.set_difficulty")]

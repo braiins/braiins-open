@@ -51,6 +51,19 @@ use crate::util;
 #[cfg(test)]
 mod test;
 
+pub struct V2ToV1TranslationOptions {
+    /// Try to send `extranonce.subscribe` during handshake
+    pub try_enable_xnsub: bool,
+}
+
+impl Default for V2ToV1TranslationOptions {
+    fn default() -> Self {
+        Self {
+            try_enable_xnsub: false,
+        }
+    }
+}
+
 /// TODO consider whether the v1/v2 TX channels should use a 'Message'. Currently the reason
 /// for not doing that is that we want to prevent dynamic dispatch when serializing a particular
 /// message
@@ -68,6 +81,7 @@ pub struct V2ToV1Translation {
     v1_extra_nonce1: Option<v1::ExtraNonce1>,
     v1_extra_nonce2_size: usize,
     v1_authorized: bool,
+    v1_xnsub_enabled: bool,
 
     /// Whether to force future jobs: might be handy for v1 pools which don't accept solutions with
     /// `ntime` less than specified on jobs they are solving (but greater than ntime on prevhash).
@@ -92,6 +106,8 @@ pub struct V2ToV1Translation {
     v2_job_id: MessageId,
     /// Translates V2 job ID to V1 job ID
     v2_to_v1_job_map: JobMap,
+    /// Options for translation
+    options: V2ToV1TranslationOptions,
 }
 
 /// States of the Translation setup
@@ -158,7 +174,11 @@ impl V2ToV1Translation {
     /// TODO: DIFF1 const target is broken, the last U64 word gets actually initialized to 0xffffffff, not sure why
     const DIFF1_TARGET: uint::U256 = uint::U256([0, 0, 0, 0xffff0000u64]);
 
-    pub fn new(v1_tx: mpsc::Sender<v1::Frame>, v2_tx: mpsc::Sender<v2::Frame>) -> Self {
+    pub fn new(
+        v1_tx: mpsc::Sender<v1::Frame>,
+        v2_tx: mpsc::Sender<v2::Frame>,
+        options: V2ToV1TranslationOptions,
+    ) -> Self {
         Self {
             v2_conn_details: None,
             v2_channel_details: None,
@@ -171,11 +191,13 @@ impl V2ToV1Translation {
             v1_extra_nonce2_size: 0,
             v1_authorized: false,
             v1_force_future_jobs: true,
+            v1_xnsub_enabled: false,
             v1_deferred_notify: None,
             v2_tx,
             v2_req_id: MessageId::new(),
             v2_job_id: MessageId::new(),
             v2_to_v1_job_map: JobMap::default(),
+            options,
         }
     }
 
@@ -372,6 +394,37 @@ impl V2ToV1Translation {
                 .expect("BUG: incorrect error message"),
         };
         util::submit_message(&mut self.v2_tx, response)
+    }
+
+    fn handle_extranonce_subscribe_result(
+        &mut self,
+        _id: &v1::MessageId,
+        payload: &v1::rpc::StratumResult,
+    ) -> Result<()> {
+        v1::messages::BooleanResult::try_from(payload)
+            // Convert potential stratum error to proxy error first
+            .map_err(Into::into)
+            // Handle the actual submission result
+            .map(|bool_result| {
+                if bool_result.0 {
+                    info!("Support for #xnsub enabled");
+                    self.v1_xnsub_enabled = true;
+                } else {
+                    error!("Pool refused to enable #xnsub");
+                    self.v1_xnsub_enabled = false;
+                }
+                ()
+            })
+    }
+
+    fn handle_extranonce_subscribe_error(
+        &mut self,
+        _id: &v1::MessageId,
+        payload: &v1::rpc::StratumError,
+    ) -> Result<()> {
+        self.v1_xnsub_enabled = false;
+        error!("Error when trying to enable #xnsub: {}", payload.1);
+        Ok(())
     }
 
     fn handle_subscribe_result(
@@ -988,6 +1041,24 @@ impl v2::Handler for V2ToV1Translation {
             if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_subscribe_message) {
                 info!("Cannot send V1 mining.subscribe: {:?}", submit_err);
                 return;
+            }
+
+            if self.options.try_enable_xnsub {
+                let extranonce_subscribe = v1::messages::ExtranonceSubscribe();
+                let v1_extranonce_subscribe = self.v1_method_into_message(
+                    extranonce_subscribe,
+                    Self::handle_extranonce_subscribe_result,
+                    Self::handle_extranonce_subscribe_error,
+                );
+                if let Err(submit_err) =
+                    util::submit_message(&mut self.v1_tx, v1_extranonce_subscribe)
+                {
+                    info!(
+                        "Cannot send V1 mining.extranonce_subscribe: {:?}",
+                        submit_err
+                    );
+                    return;
+                }
             }
 
             let authorize = v1::messages::Authorize(payload.user.to_string(), "".to_string());

@@ -84,7 +84,7 @@ async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<v1::Fra
 async fn test_setup_connection_translate() {
     let (v1_tx, mut v1_rx) = mpsc::channel(1);
     let (v2_tx, mut v2_rx) = mpsc::channel(1);
-    let mut translation = V2ToV1Translation::new(v1_tx, v2_tx);
+    let mut translation = V2ToV1Translation::new(v1_tx, v2_tx, Default::default());
 
     v2_simulate_incoming_message(&mut translation, test_utils::v2::build_setup_connection()).await;
     // Setup mining connection should result into: mining.configure
