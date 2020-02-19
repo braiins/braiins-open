@@ -27,6 +27,7 @@ pub mod framing;
 pub mod macros;
 pub mod extensions;
 pub mod messages;
+pub mod noise;
 pub mod serialization;
 pub mod telemetry;
 pub mod types;

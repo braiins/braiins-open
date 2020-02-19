@@ -52,6 +52,9 @@ pub enum ErrorKind {
     #[fail(display = "Unexpected {} version: {}, expected: {}", _0, _1, _2)]
     UnexpectedVersion(String, String, String),
 
+    #[fail(display = "Noise handshake error: {}", _0)]
+    Noise(String),
+
     /// Stratum version 1 error
     #[fail(display = "V1 error: {}", _0)]
     V1(super::v1::error::ErrorKind),
@@ -142,6 +145,15 @@ impl From<tokio_util::codec::LinesCodecError> for Error {
         let msg = e.to_string();
         Self {
             inner: e.context(ErrorKind::Io(msg)),
+        }
+    }
+}
+
+impl From<snow::error::Error> for Error {
+    fn from(e: snow::error::Error) -> Self {
+        let msg = e.to_string();
+        Self {
+            inner: e.context(ErrorKind::Noise(msg)),
         }
     }
 }
