@@ -49,6 +49,8 @@ pub enum Method {
     Authorize,
     #[serde(rename = "mining.set_difficulty")]
     SetDifficulty,
+    #[serde(rename = "mining.set_extranonce")]
+    SetExtranonce,
     #[serde(rename = "mining.configure")]
     Configure,
     #[serde(rename = "mining.submit")]

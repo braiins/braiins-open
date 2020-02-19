@@ -876,6 +876,25 @@ impl v1::Handler for V2ToV1Translation {
         }
     }
 
+    async fn visit_set_extranonce(
+        &mut self,
+        id: &v1::MessageId,
+        payload: &v1::messages::SetExtranonce,
+    ) {
+        trace!(
+            "visit_set_extranonce() id={:?} state={:?} payload:{:?}",
+            id,
+            self.state,
+            payload,
+        );
+
+        // Update extranonces.
+        // Changes are reflected after new mining job as per:
+        //   https://en.bitcoin.it/wiki/Stratum_mining_protocol#mining.set_extranonce
+        self.v1_extra_nonce1 = Some(payload.extra_nonce_1().clone());
+        self.v1_extra_nonce2_size = payload.extra_nonce_2_size().clone();
+    }
+
     /// Composes a new mining job and sends it downstream
     /// TODO: Only 1 channel is supported
     async fn visit_notify(&mut self, id: &v1::MessageId, payload: &v1::messages::Notify) {

@@ -73,6 +73,8 @@ pub trait Handler: 'static + Send {
     ) {
     }
 
+    async fn visit_set_extranonce(&mut self, _id: &MessageId, _payload: &messages::SetExtranonce) {}
+
     async fn visit_authorize(&mut self, _id: &MessageId, _payload: &messages::Authorize) {}
 
     async fn visit_set_difficulty(&mut self, _id: &MessageId, _payload: &messages::SetDifficulty) {}
@@ -111,6 +113,8 @@ pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protoco
                 Method::Authorize => Box::new(messages::Authorize::try_from(request)?)
                     as Box<dyn AnyPayload<Protocol>>,
                 Method::SetDifficulty => Box::new(messages::SetDifficulty::try_from(request)?)
+                    as Box<dyn AnyPayload<Protocol>>,
+                Method::SetExtranonce => Box::new(messages::SetExtranonce::try_from(request)?)
                     as Box<dyn AnyPayload<Protocol>>,
                 Method::Notify => {
                     Box::new(messages::Notify::try_from(request)?) as Box<dyn AnyPayload<Protocol>>

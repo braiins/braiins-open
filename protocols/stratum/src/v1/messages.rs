@@ -219,6 +219,22 @@ impl_conversion_request!(
     visit_extranonce_subscribe
 );
 
+/// SetExtranonce message (sent if we subscribed with `ExtranonceSubscribe`)
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct SetExtranonce(pub ExtraNonce1, pub usize);
+
+impl SetExtranonce {
+    pub fn extra_nonce_1(&self) -> &ExtraNonce1 {
+        &self.0
+    }
+
+    pub fn extra_nonce_2_size(&self) -> usize {
+        self.1
+    }
+}
+
+impl_conversion_request!(SetExtranonce, Method::SetExtranonce, visit_set_extranonce);
+
 /// Compounds all data required for mining subscription
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Subscribe(
