@@ -120,8 +120,10 @@ type V1StratumResultHandler =
 type V1StratumErrorHandler =
     fn(&mut V2ToV1Translation, &v1::MessageId, &v1::rpc::StratumError) -> Result<()>;
 
+type V1CompoundHandler = (V1StratumResultHandler, V1StratumErrorHandler);
+
 /// Custom mapping of V1 request id onto result/error handlers
-type V1ReqMap = HashMap<u32, (V1StratumResultHandler, V1StratumErrorHandler)>;
+type V1ReqMap = HashMap<u32, V1CompoundHandler>;
 
 /// Helper template stored in V2->V1 job map
 #[derive(Clone, PartialEq, Debug)]
@@ -129,6 +131,11 @@ struct V1SubmitTemplate {
     job_id: v1::messages::JobId,
     time: u32,
     version: u32,
+}
+
+enum V1ResultOrError<'a> {
+    Result(&'a v1::rpc::StratumResult),
+    Error(&'a v1::rpc::StratumError),
 }
 
 /// Maps V2 job ID to V1 job ID so that we can submit mining results upstream to V1 server
@@ -729,20 +736,15 @@ impl V2ToV1Translation {
         }
         Ok(())
     }
-}
 
-#[async_trait]
-impl v1::Handler for V2ToV1Translation {
     /// The result visitor takes care of detecting a spurious response without matching request
     /// and passes processing further
     /// TODO write a solid unit test covering all 3 scenarios that can go wrong
-    async fn visit_stratum_result(&mut self, id: &v1::MessageId, payload: &v1::rpc::StratumResult) {
-        trace!(
-            "visit_stratum_result() id={:?} state={:?} payload:{:?}",
-            id,
-            self.state,
-            payload,
-        );
+    async fn visit_stratum_result_or_error<'a>(
+        &mut self,
+        id: &'a v1::MessageId,
+        payload: V1ResultOrError<'a>,
+    ) {
         // Each response message should have an ID for pairing
         id.ok_or(Error::from(ii_stratum::error::Error::from(
             v1::error::ErrorKind::Rpc("Missing ID in ii_stratum result".to_string()),
@@ -756,10 +758,38 @@ impl v1::Handler for V2ToV1Translation {
                 )))
         })
         // run the result through the result handler
-        .and_then(|handler| handler.0(self, id, payload))
+        .and_then(|handler| match payload {
+            V1ResultOrError::Result(r) => handler.0(self, id, r),
+            V1ResultOrError::Error(e) => handler.1(self, id, e),
+        })
         .map_err(|e| info!("visit_stratum_result failed: {}", e))
         // Consume the error as there is no way to return anything from the visitor for now.
         .ok();
+    }
+}
+
+#[async_trait]
+impl v1::Handler for V2ToV1Translation {
+    async fn visit_stratum_result(&mut self, id: &v1::MessageId, payload: &v1::rpc::StratumResult) {
+        trace!(
+            "visit_stratum_result() id={:?} state={:?} payload:{:?}",
+            id,
+            self.state,
+            payload,
+        );
+        self.visit_stratum_result_or_error(id, V1ResultOrError::Result(payload))
+            .await;
+    }
+
+    async fn visit_stratum_error(&mut self, id: &v1::MessageId, payload: &v1::rpc::StratumError) {
+        trace!(
+            "visit_stratum_error() id={:?} state={:?} payload:{:?}",
+            id,
+            self.state,
+            payload,
+        );
+        self.visit_stratum_result_or_error(id, V1ResultOrError::Error(payload))
+            .await;
     }
 
     async fn visit_set_difficulty(
