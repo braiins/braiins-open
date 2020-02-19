@@ -705,9 +705,17 @@ impl V2ToV1Translation {
     fn channel_to_extra_nonce2_bytes(channel_id: u32, v1_extra_nonce2_size: usize) -> BytesMut {
         let mut extra_nonce2: BytesMut = BytesMut::with_capacity(v1_extra_nonce2_size);
 
-        extra_nonce2.extend_from_slice(&u32::to_le_bytes(channel_id));
-
-        if v1_extra_nonce2_size > size_of::<u32>() {
+        let channel_id_bytes = u32::to_le_bytes(channel_id);
+        if v1_extra_nonce2_size < size_of::<u32>() {
+            // TODO: what to do when server deliberately sends small extranonce?
+            if channel_id >= 1u32.wrapping_shl(8 * v1_extra_nonce2_size as u32) {
+                error!("BUG: channel_id doesn't fit into extranonce");
+            }
+            // Write just part of channel_id
+            extra_nonce2.extend_from_slice(&channel_id_bytes[0..v1_extra_nonce2_size]);
+        } else {
+            // Write full 32-bits of channel id and pad the rest
+            extra_nonce2.extend_from_slice(&channel_id_bytes);
             let padding = v1_extra_nonce2_size - size_of::<u32>();
             extra_nonce2.extend_from_slice(&vec![0; padding]);
         }
