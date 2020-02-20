@@ -128,10 +128,14 @@ impl ConnTranslation {
         let v2_send_task = async move {
             while let Some(frame) = v2_translation_rx.next().await {
                 if let Err(err) = v2_conn_tx.send(frame).await {
-                    error!("V2 connection failed: {}", err);
+                    error!("Sending mining frame via V2 connection failed: {}", err);
                     break;
                 }
             }
+            info!(
+                "Terminating v2_send_task (disconnecting peer: {:?})",
+                v2_conn_tx.peer_addr()
+            );
         };
         tokio::spawn(v2_send_task);
 
@@ -146,7 +150,10 @@ impl ConnTranslation {
                             Self::v1_handle_frame(&mut translation, v1_frame?).await?;
                         }
                         None => {
-                            Err("Upstream V1 stratum connection dropped")?;
+                            Err(format!(
+                                "Upstream V1 stratum connection dropped ({:?})",
+                                v1_conn_rx.peer_addr()
+                            ))?;
                         }
                     }
                 },
@@ -157,7 +164,7 @@ impl ConnTranslation {
                             Self::v2_handle_frame(&mut translation, v2_frame?).await?;
                         }
                         None => {
-                            Err("V2 client disconnected")?;
+                            Err(format!("V2 client disconnected ({:?})", v2_conn_rx.peer_addr()))?;
                         }
                     }
                 }
@@ -181,7 +188,7 @@ async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: Socke
     let translation = ConnTranslation::new(conn_v2, conn_v1);
 
     if let Err(e) = translation.run().await {
-        info!("Terminating connection from: {:?} ({:?})", peer_addr, e);
+        info!("Terminating connection from: {} ({})", peer_addr, e);
     }
 }
 
