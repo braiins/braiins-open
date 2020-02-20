@@ -96,10 +96,7 @@ impl ConnTranslation {
             }
             // Report any other extension down the line
             _ => {
-                info!(
-                    "Received protocol extension frame: {:x?} passing down",
-                    frame
-                );
+                warn!("Unsupported extension frame: {:x?} ", frame);
             }
         }
         Ok(())
