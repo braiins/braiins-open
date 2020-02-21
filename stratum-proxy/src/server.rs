@@ -32,7 +32,7 @@ use ii_async_compat::select;
 use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
-use ii_wire::{Connection, Server};
+use ii_wire::{Connection, ConnectionTx, Server};
 
 use crate::error::{ErrorKind, Result, ResultExt};
 use crate::translation::V2ToV1Translation;
@@ -102,14 +102,50 @@ impl ConnTranslation {
         Ok(())
     }
 
+    /// Attempt to send a frame via a specified connection. Attempt to send 'None' results in an
+    /// error. The intention is to have a single place for sending out frames and handling
+    /// errors/timeouts.
+    async fn v2_try_send_frame(
+        connection: &mut ConnectionTx<v2::Framing>,
+        frame: Option<v2::framing::Frame>,
+    ) -> Result<()> {
+        let status = match frame {
+            Some(v2_translated_frame) => connection.send(v2_translated_frame).await,
+            None => Err(ErrorKind::Io("No more frames".to_string()))?,
+        };
+        status.map_err(|e| {
+            info!("Send error: {} for (peer: {:?})", e, connection.peer_addr());
+            e.into()
+        })
+    }
+
+    /// Send all V2 frames via the specified V2 connection
+    /// TODO consolidate this method into V2Handler, turn the parameters into fields and
+    /// implement ConnTranslation::split()
+    async fn v2_send_task(
+        mut conn_sender: ConnectionTx<v2::Framing>,
+        mut translation_receiver: mpsc::Receiver<v2::Frame>,
+    ) -> Result<()> {
+        loop {
+            // We use select! so that more than just the translation receiver as a source can be
+            // added
+            select! {
+                // Send out frames translated into V2
+                v2_translated_frame = translation_receiver.next().fuse() => {
+                    Self::v2_try_send_frame(&mut conn_sender, v2_translated_frame).await?
+                },
+            }
+        }
+    }
+
     async fn run(self) -> Result<()> {
         let mut v1_translation_rx = self.v1_translation_rx;
-        let mut v2_translation_rx = self.v2_translation_rx;
         let mut translation = self.translation;
+
         // TODO make connections 'optional' so that we can remove them from the instance and use
         //  the rest of the instance in as 'borrowed mutable reference'.
         let (mut v1_conn_rx, mut v1_conn_tx) = self.v1_conn.split();
-        let (mut v2_conn_rx, mut v2_conn_tx) = self.v2_conn.split();
+        let (mut v2_conn_rx, v2_conn_tx) = self.v2_conn.split();
 
         // TODO factor out the frame pumping functionality and append the JoinHandle of this task
         //  to the select statement to detect any problems and to terminate the translation, too
@@ -124,20 +160,7 @@ impl ConnTranslation {
         };
         tokio::spawn(v1_send_task);
 
-        // V2 message send out loop
-        let v2_send_task = async move {
-            while let Some(frame) = v2_translation_rx.next().await {
-                if let Err(err) = v2_conn_tx.send(frame).await {
-                    error!("Sending mining frame via V2 connection failed: {}", err);
-                    break;
-                }
-            }
-            info!(
-                "Terminating v2_send_task (disconnecting peer: {:?})",
-                v2_conn_tx.peer_addr()
-            );
-        };
-        tokio::spawn(v2_send_task);
+        tokio::spawn(Self::v2_send_task(v2_conn_tx, self.v2_translation_rx));
 
         // TODO: add cancel handler into the select statement
         loop {
