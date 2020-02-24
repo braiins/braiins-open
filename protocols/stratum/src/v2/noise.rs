@@ -60,7 +60,7 @@ impl TryFrom<HandShakeMessage> for Frame {
     }
 }
 
-const PARAMS: &'static str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
+const PARAMS: &'static str = "Noise_NX_25519_ChaChaPoly_BLAKE2s";
 pub const MAX_MESSAGE_SIZE: usize = 65535;
 
 /// Describes the step result what the relevant party should do after sending out the
@@ -88,10 +88,7 @@ impl Initiator {
 
         // Initialize our initiator using a builder.
         let builder: Builder<'_> = Builder::new(params);
-        let key_pair = builder.generate_keypair().unwrap();
-        let static_key = key_pair.private;
         let handshake_state = builder
-            .local_private_key(&static_key)
             .build_initiator()
             .expect("BUG: cannot build initiator");
 
@@ -132,13 +129,8 @@ impl Initiator {
                 let in_msg = in_msg.ok_or(ErrorKind::Noise("No message arrived".to_string()))?;
                 let signature_len = self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
                 self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
-
-                // -> s, se
-                let len_written = self.handshake_state.write_message(&[], &mut buf)?;
-                noise_bytes.extend_from_slice(&buf[..len_written]);
-                StepResult::NoMoreReply(HandShakeMessage::new(noise_bytes))
+                StepResult::Done
             }
-            2 => StepResult::Done,
             _ => {
                 panic!("BUG: No more steps that can be done by the Initiator in Noise handshake");
             }
@@ -221,15 +213,9 @@ impl Responder {
                     .handshake_state
                     .write_message(&b"my-valid-sign"[..], &mut buf)?;
                 noise_bytes.extend_from_slice(&buf[..len_written]);
-                StepResult::ExpectReply(HandShakeMessage::new(noise_bytes))
+                StepResult::NoMoreReply(HandShakeMessage::new(noise_bytes))
             }
-            1 => {
-                let in_msg = in_msg.ok_or(ErrorKind::Noise("No message arrived".to_string()))?;
-                // <- s, se
-                self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
-                StepResult::Done
-            }
-            2 => StepResult::Done,
+            1 => StepResult::Done,
             _ => {
                 panic!("BUG: No more steps that can be done by the Initiator in Noise handshake");
             }
