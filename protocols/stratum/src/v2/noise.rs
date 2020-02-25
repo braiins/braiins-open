@@ -25,7 +25,7 @@
 //! TransportState of the noise, that will be used for running the AEAD communnication.
 
 use bytes::BytesMut;
-use snow::{params::NoiseParams, Builder, HandshakeState, TransportState};
+use snow::{params::NoiseParams, Builder, Keypair, HandshakeState, TransportState};
 use std::convert::TryFrom;
 
 use ii_async_compat::bytes;
@@ -62,6 +62,12 @@ impl TryFrom<HandShakeMessage> for Frame {
 
 const PARAMS: &'static str = "Noise_NX_25519_ChaChaPoly_BLAKE2s";
 pub const MAX_MESSAGE_SIZE: usize = 65535;
+
+pub fn generate_keypair() -> Result<Keypair> {
+    let params: NoiseParams = PARAMS.parse().expect("BUG: cannot parse noise parameters");
+    let builder: Builder<'_> = Builder::new(params);
+    builder.generate_keypair().map_err(Into::into)
+}
 
 /// Describes the step result what the relevant party should do after sending out the
 /// provided message (if any)
@@ -164,15 +170,14 @@ pub struct Responder {
 }
 
 impl Responder {
-    pub fn new() -> Self {
+    /// TODO add static keypair signature and store it inside the instance
+    pub fn new(static_keypair: Keypair) -> Self {
         let params: NoiseParams = PARAMS.parse().expect("BUG: cannot parse noise parameters");
 
         // Initialize our initiator using a builder.
         let builder: Builder<'_> = Builder::new(params);
-        let key_pair = builder.generate_keypair().unwrap();
-        let static_key = key_pair.private;
         let handshake_state = builder
-            .local_private_key(&static_key)
+            .local_private_key(&static_keypair.private)
             .build_responder()
             .expect("BUG: cannot build responder");
 
@@ -267,7 +272,8 @@ pub(crate) mod test {
 
     pub(crate) fn perform_handshake() -> (TransportMode, TransportMode) {
         let mut initiator = Initiator::new();
-        let mut responder = Responder::new();
+        let static_key = generate_keypair().expect("BUG: Failed to generate static public key");
+        let mut responder = Responder::new(static_key);
         let mut initiator_in_msg: Option<HandShakeMessage> = None;
 
         loop {
