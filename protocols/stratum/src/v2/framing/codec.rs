@@ -20,8 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use bytes::{buf::BufMutExt, BytesMut};
-use std::convert::TryFrom;
+use bytes::BytesMut;
 use tokio_util::codec::length_delimited::{self, LengthDelimitedCodec};
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -32,7 +31,45 @@ use crate::error::Error;
 use crate::v2::noise;
 
 #[derive(Debug)]
-pub struct Codec(LengthDelimitedCodec);
+pub struct Codec {
+    /// Optional noise codec that handles encryption/decryption of messages
+    noise_codec: Option<noise::Codec>,
+    stratum_codec: LengthDelimitedCodec,
+}
+
+impl Codec {
+    pub fn new(noise_codec: Option<noise::Codec>) -> Self {
+        // TODO: limit frame size with max_frame_length() ?
+        // Note: LengthDelimitedCodec is a bit tricky to coerce into
+        // including the header in the final mesasge.
+        // .num_skip(0) tells it to not skip the header,
+        // but then .length_adjustment() needs to be set to the header size
+        // because normally the 'length' is the size of part after the 'length' field.
+        noise_codec.as_ref().map(|codec| {
+            assert!(
+                codec.is_in_transport_mode(),
+                "BUG: noise codec is not in tranport mode, cannot build V2 Codec!"
+            )
+        });
+        Self {
+            noise_codec,
+            stratum_codec: length_delimited::Builder::new()
+                .little_endian()
+                .length_field_offset(Header::LEN_OFFSET)
+                .length_field_length(Header::LEN_SIZE)
+                .num_skip(0)
+                // Actual header length is not counted in the length field
+                .length_adjustment(Header::SIZE as isize)
+                .new_codec(),
+        }
+    }
+}
+
+impl Default for Codec {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
 
 impl Decoder for Codec {
     type Item = Frame;
@@ -42,8 +79,18 @@ impl Decoder for Codec {
         &mut self,
         src: &mut BytesMut,
     ) -> std::result::Result<Option<Self::Item>, Self::Error> {
-        let bytes = self.0.decode(src)?;
-        let mut bytes = match bytes {
+        let stratum_bytes = match self.noise_codec {
+            Some(ref mut noise_codec) => noise_codec
+                .decode(src)?
+                .and_then(|mut noise_bytes| self.stratum_codec.decode(&mut noise_bytes).transpose())
+                // If stratum codec has performed decoding we have received Option<Result<>> as
+                // an output of the previous transpose (so that it's compatible with and_then).
+                // Now perform yet another transpose and bailout upon error
+                .transpose()?,
+            None => self.stratum_codec.decode(src)?,
+        };
+
+        let mut bytes = match stratum_bytes {
             Some(bytes) => bytes,
             None => return Ok(None),
         };
@@ -60,142 +107,13 @@ impl Encoder for Codec {
         item: Self::Item,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
-        item.serialize(dst)
-    }
-}
-
-impl Default for Codec {
-    fn default() -> Self {
-        // TODO: limit frame size with max_frame_length() ?
-        Codec(
-            length_delimited::Builder::new()
-                .little_endian()
-                .length_field_offset(Header::LEN_OFFSET)
-                .length_field_length(Header::LEN_SIZE)
-                .num_skip(0)
-                // Actual header length is not counted in the length field
-                .length_adjustment(Header::SIZE as isize)
-                .new_codec(),
-            // Note: LengthDelimitedCodec is a bit tricky to coerce into
-            // including the header in the final mesasge.
-            // .num_skip(0) tells it to not skip the header,
-            // but then .length_adjustment() needs to be set to the header size
-            // because normally the 'length' is the size of part after the 'length' field.
-        )
-    }
-}
-
-/// State of the noise codec
-#[derive(Debug)]
-enum State {
-    /// Handshake mode where codec is negotiating keys
-    HandShake,
-    /// Transport mode where AEAD is fully operational. The `TransportMode` object in this variant
-    /// as able to perform encryption and decryption resp.
-    Transport(noise::TransportMode),
-}
-
-/// Noise codec compound object that stacks length delimited codec and stratum codec
-#[derive(Debug)]
-pub struct NoiseCodec {
-    /// Codec noise messages have simple length delimited framing
-    noise_codec: LengthDelimitedCodec,
-    stratum_codec: Codec,
-    /// Describes mode of operation of the codec
-    state: State,
-}
-
-impl NoiseCodec {
-    const LENGTH_FIELD_OFFSET: usize = 0;
-    const LENGTH_FIELD_LENGTH: usize = 2;
-
-    /// Consume the `transport_mode` and set it as the current mode of the codec
-    pub fn set_transport_mode(&mut self, transport_mode: noise::TransportMode) {
-        if let State::Transport(_) = &self.state {
-            panic!("BUG: codec is already in transport mode!");
+        let mut encoded_frame = BytesMut::new();
+        item.serialize(&mut encoded_frame)?;
+        match self.noise_codec {
+            Some(ref mut noise_codec) => noise_codec.encode(encoded_frame, dst)?,
+            None => dst.unsplit(encoded_frame),
         }
-        self.state = State::Transport(transport_mode);
-    }
-}
-
-impl Decoder for NoiseCodec {
-    type Item = Frame;
-    type Error = Error;
-
-    fn decode(
-        &mut self,
-        src: &mut BytesMut,
-    ) -> std::result::Result<Option<Self::Item>, Self::Error> {
-        let noise_msg: Option<BytesMut> = self.noise_codec.decode(src)?;
-        let frame = match &mut self.state {
-            State::HandShake => {
-                let noise_msg = noise_msg.map(|msg| noise::HandShakeMessage::new(msg));
-                let noise_frame = noise_msg
-                    .map(|msg| Frame::try_from(msg).expect("BUG: cannot create handshake frame"));
-                noise_frame
-            }
-            State::Transport(transport_mode) => match noise_msg {
-                Some(msg) => {
-                    let mut decrypted_msg = BytesMut::new();
-                    transport_mode.read(msg, &mut decrypted_msg)?;
-                    self.stratum_codec.decode(&mut decrypted_msg)?
-                }
-                None => None,
-            },
-        };
-        Ok(frame)
-    }
-}
-
-impl Encoder for NoiseCodec {
-    type Item = Frame;
-    type Error = Error;
-
-    fn encode(
-        &mut self,
-        item: Self::Item,
-        dst: &mut BytesMut,
-    ) -> std::result::Result<(), Self::Error> {
-        let frame_bytes = match &mut self.state {
-            State::HandShake => {
-                // Intentionally ignore the frame header and serialize just the noise handshake
-                // payload
-                let mut handshake_frame_writer = BytesMut::new().writer();
-                item.payload
-                    .serialize_to_writer(&mut handshake_frame_writer)?;
-                handshake_frame_writer.into_inner()
-            }
-            State::Transport(transport_mode) => {
-                let mut encoded_frame = BytesMut::new();
-                self.stratum_codec.encode(item, &mut encoded_frame)?;
-                assert!(
-                    encoded_frame.len() <= noise::MAX_MESSAGE_SIZE,
-                    "TODO: noise transport doesn't currently support messages bigger than {}",
-                    noise::MAX_MESSAGE_SIZE
-                );
-                let mut encrypted_frame = BytesMut::new();
-                transport_mode.write(encoded_frame, &mut encrypted_frame)?;
-                encrypted_frame
-            }
-        };
-        self.noise_codec
-            .encode(frame_bytes.freeze(), dst)
-            .map_err(Into::into)
-    }
-}
-
-impl Default for NoiseCodec {
-    fn default() -> Self {
-        // TODO: limit frame size with max_frame_length() ?
-        NoiseCodec {
-            noise_codec: length_delimited::Builder::new()
-                .little_endian()
-                .length_field_offset(Self::LENGTH_FIELD_OFFSET)
-                .length_field_length(Self::LENGTH_FIELD_LENGTH)
-                .new_codec(),
-            stratum_codec: Codec::default(),
-            state: State::HandShake,
-        }
+        Ok(())
     }
 }
 
@@ -204,7 +122,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_codec() {
+    fn test_codec_no_noise() {
         let mut codec = Codec::default();
         let mut payload = BytesMut::new();
         payload.extend_from_slice(&[1, 2, 3, 4]);
@@ -216,65 +134,44 @@ mod test {
         let mut buffer = BytesMut::new();
         codec
             .encode(expected_frame, &mut buffer)
-            .expect("Codec failed to encode message");
-
-        let decoded_frame = codec
-            .decode(&mut buffer)
-            .expect("Codec failed to decode message")
-            .expect("Incomplete message");
-
-        assert_eq!(
-            expected_frame_copy, decoded_frame,
-            "Expected ({:x?}) and decoded ({:x?}) frames don't match",
-            expected_frame_copy, decoded_frame
-        );
-    }
-
-    #[test]
-    fn test_noise_codec_in_handshake_state() {
-        let mut codec = NoiseCodec::default();
-
-        let mut payload = BytesMut::new();
-        payload.extend_from_slice(&[1, 2, 3, 4]);
-        let handshake_msg = noise::HandShakeMessage::new(payload);
-        let handshake_frame =
-            Frame::try_from(handshake_msg.clone()).expect("BUG: cannot create handshake frame");
-        let handshake_frame_copy =
-            Frame::try_from(handshake_msg).expect("BUG: cannot create handshake frame");
-
-        let mut buffer = BytesMut::new();
-        codec
-            .encode(handshake_frame, &mut buffer)
             .expect("BUG: Codec failed to encode message");
 
         let decoded_frame = codec
             .decode(&mut buffer)
             .expect("BUG: Codec failed to decode message")
-            .expect("BUG: Incomplete message");
+            .expect("BUG: No frame provided");
 
         assert_eq!(
-            handshake_frame_copy, decoded_frame,
-            "Expected and decoded frames don't match",
+            expected_frame_copy, decoded_frame,
+            "BUG: Expected ({:x?}) and decoded ({:x?}) frames don't match",
+            expected_frame_copy, decoded_frame
         );
     }
 
+    /// Attempt to build a V2 codec with noise Codec that is still in handshake mode (=contains
+    /// no noise transport) must result in panic
     #[test]
-    fn test_noise_codec_in_transport_state() {
-        let mut initiator_codec = NoiseCodec::default();
-        let mut responder_codec = NoiseCodec::default();
+    #[should_panic]
+    fn test_bug_on_noise_codec_in_handshake_mode() {
+        Codec::new(Some(noise::Codec::default()));
+    }
+
+    fn test_codec_with_noise(payload: BytesMut) {
+        let mut initiator_noise_codec = noise::Codec::default();
+        let mut responder_noise_codec = noise::Codec::default();
 
         let (initiator_transport_mode, responder_transport_mode) = noise::test::perform_handshake();
 
-        initiator_codec.set_transport_mode(initiator_transport_mode);
-        responder_codec.set_transport_mode(responder_transport_mode);
+        initiator_noise_codec.set_transport_mode(initiator_transport_mode);
+        responder_noise_codec.set_transport_mode(responder_transport_mode);
 
-        let mut payload = BytesMut::new();
-        payload.extend_from_slice(&[1, 2, 3, 4]);
-        let expected_frame = Frame::from_serialized_payload(false, 0, 0x16, payload.clone());
+        let mut initiator_codec = Codec::new(Some(initiator_noise_codec));
+        let mut responder_codec = Codec::new(Some(responder_noise_codec));
 
-        // This is currently due to the fact that Frame doesn't support cloning
-        let expected_frame_copy = Frame::from_serialized_payload(false, 0, 0x16, payload);
-
+        let expected_frame = Frame::from_serialized_payload(true, 0, 0x16, payload.clone());
+        // This is currently due to the fact that Frame doesn't support cloning and it will be
+        // consumed by the initiator codec
+        let expected_frame_copy = Frame::from_serialized_payload(true, 0, 0x16, payload);
         let mut buffer = BytesMut::new();
         initiator_codec
             .encode(expected_frame, &mut buffer)
@@ -287,8 +184,32 @@ mod test {
 
         assert_eq!(
             expected_frame_copy, decoded_frame,
-            "Expected ({:x?}) and decoded ({:x?}) frames don't match",
+            "BUG: Expected ({:x?}) and decoded ({:x?}) frames don't match",
             expected_frame_copy, decoded_frame
         );
+    }
+
+    #[test]
+    fn test_codec_payload_under_noise_max_payload_with_noise() {
+        let mut payload = BytesMut::new();
+        payload.extend_from_slice(&[1, 2, 3, 4]);
+
+        assert!(
+            payload.len() <= noise::MAX_PAYLOAD_SIZE,
+            "BUG: cannot test, provided frame must be <= noise::MAX_PAYLOAD"
+        );
+        test_codec_with_noise(payload);
+    }
+
+    /// TODO: remove the expected panic once we have support for bigger payload
+    #[test]
+    #[should_panic]
+    fn test_codec_payload_over_noise_max_payload_with_noise_() {
+        let payload = super::super::test::build_large_payload(Header::MAX_LEN as usize);
+        assert!(
+            payload.len() > noise::MAX_PAYLOAD_SIZE,
+            "BUG: cannot test, provided frame must exceed noise::MAX_PAYLOAD"
+        );
+        test_codec_with_noise(payload);
     }
 }

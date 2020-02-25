@@ -285,7 +285,7 @@ mod test {
         assert_eq!(expected_frame, frame, "Frames don't match");
     }
 
-    fn build_large_payload(length: usize) -> BytesMut {
+    pub(crate) fn build_large_payload(length: usize) -> BytesMut {
         const CHUNK_SIZE: usize = 256;
         let chunk = [0xaa_u8; CHUNK_SIZE];
         let mut payload = BytesMut::with_capacity(length);
