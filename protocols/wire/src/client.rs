@@ -125,7 +125,7 @@ impl fmt::Display for Address {
 }
 
 /// Backoff generation for `ReConnection`.
-pub trait Backoff: fmt::Debug {
+pub trait Backoff: Send + fmt::Debug {
     /// Called by `ReConnection` when next sleep duration is required.
     fn next(&mut self) -> Duration;
 
