@@ -565,10 +565,7 @@ impl V2ToV1Translation {
                         new_submits_accepted_count: 1,
                         new_shares_sum: 1, // TODO is this really 1?
                     };
-                    info!(
-                        "Share accepted from {}",
-                        v2_channel_details.user.to_string()
-                    );
+                    self.log_session_details("Share accepted");
                     util::submit_message(&mut self.v2_tx, success_msg)
                 } else {
                     // TODO use reject_shares() method once we can track the original payload message
@@ -826,6 +823,32 @@ impl V2ToV1Translation {
         .map_err(|e| info!("visit_stratum_result failed: {}", e))
         // Consume the error as there is no way to return anything from the visitor for now.
         .ok();
+    }
+
+    fn log_session_details(&self, msg: &str) {
+        let v2_channel_details = self
+            .v2_channel_details
+            .as_ref()
+            .expect("BUG: V2 channel details missing");
+        let v2_connection_details = self
+            .v2_conn_details
+            .as_ref()
+            .expect("BUG: V2 channel details present but connection details missing?");
+        info!(
+            "{} SESSION;{};{};{};{};{:x};{};{};{};{};{};{};",
+            msg,
+            v2_channel_details.user.to_string(),
+            v2_connection_details.protocol,
+            v2_connection_details.min_version,
+            v2_connection_details.max_version,
+            v2_connection_details.flags,
+            v2_connection_details.endpoint_host.to_string(),
+            v2_connection_details.endpoint_port,
+            v2_connection_details.device.vendor.to_string(),
+            v2_connection_details.device.hw_rev.to_string(),
+            v2_connection_details.device.fw_ver.to_string(),
+            v2_connection_details.device.dev_id.to_string(),
+        );
     }
 }
 
