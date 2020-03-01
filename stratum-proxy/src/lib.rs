@@ -30,4 +30,4 @@
 pub mod error;
 pub mod server;
 pub mod translation;
-pub(crate) mod util;
+pub mod util;

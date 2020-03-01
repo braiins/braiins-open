@@ -29,7 +29,7 @@ use crate::error::{Result, ResultExt};
 
 /// Converts the response message into a `Frame` and submits it into the
 /// specified queue
-pub(crate) fn submit_message<F, T, E>(tx: &mut mpsc::Sender<F>, msg: T) -> Result<()>
+pub fn submit_message<F, T, E>(tx: &mut mpsc::Sender<F>, msg: T) -> Result<()>
 where
     F: Send + Sync + 'static,
     E: fmt::Debug,
