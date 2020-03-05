@@ -10,3 +10,8 @@ ii-async-compat = { path = "../../utils-rs/async-compat" }
 failure = "0.1.5"
 pin-project = "0.4.5"
 async-trait = "0.1.17"
+
+# failure caused a problem when they used private API from quote:
+# https://users.rust-lang.org/t/failure-derive-compilation-error/39062
+[patch.crates-io.failure]
+path = "../../utils-rs/failure"
