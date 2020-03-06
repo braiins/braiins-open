@@ -13,59 +13,41 @@ use serde::de::Deserializer as _;
 use serde::de::{DeserializeSeed, EnumAccess, IntoDeserializer, SeqAccess, VariantAccess};
 use serde::ser::Impossible;
 use serde::{de, ser, Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum Error {
-    /// When String or byte sequence being (de)serialized is too long
+    #[error("Sequence too long")]
     Overlong,
-    /// When String or byte sequence being (de)serialized is too short
+    #[error("Sequence too short")]
     TooShort,
-    /// Type unsupported by the protocol
+    #[error("Type `{0}` unsupported by the protocol")]
     Unsupported(&'static str),
-    /// Invalid Unicode string/character data
+    #[error("Invalid Unicode string/character data")]
     Unicode,
-    /// Incomplete message - reched end of input data
+    #[error("Incomplete message, unexpected end of input data")]
     EOF,
-    /// Trailing data left after deserialization
+    #[error("Trailing data left after deserialization")]
     TrailingBytes,
-    // /// Zero size for a type that should never contain empty value (ie. sized strings)
+    #[error("Found value other than 1 or 0 when deserializing a bool")]
     BadBool,
-    /// Custom error, TODO: more context
-    Custom,
-    /// I/O error
-    Io(io::Error),
+    #[error("{0}")]
+    Custom(String),
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
 }
 
 pub type Result<T> = StdResult<T, Error>;
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> StdResult<(), fmt::Error> {
-        // XXX
-        f.write_str("v2::proto::Error")
-    }
-}
-
-impl std::error::Error for Error {
-    // XXX
-}
-
 impl ser::Error for Error {
-    fn custom<T: fmt::Display>(_msg: T) -> Self {
-        // XXX
-        Error::Custom
+    fn custom<T: fmt::Display>(msg: T) -> Self {
+        Error::Custom(format!("{}", msg))
     }
 }
 
 impl de::Error for Error {
-    fn custom<T: fmt::Display>(_msg: T) -> Self {
-        // XXX
-        Error::Custom
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(error: io::Error) -> Self {
-        Error::Io(error)
+    fn custom<T: fmt::Display>(msg: T) -> Self {
+        Error::Custom(format!("{}", msg))
     }
 }
 
@@ -106,8 +88,6 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
     fn serialize_i8(self, v: i8) -> Result<()> {
         self.write(&[v as u8])
     }
-
-    // TODO: verify LE is appropriate
 
     fn serialize_i16(self, v: i16) -> Result<()> {
         self.write(&v.to_le_bytes())
@@ -150,10 +130,12 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
     }
 
     fn serialize_str(self, _v: &str) -> Result<()> {
+        // FIXME:
         Err(Error::Unsupported("str"))
     }
 
     fn serialize_bytes(self, _v: &[u8]) -> Result<()> {
+        // FIXME:
         Err(Error::Unsupported("bytes"))
     }
 
@@ -217,6 +199,7 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
+        // FIXME:
         Err(Error::Unsupported("seq"))
     }
 
@@ -244,7 +227,7 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        Err(Error::Unsupported("map"))
+        Err(Error::Unsupported("Map"))
     }
 
     fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
@@ -471,7 +454,9 @@ where
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
-        let len = len.ok_or(Error::Unsupported("seq with no len"))?;
+        let len = len.ok_or(Error::Unsupported(
+            "Sequence with length unknown ahead of time",
+        ))?;
         let len = I::try_from(len).map_err(|_| Error::Overlong)?;
         len.serialize(&mut *self.serializer)?;
         Ok(self)
@@ -656,7 +641,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
 
     fn deserialize_any<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        Err(Error::Unsupported("any"))
+        Err(Error::Unsupported("Any / Dynamic"))
     }
 
     fn deserialize_bool<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
@@ -721,18 +706,22 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     fn deserialize_str<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
+        // FIXME:
         Err(Error::Unsupported("str"))
     }
 
     fn deserialize_string<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
+        // FIXME:
         Err(Error::Unsupported("string"))
     }
 
     fn deserialize_bytes<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
+        // FIXME:
         Err(Error::Unsupported("bytes"))
     }
 
     fn deserialize_byte_buf<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
+        // FIXME:
         Err(Error::Unsupported("byte_buf"))
     }
 
@@ -780,6 +769,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     fn deserialize_seq<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
+        // FIXME:
         Err(Error::Unsupported("seq"))
     }
 
@@ -826,7 +816,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     fn deserialize_map<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        Err(Error::Unsupported("map"))
+        Err(Error::Unsupported("Map"))
     }
 
     fn deserialize_struct<V: de::Visitor<'de>>(
@@ -852,7 +842,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     fn deserialize_ignored_any<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        Err(Error::Unsupported("any"))
+        Err(Error::Unsupported("Any / Dynamic type"))
     }
 }
 
@@ -1248,7 +1238,6 @@ mod test {
         }
     }
 
-    // FIXME: split types
     #[test]
     fn v2_serialization_roundtrip() {
         #[derive(PartialEq, Serialize, Deserialize, Debug)]
