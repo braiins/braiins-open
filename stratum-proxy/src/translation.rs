@@ -80,52 +80,6 @@ impl Default for V2ToV1TranslationOptions {
     }
 }
 
-/// TODO consider whether the v1/v2 TX channels should use a 'Message'. Currently the reason
-/// for not doing that is that we want to prevent dynamic dispatch when serializing a particular
-/// message
-pub struct V2ToV1Translation {
-    /// Statemachine tracking the translation setup
-    state: V2ToV1TranslationState,
-
-    /// Channel for sending out V1 responses
-    v1_tx: mpsc::Sender<v1::Frame>,
-    /// Unique request ID generator
-    v1_req_id: MessageId,
-    /// Mapping for pairing of incoming V1 message with original requests
-    v1_req_map: V1ReqMap,
-
-    v1_extra_nonce1: Option<v1::ExtraNonce1>,
-    v1_extra_nonce2_size: usize,
-    v1_authorized: bool,
-    v1_xnsub_enabled: bool,
-
-    /// Whether to force future jobs: might be handy for v1 pools which don't accept solutions with
-    /// `ntime` less than specified on jobs they are solving (but greater than ntime on prevhash).
-    v1_force_future_jobs: bool,
-
-    /// Latest mining.notify payload that arrived before V1 authorize has completed.
-    /// This allows immediate completion of channel open on V2.
-    v1_deferred_notify: Option<v1::messages::Notify>,
-
-    /// Channel for sending out V2 responses
-    v2_tx: mpsc::Sender<v2::Frame>,
-    #[allow(dead_code)] // TODO: unused as of now
-    v2_req_id: MessageId,
-    /// All connection details
-    v2_conn_details: Option<v2::messages::SetupConnection>,
-    /// Additional information about the pending channel being open
-    v2_channel_details: Option<v2::messages::OpenStandardMiningChannel>,
-    /// Target difficulty derived from mining.set_difficulty message
-    /// The channel opening is not complete until the target is determined
-    v2_target: Option<uint::U256>,
-    /// Unique job ID generator
-    v2_job_id: MessageId,
-    /// Translates V2 job ID to V1 job ID
-    v2_to_v1_job_map: JobMap,
-    /// Options for translation
-    options: V2ToV1TranslationOptions,
-}
-
 /// States of the Translation setup
 #[derive(PartialEq, Debug)]
 enum V2ToV1TranslationState {
@@ -175,6 +129,51 @@ type JobMap = HashMap<u32, V1SubmitTemplate>;
 
 //type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &ii_stratum::Message<Protocol>, &v1::rpc::StratumResult)>;
 
+/// Object capable of translating stratm V2 header-only mining protocol that uses standard mining
+/// channels into stratum V1 including extranonce 1 subscription
+pub struct V2ToV1Translation {
+    /// Statemachine tracking the translation setup
+    state: V2ToV1TranslationState,
+
+    /// Channel for sending out V1 responses
+    v1_tx: mpsc::Sender<v1::Frame>,
+    /// Unique request ID generator
+    v1_req_id: SeqId,
+    /// Mapping for pairing of incoming V1 message with original requests
+    v1_req_map: V1ReqMap,
+
+    v1_extra_nonce1: Option<v1::ExtraNonce1>,
+    v1_extra_nonce2_size: usize,
+    v1_authorized: bool,
+    v1_xnsub_enabled: bool,
+
+    /// Whether to force future jobs: might be handy for v1 pools which don't accept solutions with
+    /// `ntime` less than specified on jobs they are solving (but greater than ntime on prevhash).
+    v1_force_future_jobs: bool,
+
+    /// Latest mining.notify payload that arrived before V1 authorize has completed.
+    /// This allows immediate completion of channel open on V2.
+    v1_deferred_notify: Option<v1::messages::Notify>,
+
+    /// Channel for sending out V2 responses
+    v2_tx: mpsc::Sender<v2::Frame>,
+    #[allow(dead_code)] // TODO: unused as of now
+    v2_req_id: SeqId,
+    /// All connection details
+    v2_conn_details: Option<v2::messages::SetupConnection>,
+    /// Additional information about the pending channel being open
+    v2_channel_details: Option<v2::messages::OpenStandardMiningChannel>,
+    /// Target difficulty derived from mining.set_difficulty message
+    /// The channel opening is not complete until the target is determined
+    v2_target: Option<uint::U256>,
+    /// Unique job ID generator
+    v2_job_id: SeqId,
+    /// Translates V2 job ID to V1 job ID
+    v2_to_v1_job_map: JobMap,
+    /// Options for translation
+    options: V2ToV1TranslationOptions,
+}
+
 impl V2ToV1Translation {
     const PROTOCOL_VERSION: usize = 0;
     /// No support for the extended protocol yet, therefore, no extranonce advertised
@@ -201,7 +200,7 @@ impl V2ToV1Translation {
             v2_target: None,
             state: V2ToV1TranslationState::Init,
             v1_tx,
-            v1_req_id: MessageId::new(),
+            v1_req_id: SeqId::new(),
             v1_req_map: V1ReqMap::default(),
             v1_extra_nonce1: None,
             v1_extra_nonce2_size: 0,
@@ -210,8 +209,8 @@ impl V2ToV1Translation {
             v1_xnsub_enabled: false,
             v1_deferred_notify: None,
             v2_tx,
-            v2_req_id: MessageId::new(),
-            v2_job_id: MessageId::new(),
+            v2_req_id: SeqId::new(),
+            v2_job_id: SeqId::new(),
             v2_to_v1_job_map: JobMap::default(),
             options,
         }
