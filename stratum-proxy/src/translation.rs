@@ -43,13 +43,29 @@ use ii_stratum::v2::{
 };
 
 use ii_logging::macros::*;
-use ii_wire::MessageId;
 
 use crate::error::{Error, Result, ResultExt};
 use crate::util;
 
 #[cfg(test)]
 mod test;
+
+/// Sequential ID to pair up messages, requests etc.
+#[derive(Default, Debug)]
+pub struct SeqId(u32);
+
+impl SeqId {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Get a new ID, increment internal state
+    pub fn next(&mut self) -> u32 {
+        let current_value = self.0;
+        self.0 = self.0.wrapping_add(1);
+        current_value
+    }
+}
 
 pub struct V2ToV1TranslationOptions {
     /// Try to send `extranonce.subscribe` during handshake
