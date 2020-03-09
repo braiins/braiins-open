@@ -382,4 +382,78 @@ pub(crate) mod test {
             .expect("BUG: responder failed to read transport message");
         assert_eq!(&message[..], &decrypted_msg, "Messages don't match");
     }
+
+    fn bind_test_server() -> Option<(ii_wire::Server<Framing>, ii_wire::Address)> {
+        const ADDR: &'static str = "127.0.0.1";
+        const MIN_PORT: u16 = 9999;
+        const MAX_PORT: u16 = 10001;
+
+        // Find first available port for the test
+        for port in MIN_PORT..MAX_PORT {
+            let addr = ii_wire::Address(ADDR.into(), port);
+            if let Ok(server) = ii_wire::Server::<Framing>::bind(&addr) {
+                return Some((server, addr));
+            }
+        }
+        None
+    }
+
+    #[tokio::test]
+    async fn test_initiator_connect_responder_accept() {
+        let (mut server, addr) =
+            bind_test_server().expect("BUG: binding failed, no available ports");
+        let payload = BytesMut::from(&[1u8, 2, 3, 4][..]);
+        let expected_frame =
+            v2::framing::Frame::from_serialized_payload(true, 0, 0x16, payload.clone());
+        // This is currently due to the fact that Frame doesn't support cloning and it will be
+        // consumed by the initiator codec
+        let expected_frame_copy =
+            v2::framing::Frame::from_serialized_payload(true, 0, 0x16, payload);
+
+        // Spawn server task that reacts to any incoming message and responds
+        // with SetupConnectionSuccess
+        tokio::spawn(async move {
+            let static_key = generate_keypair().expect("BUG: Failed to generate static public key");
+            let responder = Responder::new(static_key);
+
+            let conn = server
+                .next()
+                .await
+                .expect("BUG: Server has terminated")
+                .expect("BUG: Server returned an error");
+
+            let mut server_framed_stream = responder
+                .accept(conn)
+                .await
+                .expect("BUG: Responder: noise handshake failed");
+
+            server_framed_stream
+                .send(expected_frame)
+                .await
+                .expect("BUG: Cannot send a stream")
+        });
+
+        let mut client = ii_wire::Client::<Framing>::new(addr);
+        let connection = client
+            .next()
+            .await
+            .expect("BUG: Cannot connect to noise endpoint");
+
+        let initiator = Initiator::new();
+        let mut client_framed_stream = initiator
+            .connect(connection)
+            .await
+            .expect("BUG: cannot connect to noise responder");
+
+        let received_frame = client_framed_stream
+            .next()
+            .await
+            .expect("BUG: connection unexpectedly terminated")
+            .expect("BUG: error when receiving stream");
+        assert_eq!(
+            expected_frame_copy, received_frame,
+            "BUG: Expected ({:x?}) and decoded ({:x?}) frames don't match",
+            expected_frame_copy, received_frame
+        );
+    }
 }
