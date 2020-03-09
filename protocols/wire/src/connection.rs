@@ -29,10 +29,10 @@ use std::task::{Context, Poll};
 use ii_async_compat::prelude::*;
 use pin_project::{pin_project, pinned_drop};
 use tokio::net::{TcpStream, ToSocketAddrs};
-use tokio_util::codec::{FramedRead, FramedWrite};
+use tokio_util::codec::{Framed, FramedRead, FramedWrite};
 
 use crate::framing::Framing;
-use crate::split::{DuplexSplit, TcpDuplexRecv, TcpDuplexSend};
+use crate::split::{TcpDuplexRecv, TcpDuplexSend};
 
 #[pin_project]
 #[derive(Debug)]
@@ -133,22 +133,18 @@ impl<F: Framing> Stream for ConnectionRx<F> {
 #[derive(Debug)]
 pub struct Connection<F: Framing> {
     #[pin]
-    pub rx: ConnectionRx<F>,
-    #[pin]
-    pub tx: ConnectionTx<F>,
+    pub framed_stream: Framed<TcpStream, F::Codec>,
 }
 
 impl<F: Framing> Connection<F> {
     pub(crate) fn new(stream: TcpStream) -> Self {
-        // FIXME: remove split
-        let (stream_rx, stream_tx) = stream.duplex_split();
-        let codec_tx = FramedWrite::new(stream_tx, F::Codec::default());
-        let codec_rx = FramedRead::new(stream_rx, F::Codec::default());
+        let framed_stream = Framed::new(stream, F::Codec::default());
 
-        let rx = ConnectionRx { inner: codec_rx };
-        let tx = ConnectionTx::<F> { inner: codec_tx };
+        Self { framed_stream }
+    }
 
-        Self { rx, tx }
+    pub fn codec_mut(&mut self) -> &mut F::Codec {
+        self.framed_stream.codec_mut()
     }
 
     /// Connects to a remote address `addr` and creates two halves
@@ -158,26 +154,16 @@ impl<F: Framing> Connection<F> {
         Ok(Connection::new(stream))
     }
 
-    pub async fn send_msg<M, E>(&mut self, message: M) -> Result<(), F::Error>
-    where
-        F::Error: From<E>,
-        M: TryInto<F::Tx, Error = E>,
-    {
-        let frame = message.try_into()?;
-        self.tx.send(frame).await?;
-        Ok(())
-    }
-
     pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.rx.local_addr()
+        self.framed_stream.get_ref().local_addr()
     }
 
     pub fn peer_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.rx.peer_addr()
+        self.framed_stream.get_ref().peer_addr()
     }
 
-    pub fn split(self) -> (ConnectionRx<F>, ConnectionTx<F>) {
-        (self.rx, self.tx)
+    pub fn into_inner(self) -> Framed<TcpStream, F::Codec> {
+        self.framed_stream
     }
 }
 
@@ -185,7 +171,7 @@ impl<F: Framing> Stream for Connection<F> {
     type Item = Result<F::Rx, F::Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        self.project().rx.poll_next(cx)
+        self.project().framed_stream.poll_next(cx)
     }
 }
 
@@ -193,18 +179,18 @@ impl<F: Framing> Sink<F::Tx> for Connection<F> {
     type Error = F::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.project().tx.poll_ready(cx)
+        self.project().framed_stream.poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: F::Tx) -> Result<(), Self::Error> {
-        self.project().tx.start_send(item)
+        self.project().framed_stream.start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.project().tx.poll_flush(cx)
+        self.project().framed_stream.poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.project().tx.poll_close(cx)
+        self.project().framed_stream.poll_close(cx)
     }
 }

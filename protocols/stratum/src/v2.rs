@@ -38,11 +38,55 @@ use crate::{AnyPayload, Message};
 use async_trait::async_trait;
 use packed_struct::prelude::*;
 use std::convert::TryFrom;
+use tokio::net::TcpStream;
 
+use ii_async_compat::prelude::*;
 use ii_logging::macros::*;
+use ii_wire;
 
 pub use self::framing::codec::Codec;
 pub use self::framing::{Frame, Framing};
+
+/// Tcp stream that produces/consumes V2 frames
+pub type Framed = tokio_util::codec::Framed<TcpStream, <Framing as ii_wire::Framing>::Codec>;
+
+pub trait FramedSink:
+    Sink<<Framing as ii_wire::Framing>::Tx, Error = <Framing as ii_wire::Framing>::Error>
+    + std::marker::Unpin
+    + std::fmt::Debug
+    + 'static
+{
+}
+
+impl<T> FramedSink for T where
+    T: Sink<<Framing as ii_wire::Framing>::Tx, Error = <Framing as ii_wire::Framing>::Error>
+        + std::marker::Unpin
+        + std::fmt::Debug
+        + 'static
+{
+}
+
+pub trait FramedStream:
+    Stream<
+        Item = std::result::Result<
+            <Framing as ii_wire::Framing>::Tx,
+            <Framing as ii_wire::Framing>::Error,
+        >,
+    > + std::marker::Unpin
+    + 'static
+{
+}
+
+impl<T> FramedStream for T where
+    T: Stream<
+            Item = std::result::Result<
+                <Framing as ii_wire::Framing>::Tx,
+                <Framing as ii_wire::Framing>::Error,
+            >,
+        > + std::marker::Unpin
+        + 'static
+{
+}
 
 /// Protocol associates a custom handler with it
 pub struct Protocol;

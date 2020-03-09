@@ -39,10 +39,15 @@ use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::mem::size_of;
+use tokio::net::TcpStream;
 
+use ii_async_compat::prelude::{tokio, tokio_util};
 use ii_logging::macros::*;
 
-/// Message Id is used for pairing request/response messages
+//// Tcp stream that produces/consumes V2 frames
+pub type Framed = tokio_util::codec::Framed<TcpStream, <Framing as ii_wire::Framing>::Codec>;
+
+// Message Id is used for pairing request/response messages
 /// TODO spread this type across the protocol and eliminate the `Option<u32>`
 pub type MessageId = Option<u32>;
 

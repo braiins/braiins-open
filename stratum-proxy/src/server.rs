@@ -32,13 +32,13 @@ use ii_async_compat::select;
 use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
-use ii_wire::{Connection, ConnectionTx, Server};
+use ii_wire::{Connection, Server};
 
 use crate::error::{ErrorKind, Result, ResultExt};
 use crate::translation::V2ToV1Translation;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
-struct ConnTranslation {
+pub struct ConnTranslation {
     /// Actual protocol translator
     translation: V2ToV1Translation,
     /// Upstream connection
@@ -105,16 +105,20 @@ impl ConnTranslation {
     /// Attempt to send a frame via a specified connection. Attempt to send 'None' results in an
     /// error. The intention is to have a single place for sending out frames and handling
     /// errors/timeouts.
-    async fn v2_try_send_frame(
-        connection: &mut ConnectionTx<v2::Framing>,
+    pub async fn v2_try_send_frame<S>(
+        connection: &mut S,
         frame: Option<v2::framing::Frame>,
-    ) -> Result<()> {
+        peer_addr: &SocketAddr,
+    ) -> Result<()>
+    where
+        S: v2::FramedSink,
+    {
         let status = match frame {
             Some(v2_translated_frame) => connection.send(v2_translated_frame).await,
             None => Err(ErrorKind::Io("No more frames".to_string()))?,
         };
         status.map_err(|e| {
-            info!("Send error: {} for (peer: {:?})", e, connection.peer_addr());
+            info!("Send error: {} for (peer: {:?})", e, peer_addr);
             e.into()
         })
     }
@@ -122,17 +126,22 @@ impl ConnTranslation {
     /// Send all V2 frames via the specified V2 connection
     /// TODO consolidate this method into V2Handler, turn the parameters into fields and
     /// implement ConnTranslation::split()
-    async fn v2_send_task(
-        mut conn_sender: ConnectionTx<v2::Framing>,
+    async fn v2_send_task<S>(
+        mut conn_sender: S,
         mut translation_receiver: mpsc::Receiver<v2::Frame>,
-    ) -> Result<()> {
+        peer_addr: SocketAddr,
+    ) -> Result<()>
+    where
+        S: v2::FramedSink,
+    {
         loop {
             // We use select! so that more than just the translation receiver as a source can be
             // added
             select! {
                 // Send out frames translated into V2
                 v2_translated_frame = translation_receiver.next().fuse() => {
-                    Self::v2_try_send_frame(&mut conn_sender, v2_translated_frame).await?
+                    Self::v2_try_send_frame(&mut conn_sender, v2_translated_frame, &peer_addr)
+                        .await?;
                 },
             }
         }
@@ -142,10 +151,12 @@ impl ConnTranslation {
         let mut v1_translation_rx = self.v1_translation_rx;
         let mut translation = self.translation;
 
+        let v1_peer_addr = self.v1_conn.peer_addr()?;
+        let v2_peer_addr = self.v2_conn.peer_addr()?;
         // TODO make connections 'optional' so that we can remove them from the instance and use
         //  the rest of the instance in as 'borrowed mutable reference'.
-        let (mut v1_conn_rx, mut v1_conn_tx) = self.v1_conn.split();
-        let (mut v2_conn_rx, v2_conn_tx) = self.v2_conn.split();
+        let (mut v1_conn_tx, mut v1_conn_rx) = self.v1_conn.into_inner().split();
+        let (v2_conn_tx, mut v2_conn_rx) = self.v2_conn.into_inner().split();
 
         // TODO factor out the frame pumping functionality and append the JoinHandle of this task
         //  to the select statement to detect any problems and to terminate the translation, too
@@ -160,7 +171,11 @@ impl ConnTranslation {
         };
         tokio::spawn(v1_send_task);
 
-        tokio::spawn(Self::v2_send_task(v2_conn_tx, self.v2_translation_rx));
+        tokio::spawn(Self::v2_send_task(
+            v2_conn_tx,
+            self.v2_translation_rx,
+            v2_peer_addr.clone(),
+        ));
 
         // TODO: add cancel handler into the select statement
         loop {
@@ -175,7 +190,7 @@ impl ConnTranslation {
                         None => {
                             Err(format!(
                                 "Upstream V1 stratum connection dropped ({:?})",
-                                v1_conn_rx.peer_addr()
+                                v1_peer_addr
                             ))?;
                         }
                     }
@@ -187,7 +202,7 @@ impl ConnTranslation {
                             Self::v2_handle_frame(&mut translation, v2_frame?).await?;
                         }
                         None => {
-                            Err(format!("V2 client disconnected ({:?})", v2_conn_rx.peer_addr()))?;
+                            Err(format!("V2 client disconnected ({:?})", v2_peer_addr))?;
                         }
                     }
                 }
