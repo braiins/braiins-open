@@ -211,7 +211,7 @@ impl ConnTranslation {
     }
 }
 
-async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: SocketAddr) {
+pub async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: SocketAddr) {
     info!("Opening connection to V1: {:?}", stratum_addr);
     let conn_v1 = match Connection::connect(&stratum_addr).await {
         Ok(conn) => conn,
@@ -238,23 +238,36 @@ async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: Socke
 /// the `run()` method turns the `ProxyServer`
 /// into an asynchronous task (which internally calls `next()` in a loop).
 #[derive(Debug)]
-pub struct ProxyServer {
+pub struct ProxyServer<FN> {
     server: Server<v2::Framing>,
     listen_addr: SocketAddr,
     stratum_addr: SocketAddr,
     quit_tx: mpsc::Sender<()>,
     quit_rx: Option<mpsc::Receiver<()>>,
+    /// Closure that generates a handler in the form of a Future that the main server run() task
+    /// executes
+    get_connection_handler: FN,
 }
 
-impl ProxyServer {
-    /// Constructor, binds the listening socket
-    pub fn listen(listen_addr: String, stratum_addr: String) -> Result<ProxyServer> {
+impl<FN, FT> ProxyServer<FN>
+where
+    FT: Future<Output = ()> + Send + 'static,
+    FN: Fn(Connection<v2::Framing>, SocketAddr) -> FT,
+{
+    /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
+    /// specified `get_connection_handler` that builds the connection handler `Future` on demand
+    pub fn listen(
+        listen_addr: String,
+        stratum_addr: String,
+        get_connection_handler: FN,
+    ) -> Result<ProxyServer<FN>> {
         let listen_addr = listen_addr
             .to_socket_addrs()
             .context(ErrorKind::BadIp(listen_addr))?
             .next()
             .expect("Cannot resolve any IP address");
 
+        //let stratum_addr = ii_wire::Address::from_str(stratum_addr.as_str())?;
         let stratum_addr = stratum_addr
             .to_socket_addrs()
             .context(ErrorKind::BadIp(stratum_addr))?
@@ -271,6 +284,7 @@ impl ProxyServer {
             stratum_addr,
             quit_rx: Some(quit_rx),
             quit_tx,
+            get_connection_handler,
         })
     }
 
@@ -320,7 +334,7 @@ impl ProxyServer {
         let do_connect = move || {
             let conn = conn?;
             let peer_addr = conn.peer_addr()?;
-            tokio::spawn(handle_connection(conn, self.stratum_addr));
+            tokio::spawn((self.get_connection_handler)(conn, self.stratum_addr));
             Ok(peer_addr)
         };
 

@@ -67,7 +67,11 @@ async fn main() {
     let v2_addr = args.value_of("listen").unwrap();
     let v1_addr = args.value_of("remote").unwrap();
 
-    let server = match server::ProxyServer::listen(v2_addr.to_string(), v1_addr.to_string()) {
+    let server = match server::ProxyServer::listen(
+        v2_addr.to_string(),
+        v1_addr.to_string(),
+        server::handle_connection,
+    ) {
         Ok(task) => task,
         Err(err) => {
             error!("Can't bind the server: {}", err);
