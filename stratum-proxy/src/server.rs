@@ -48,7 +48,9 @@ pub struct ConnTranslation {
     /// Frames from the translator to be sent out via V1 connection
     v1_translation_rx: mpsc::Receiver<v1::Frame>,
     /// Downstream connection
-    v2_conn: Connection<v2::Framing>,
+    v2_conn: v2::Framed,
+    /// Address of the v2 peer that has connected
+    v2_peer_addr: SocketAddr,
     /// Frames from the translator to be sent out via V2 connection
     v2_translation_rx: mpsc::Receiver<v2::Frame>,
 }
@@ -58,7 +60,11 @@ impl ConnTranslation {
     const V1_UPSTREAM_TIMEOUT: time::Duration = time::Duration::from_secs(60);
     const V2_DOWNSTREAM_TIMEOUT: time::Duration = time::Duration::from_secs(60);
 
-    fn new(v2_conn: Connection<v2::Framing>, v1_conn: Connection<v1::Framing>) -> Self {
+    fn new(
+        v2_conn: v2::Framed,
+        v2_peer_addr: SocketAddr,
+        v1_conn: Connection<v1::Framing>,
+    ) -> Self {
         let (v1_translation_tx, v1_translation_rx) =
             mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
         let (v2_translation_tx, v2_translation_rx) =
@@ -71,6 +77,7 @@ impl ConnTranslation {
             v1_conn,
             v1_translation_rx,
             v2_conn,
+            v2_peer_addr,
             v2_translation_rx,
         }
     }
@@ -152,11 +159,10 @@ impl ConnTranslation {
         let mut translation = self.translation;
 
         let v1_peer_addr = self.v1_conn.peer_addr()?;
-        let v2_peer_addr = self.v2_conn.peer_addr()?;
         // TODO make connections 'optional' so that we can remove them from the instance and use
         //  the rest of the instance in as 'borrowed mutable reference'.
         let (mut v1_conn_tx, mut v1_conn_rx) = self.v1_conn.into_inner().split();
-        let (v2_conn_tx, mut v2_conn_rx) = self.v2_conn.into_inner().split();
+        let (v2_conn_tx, mut v2_conn_rx) = self.v2_conn.split();
 
         // TODO factor out the frame pumping functionality and append the JoinHandle of this task
         //  to the select statement to detect any problems and to terminate the translation, too
@@ -174,7 +180,7 @@ impl ConnTranslation {
         tokio::spawn(Self::v2_send_task(
             v2_conn_tx,
             self.v2_translation_rx,
-            v2_peer_addr.clone(),
+            self.v2_peer_addr,
         ));
 
         // TODO: add cancel handler into the select statement
@@ -202,7 +208,7 @@ impl ConnTranslation {
                             Self::v2_handle_frame(&mut translation, v2_frame?).await?;
                         }
                         None => {
-                            Err(format!("V2 client disconnected ({:?})", v2_peer_addr))?;
+                            Err(format!("V2 client disconnected ({:?})", self.v2_peer_addr))?;
                         }
                     }
                 }
@@ -211,9 +217,13 @@ impl ConnTranslation {
     }
 }
 
-pub async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: SocketAddr) {
+pub async fn handle_connection(
+    v2_conn: v2::Framed,
+    v2_peer_addr: SocketAddr,
+    stratum_addr: SocketAddr,
+) {
     info!("Opening connection to V1: {:?}", stratum_addr);
-    let conn_v1 = match Connection::connect(&stratum_addr).await {
+    let v1_conn = match Connection::connect(&stratum_addr).await {
         Ok(conn) => conn,
         Err(e) => {
             error!("Connection to Stratum V1 failed: {}", e);
@@ -221,12 +231,11 @@ pub async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: S
         }
     };
     info!("V1 connection setup");
-    // At this point, we already know the peer address is valid
-    let peer_addr = conn_v2.peer_addr().expect("BUG: invalid peer address");
-    let translation = ConnTranslation::new(conn_v2, conn_v1);
+
+    let translation = ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn);
 
     if let Err(e) = translation.run().await {
-        info!("Terminating connection from: {} ({})", peer_addr, e);
+        info!("Terminating connection from: {} ({})", v2_peer_addr, e);
     }
 }
 
@@ -239,7 +248,7 @@ pub async fn handle_connection(conn_v2: Connection<v2::Framing>, stratum_addr: S
 /// into an asynchronous task (which internally calls `next()` in a loop).
 #[derive(Debug)]
 pub struct ProxyServer<FN> {
-    server: Server<v2::Framing>,
+    server: Server<v2::noise::Framing>,
     listen_addr: SocketAddr,
     stratum_addr: SocketAddr,
     quit_tx: mpsc::Sender<()>,
@@ -252,7 +261,7 @@ pub struct ProxyServer<FN> {
 impl<FN, FT> ProxyServer<FN>
 where
     FT: Future<Output = ()> + Send + 'static,
-    FN: Fn(Connection<v2::Framing>, SocketAddr) -> FT,
+    FN: Fn(v2::Framed, SocketAddr, SocketAddr) -> FT,
 {
     /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
     /// specified `get_connection_handler` that builds the connection handler `Future` on demand
@@ -274,7 +283,7 @@ where
             .next()
             .expect("Cannot resolve any IP address");
 
-        let server = Server::<v2::Framing>::bind(&listen_addr)?;
+        let server = Server::<v2::noise::Framing>::bind(&listen_addr)?;
 
         let (quit_tx, quit_rx) = mpsc::channel(1);
 
@@ -292,6 +301,36 @@ where
     /// which can be used to terminate the server task.
     pub fn quit_channel(&self) -> mpsc::Sender<()> {
         self.quit_tx.clone()
+    }
+
+    /// Helper method for accepting incoming connections
+    async fn accept(
+        &mut self,
+        connection_result: Result<Connection<v2::noise::Framing>>,
+    ) -> Result<SocketAddr> {
+        let connection = connection_result?;
+
+        let peer_addr = connection.peer_addr()?;
+        // TODO: The server static key pair along with its signature (aka its "certificate")
+        //  still needs to be passed to the server. This implementation doesn't prevent MITM!
+        //  as nobody can trust this server yet without a signed pubkey
+        let static_key = v2::noise::generate_keypair().expect(
+            "BUG: Failed to generate static \
+             public key",
+        );
+        let responder = v2::noise::Responder::new(static_key);
+
+        // Accept the connection and attempt to perform the full Noise handshake
+        let server_framed_stream = responder.accept(connection).await?;
+
+        // Fully secured connection has been established
+        tokio::spawn((self.get_connection_handler)(
+            server_framed_stream,
+            peer_addr,
+            self.stratum_addr,
+        ));
+
+        Ok(peer_addr)
     }
 
     /// Handle a connection. Call this in a loop to make the `ProxyServer`
@@ -331,14 +370,8 @@ where
             },
         };
 
-        let do_connect = move || {
-            let conn = conn?;
-            let peer_addr = conn.peer_addr()?;
-            tokio::spawn((self.get_connection_handler)(conn, self.stratum_addr));
-            Ok(peer_addr)
-        };
-
-        Some(do_connect())
+        // Remap the connection stratum error into stratum proxy local error
+        Some(self.accept(conn.map_err(Into::into)).await)
     }
 
     /// Creates a proxy server task that calls `.next()`
