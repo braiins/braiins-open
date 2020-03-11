@@ -23,6 +23,8 @@
 //! This module provides custom types used in Stratum V2 messages
 
 pub use std::convert::{TryFrom, TryInto};
+use std::fmt::{self, Debug};
+use std::ops::Deref;
 
 use serde;
 use serde::{Deserialize, Serialize};
@@ -76,7 +78,7 @@ impl From<ii_bitcoin::Target> for Uint256Bytes {
 macro_rules! sized_string_type {
     ($name:ident, $min_len:expr, $max_len:expr) => {
         #[derive(PartialEq, Eq, Serialize, Deserialize, Default, Clone, Debug)]
-        pub struct $name(std::string::String);
+        pub struct $name(String);
 
         impl $name {
             const MIN_LEN: usize = $min_len;
@@ -87,7 +89,7 @@ macro_rules! sized_string_type {
                 Self::default()
             }
 
-            pub fn from_string(s: std::string::String) -> Self {
+            pub fn from_string(s: String) -> Self {
                 Self::try_from(s).expect(concat!(
                     "Could not convert String to ",
                     stringify!($name),
@@ -103,16 +105,16 @@ macro_rules! sized_string_type {
                 ))
             }
 
-            pub fn to_string(&self) -> std::string::String {
-                std::string::String::from(&*self.0)
+            pub fn to_string(&self) -> String {
+                String::from(&*self.0)
             }
         }
 
-        impl std::convert::TryFrom<std::string::String> for $name {
+        impl TryFrom<String> for $name {
             type Error = ();
 
             #[inline]
-            fn try_from(s: std::string::String) -> std::result::Result<Self, ()> {
+            fn try_from(s: String) -> Result<Self, ()> {
                 if (Self::MIN_LEN..=Self::MAX_LEN).contains(&s.len()) {
                     Ok(Self(s))
                 } else {
@@ -121,11 +123,11 @@ macro_rules! sized_string_type {
             }
         }
 
-        impl<'a> std::convert::TryFrom<&'a str> for $name {
+        impl<'a> TryFrom<&'a str> for $name {
             type Error = ();
 
             #[inline]
-            fn try_from(s: &'a str) -> std::result::Result<Self, ()> {
+            fn try_from(s: &'a str) -> Result<Self, ()> {
                 if (Self::MIN_LEN..=Self::MAX_LEN).contains(&s.len()) {
                     Ok(Self(s.into()))
                 } else {
@@ -148,17 +150,17 @@ macro_rules! sized_string_type {
             }
         }
 
-        impl From<$name> for std::string::String {
+        impl From<$name> for String {
             #[inline]
-            fn from(s: $name) -> std::string::String {
+            fn from(s: $name) -> String {
                 s.0
             }
         }
 
-        impl std::ops::Deref for $name {
-            type Target = std::string::String;
+        impl Deref for $name {
+            type Target = String;
 
-            fn deref(&self) -> &std::string::String {
+            fn deref(&self) -> &String {
                 &self.0
             }
         }
@@ -168,7 +170,7 @@ macro_rules! sized_string_type {
 macro_rules! sized_bytes_type {
     ($name:ident, $min_len:expr, $max_len:expr) => {
         #[derive(PartialEq, Eq, Serialize, Deserialize, Default, Clone, Debug)]
-        pub struct $name(std::boxed::Box<[u8]>);
+        pub struct $name(Box<[u8]>);
 
         impl $name {
             const MIN_LEN: usize = $min_len;
@@ -179,7 +181,7 @@ macro_rules! sized_bytes_type {
                 Self::default()
             }
 
-            pub fn from_vec(v: std::vec::Vec<u8>) -> Self {
+            pub fn from_vec(v: Vec<u8>) -> Self {
                 Self::try_from(v).expect(concat!(
                     "Could not convert Vec to ",
                     stringify!($name),
@@ -196,11 +198,11 @@ macro_rules! sized_bytes_type {
             }
         }
 
-        impl std::convert::TryFrom<std::vec::Vec<u8>> for $name {
+        impl TryFrom<Vec<u8>> for $name {
             type Error = ();
 
             #[inline]
-            fn try_from(v: std::vec::Vec<u8>) -> std::result::Result<Self, ()> {
+            fn try_from(v: Vec<u8>) -> Result<Self, ()> {
                 if (Self::MIN_LEN..=Self::MAX_LEN).contains(&v.len()) {
                     Ok(Self(v.into_boxed_slice()))
                 } else {
@@ -209,11 +211,11 @@ macro_rules! sized_bytes_type {
             }
         }
 
-        impl<'a> std::convert::TryFrom<&'a [u8]> for $name {
+        impl<'a> TryFrom<&'a [u8]> for $name {
             type Error = ();
 
             #[inline]
-            fn try_from(s: &'a [u8]) -> std::result::Result<Self, ()> {
+            fn try_from(s: &'a [u8]) -> Result<Self, ()> {
                 if (Self::MIN_LEN..=Self::MAX_LEN).contains(&s.len()) {
                     Ok(Self(s.into()))
                 } else {
@@ -229,25 +231,163 @@ macro_rules! sized_bytes_type {
             }
         }
 
-        impl From<$name> for std::vec::Vec<u8> {
+        impl From<$name> for Vec<u8> {
             #[inline]
-            fn from(s: $name) -> std::vec::Vec<u8> {
+            fn from(s: $name) -> Vec<u8> {
                 s.0.into_vec()
             }
         }
 
-        impl From<$name> for std::boxed::Box<[u8]> {
+        impl From<$name> for Box<[u8]> {
             #[inline]
-            fn from(s: $name) -> std::boxed::Box<[u8]> {
+            fn from(s: $name) -> Box<[u8]> {
                 s.0
             }
         }
 
-        impl std::ops::Deref for $name {
+        impl Deref for $name {
             type Target = [u8];
 
             fn deref(&self) -> &[u8] {
                 &*self.0
+            }
+        }
+    };
+}
+
+macro_rules! sized_seq_type {
+    ($name:ident, $min_len:expr, $max_len:expr) => {
+        #[derive(Serialize, Deserialize)]
+        pub struct $name<T>(
+            #[serde(bound(deserialize = "T: Serialize + for<'dx> Deserialize<'dx>"))] Vec<T>,
+        )
+        where
+            T: Serialize + for<'dx> Deserialize<'dx>;
+
+        impl<T> $name<T>
+        where
+            T: Serialize + for<'dx> Deserialize<'dx>,
+        {
+            const MIN_LEN: usize = $min_len;
+            const MAX_LEN: usize = $max_len;
+
+            #[inline]
+            pub fn new() -> Self {
+                Self(vec![])
+            }
+
+            pub fn from_vec(v: Vec<T>) -> Self {
+                Self::try_from(v).expect(concat!(
+                    "Could not convert Vec to ",
+                    stringify!($name),
+                    " - Vec length out of range."
+                ))
+            }
+        }
+
+        impl<T> $name<T>
+        where
+            T: Serialize + for<'dx> Deserialize<'dx> + Clone,
+        {
+            pub fn from_slice(s: &[T]) -> Self {
+                Self::try_from(s).expect(concat!(
+                    "Could not convert &[u8] to ",
+                    stringify!($name),
+                    " - slice length out of range."
+                ))
+            }
+        }
+
+        impl<T> TryFrom<Vec<T>> for $name<T>
+        where
+            T: Serialize + for<'dx> Deserialize<'dx>,
+        {
+            type Error = ();
+
+            #[inline]
+            fn try_from(vec: Vec<T>) -> Result<Self, ()> {
+                if (Self::MIN_LEN..=Self::MAX_LEN).contains(&vec.len()) {
+                    Ok(Self(vec))
+                } else {
+                    Err(())
+                }
+            }
+        }
+
+        impl<'a, T> TryFrom<&'a [T]> for $name<T>
+        where
+            T: Serialize + for<'dx> Deserialize<'dx> + Clone,
+        {
+            type Error = ();
+
+            #[inline]
+            fn try_from(s: &'a [T]) -> Result<Self, ()> {
+                if (Self::MIN_LEN..=Self::MAX_LEN).contains(&s.len()) {
+                    Ok(Self(s.into()))
+                } else {
+                    Err(())
+                }
+            }
+        }
+
+        impl<T> AsRef<[T]> for $name<T>
+        where
+            T: Serialize + for<'dx> Deserialize<'dx>,
+        {
+            #[inline]
+            fn as_ref(&self) -> &[T] {
+                &*self.0
+            }
+        }
+
+        impl<T> From<$name<T>> for Vec<T>
+        where
+            T: Serialize + for<'dx> Deserialize<'dx>,
+        {
+            #[inline]
+            fn from(s: $name<T>) -> Vec<T> {
+                s.0
+            }
+        }
+
+        impl<T> From<$name<T>> for Box<[T]>
+        where
+            T: Serialize + for<'dx> Deserialize<'dx>,
+        {
+            #[inline]
+            fn from(s: $name<T>) -> Box<[T]> {
+                s.0.into_boxed_slice()
+            }
+        }
+
+        impl<T> Deref for $name<T>
+        where
+            T: Serialize + for<'dx> Deserialize<'dx>,
+        {
+            type Target = [T];
+
+            fn deref(&self) -> &[T] {
+                &*self.0
+            }
+        }
+
+        impl<T> PartialEq for $name<T>
+        where
+            T: Serialize + for<'dx> Deserialize<'dx> + PartialEq,
+        {
+            fn eq(&self, other: &Self) -> bool {
+                self.0.eq(&other.0)
+            }
+        }
+
+        impl<T> Eq for $name<T> where T: Serialize + for<'dx> Deserialize<'dx> + PartialEq {}
+
+        impl<T> Debug for $name<T>
+        where
+            T: Serialize + for<'dx> Deserialize<'dx> + Debug,
+        {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.debug_tuple(stringify!($name)).field(&self.0).finish()
             }
         }
     };
@@ -264,6 +404,9 @@ sized_bytes_type!(Bytes0_255, 0, 255);
 sized_bytes_type!(Bytes1_255, 1, 255);
 sized_bytes_type!(Bytes0_64k, 0, 65535);
 sized_bytes_type!(Bytes1_64k, 1, 65535);
+
+sized_seq_type!(Seq0_255, 0, 255);
+sized_seq_type!(Seq0_64k, 0, 65535);
 
 /// Device specific information - all parts are optional and could be empty strings
 /// TODO: Fix minimal string length in the Stratum V2 specification

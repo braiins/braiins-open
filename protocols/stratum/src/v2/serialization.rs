@@ -21,6 +21,8 @@ pub enum Error {
     Overlong,
     #[error("Sequence too short")]
     TooShort,
+    #[error("Sequence length unknown ahead of time")]
+    UnknownLength,
     #[error("Type `{0}` unsupported by the protocol")]
     Unsupported(&'static str),
     #[error("Invalid Unicode string/character data")]
@@ -72,7 +74,7 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
     type Ok = ();
     type Error = Error;
 
-    type SerializeSeq = Self;
+    type SerializeSeq = SizedSeqEmitter<'a, W, u16>;
     type SerializeTuple = Self;
     type SerializeTupleStruct = Self;
     type SerializeTupleVariant = Self;
@@ -129,14 +131,16 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
         self.serialize_u32(v as u32)
     }
 
-    fn serialize_str(self, _v: &str) -> Result<()> {
-        // FIXME:
-        Err(Error::Unsupported("str"))
+    fn serialize_str(self, v: &str) -> Result<()> {
+        let len: u16 = v.len().try_into().map_err(|_| Error::Overlong)?;
+        self.serialize_u16(len)?;
+        self.write(v.as_bytes())
     }
 
-    fn serialize_bytes(self, _v: &[u8]) -> Result<()> {
-        // FIXME:
-        Err(Error::Unsupported("bytes"))
+    fn serialize_bytes(self, v: &[u8]) -> Result<()> {
+        let len: u16 = v.len().try_into().map_err(|_| Error::Overlong)?;
+        self.serialize_u16(len)?;
+        self.write(v)
     }
 
     fn serialize_none(self) -> Result<()> {
@@ -183,6 +187,9 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
             "Bytes0_64k" => value.serialize(SizedSeqEmitter::<W, u16>::new(self)),
             "Bytes1_64k" => value.serialize(SizedSeqEmitter::<W, u16>::new(self)),
 
+            "Seq0_255" => value.serialize(SizedSeqEmitter::<W, u8>::new(self)),
+            "Seq0_64k" => value.serialize(SizedSeqEmitter::<W, u16>::new(self)),
+
             _ => value.serialize(self),
         }
     }
@@ -198,9 +205,9 @@ impl<'a, W: io::Write> ser::Serializer for &'a mut Serializer<W> {
         value.serialize(self)
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        // FIXME:
-        Err(Error::Unsupported("seq"))
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+        let emitter = SizedSeqEmitter::new(self);
+        emitter.serialize_seq(len)
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
@@ -454,9 +461,7 @@ where
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
-        let len = len.ok_or(Error::Unsupported(
-            "Sequence with length unknown ahead of time",
-        ))?;
+        let len = len.ok_or(Error::UnknownLength)?;
         let len = I::try_from(len).map_err(|_| Error::Overlong)?;
         len.serialize(&mut *self.serializer)?;
         Ok(self)
@@ -541,6 +546,38 @@ pub fn to_vec<T: ?Sized + Serialize>(value: &T) -> Result<Vec<u8>> {
 
 pub struct Deserializer<'de> {
     input: slice::Iter<'de, u8>,
+}
+
+struct FwdSeqAccess<'a, 'de> {
+    deserializer: &'a mut Deserializer<'de>,
+    len: usize,
+}
+
+impl<'a, 'de> FwdSeqAccess<'a, 'de> {
+    fn new(deserializer: &'a mut Deserializer<'de>, len: usize) -> Self {
+        Self { deserializer, len }
+    }
+}
+
+impl<'a, 'de> SeqAccess<'de> for FwdSeqAccess<'a, 'de> {
+    type Error = Error;
+
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        if self.len > 0 {
+            self.len -= 1;
+            let value = DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
+            Ok(Some(value))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        Some(self.len)
+    }
 }
 
 impl<'de> Deserializer<'de> {
@@ -705,24 +742,28 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_char(c)
     }
 
-    fn deserialize_str<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        // FIXME:
-        Err(Error::Unsupported("str"))
+    fn deserialize_str<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        let size = self.read_u16()? as usize;
+        let s = self.read_str(size)?;
+        visitor.visit_borrowed_str(s)
     }
 
-    fn deserialize_string<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        // FIXME:
-        Err(Error::Unsupported("string"))
+    fn deserialize_string<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        let size = self.read_u16()? as usize;
+        let s = self.read_str(size)?;
+        visitor.visit_str(s)
     }
 
-    fn deserialize_bytes<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        // FIXME:
-        Err(Error::Unsupported("bytes"))
+    fn deserialize_bytes<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        let size = self.read_u16()? as usize;
+        let bytes = self.read_bytes(size)?;
+        visitor.visit_borrowed_bytes(bytes)
     }
 
-    fn deserialize_byte_buf<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        // FIXME:
-        Err(Error::Unsupported("byte_buf"))
+    fn deserialize_byte_buf<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        let size = self.read_u16()? as usize;
+        let bytes = self.read_bytes(size)?;
+        visitor.visit_bytes(bytes.into())
     }
 
     fn deserialize_option<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
@@ -764,13 +805,17 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
             "Bytes0_64k" => self.deserialize_sized_seq(0, 65535, Deserializer::read_u16, visitor),
             "Bytes1_64k" => self.deserialize_sized_seq(1, 65535, Deserializer::read_u16, visitor),
 
+            "Seq0_255" => self.deserialize_sized_seq(0, 255, Deserializer::read_u8, visitor),
+            "Seq0_64k" => self.deserialize_sized_seq(0, 65535, Deserializer::read_u16, visitor),
+
             _ => visitor.visit_newtype_struct(self),
         }
     }
 
-    fn deserialize_seq<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        // FIXME:
-        Err(Error::Unsupported("seq"))
+    fn deserialize_seq<V: de::Visitor<'de>>(mut self, visitor: V) -> Result<V::Value> {
+        let size: usize = self.read_u16()?.try_into().map_err(|_| Error::Overlong)?;
+
+        visitor.visit_seq(FwdSeqAccess::new(&mut self, size))
     }
 
     fn deserialize_tuple<V: de::Visitor<'de>>(self, len: usize, visitor: V) -> Result<V::Value> {
@@ -997,36 +1042,7 @@ impl<'a, 'de> de::Deserializer<'de> for SizedSeqDeserializer<'a, 'de> {
     }
 
     fn deserialize_seq<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        struct Access<'a, 'de> {
-            deserializer: &'a mut Deserializer<'de>,
-            len: usize,
-        }
-
-        impl<'a, 'de> SeqAccess<'de> for Access<'a, 'de> {
-            type Error = Error;
-
-            fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
-            where
-                T: DeserializeSeed<'de>,
-            {
-                if self.len > 0 {
-                    self.len -= 1;
-                    let value = DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
-                    Ok(Some(value))
-                } else {
-                    Ok(None)
-                }
-            }
-
-            fn size_hint(&self) -> Option<usize> {
-                Some(self.len)
-            }
-        }
-
-        visitor.visit_seq(Access {
-            deserializer: self.deserializer,
-            len: self.size,
-        })
+        visitor.visit_seq(FwdSeqAccess::new(self.deserializer, self.size))
     }
 
     fn deserialize_tuple<V: de::Visitor<'de>>(self, _len: usize, _visitor: V) -> Result<V::Value> {
@@ -1104,6 +1120,10 @@ mod test {
 
     #[test]
     fn v2_serialize_string() {
+        let s = String::from("abc");
+        let bytes = to_vec(&s).expect("Serialization failure");
+        assert_eq!(&bytes, &[3, 0, 0x61, 0x62, 0x63]);
+
         let s: Str1_32 = "abc".try_into().expect("Str1_32 constructor failure");
         let bytes = to_vec(&s).expect("Serialization failure");
         assert_eq!(&bytes, &[3, 0x61, 0x62, 0x63]);
@@ -1128,10 +1148,28 @@ mod test {
         Str1_255::try_from(s_long)
             .err()
             .expect("Str1_255 constructor didn't fail but should have");
+
+        let s_long: String = iter::repeat('_').take(1 << 16).collect();
+        match to_vec(&s_long) {
+            Err(Error::Overlong) => {}
+            Err(err) => panic!(
+                "Deserialization failed with unexpected error value: {:?}",
+                err
+            ),
+            Ok(_) => panic!("Serialization didn't fail but should have"),
+        }
     }
 
     #[test]
     fn v2_deserialize_string() {
+        let bytes = [3, 0, 0x61, 0x62, 0x63];
+        let s: &str = from_slice(&bytes).expect("Deserialization failure");
+        assert_eq!(s, "abc");
+
+        let bytes = [3, 0, 0x61, 0x62, 0x63];
+        let s: String = from_slice(&bytes).expect("Deserialization failure");
+        assert_eq!(s, "abc");
+
         let bytes = [3, 0x61, 0x62, 0x63];
         let s: Str1_32 = from_slice(&bytes).expect("Deserialization failure");
         assert_eq!(s.as_str(), "abc");
@@ -1169,6 +1207,10 @@ mod test {
 
     #[test]
     fn v2_serialize_bytes() {
+        let bytes = vec![1u8, 2, 3];
+        let bytes = to_vec(&bytes).expect("Serialization failure");
+        assert_eq!(&bytes, &[3, 0, 1, 2, 3]);
+
         let bytes: Bytes0_32 = vec![1, 2, 3]
             .try_into()
             .expect("Bytes0_32 constructor failure");
@@ -1202,6 +1244,14 @@ mod test {
 
     #[test]
     fn v2_deserialize_bytes() {
+        let bytes = [3, 0, 1, 2, 3];
+        let bytes: &[u8] = from_slice(&bytes).expect("Deserialization failure");
+        assert_eq!(bytes, &[1, 2, 3]);
+
+        let bytes = [3, 0, 1, 2, 3];
+        let bytes: Vec<u8> = from_slice(&bytes).expect("Deserialization failure");
+        assert_eq!(bytes, &[1, 2, 3]);
+
         let bytes = [3, 1, 2, 3];
         let bytes: Bytes0_32 = from_slice(&bytes).expect("Deserialization failure");
         assert_eq!(&*bytes, &[1, 2, 3]);
@@ -1248,7 +1298,21 @@ mod test {
         }
 
         #[derive(PartialEq, Serialize, Deserialize, Debug)]
-        struct MyData {
+        struct SeqItem(u32, f32);
+
+        impl SeqItem {
+            fn make_seq() -> Vec<Self> {
+                vec![
+                    SeqItem(0, 0.0),
+                    SeqItem(1, 1.1),
+                    SeqItem(2, 2.2),
+                    SeqItem(3, 3.3),
+                ]
+            }
+        }
+
+        #[derive(PartialEq, Serialize, Deserialize, Debug)]
+        struct MyData<'a> {
             b: bool,
             num_u8: u8,
             num_i8: i8,
@@ -1263,7 +1327,13 @@ mod test {
             e_unit: MyEnum,
             e_tuple: MyEnum,
             e_struct: MyEnum,
+            vec: Vec<u8>,
+            seq_255: Seq0_255<SeqItem>,
+            seq_64k: Seq0_64k<SeqItem>,
+            slice: &'a [u8],
         }
+
+        let bytes = vec![0, 1, 2, 3];
 
         let my_data = MyData {
             b: true,
@@ -1280,6 +1350,10 @@ mod test {
             e_unit: MyEnum::Unit,
             e_tuple: MyEnum::Tuple(3.14),
             e_struct: MyEnum::Struct { data: 1.618 },
+            vec: bytes.clone(),
+            seq_255: SeqItem::make_seq().try_into().unwrap(),
+            seq_64k: SeqItem::make_seq().try_into().unwrap(),
+            slice: bytes.as_slice(),
         };
 
         let bytes = to_vec(&my_data).expect("Serialization failed");
