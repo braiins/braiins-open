@@ -192,6 +192,7 @@ impl Default for DefaultBackoff {
 ///
 /// The structure holds a few items related to backoff state
 /// and the original connection I/O error.
+#[derive(Error, Debug)]
 pub struct AttemptError {
     /// Duration since the this (failed) till next time the `next()`
     /// will at the soonest perform another connection attempt.
@@ -204,6 +205,7 @@ pub struct AttemptError {
     /// by subtracting this from `Instant::now()`)
     pub start_time: Instant,
     /// The I/O error returned by the underlying `Connection`.
+    #[source]
     pub error: io::Error,
 }
 
@@ -215,6 +217,17 @@ impl AttemptError {
             start_time,
             error,
         }
+    }
+}
+
+impl fmt::Display for AttemptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let next_in = self.next_attempt_in.as_millis() as u64;
+        write!(
+            f,
+            "Connection attempt error, attempt #{}, next in: {}ms",
+            self.retries, next_in
+        )
     }
 }
 
