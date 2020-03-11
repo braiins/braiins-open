@@ -22,18 +22,16 @@
 
 use std::fmt;
 use std::io;
-use std::marker::PhantomData;
 use std::net::{SocketAddr, ToSocketAddrs as StdToSocketAddrs};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use std::vec;
 
-use ii_async_compat::prelude::*;
-use thiserror::Error;
+use tokio::net::TcpStream;
 use tokio::time;
 
-use crate::Connection;
-use crate::Framing;
+use ii_async_compat::prelude::*;
+use thiserror::Error;
 
 #[derive(Error, PartialEq, Eq, Debug)]
 pub struct AddressParseError;
@@ -64,9 +62,9 @@ impl Address {
         (self.0.as_str(), self.1)
     }
 
-    /// Create a `Connection` with `F: Framing` connected to this address
-    pub async fn connect<F: Framing>(&self) -> Result<Connection<F>, F::Error> {
-        Connection::connect(self.as_ref()).await
+    /// Create a `TcpStream` connected to this address
+    pub async fn connect(&self) -> io::Result<TcpStream> {
+        TcpStream::connect(self.as_ref()).await
     }
 }
 
@@ -193,8 +191,8 @@ impl Default for DefaultBackoff {
 /// The error type returned when a connection attempt fails.
 ///
 /// The structure holds a few items related to backoff state
-/// and the original connection error as defined by the `Framing` trait.
-pub struct AttemptError<F: Framing> {
+/// and the original connection I/O error.
+pub struct AttemptError {
     /// Duration since the this (failed) till next time the `next()`
     /// will at the soonest perform another connection attempt.
     pub next_attempt_in: Duration,
@@ -206,11 +204,11 @@ pub struct AttemptError<F: Framing> {
     /// by subtracting this from `Instant::now()`)
     pub start_time: Instant,
     /// The I/O error returned by the underlying `Connection`.
-    pub error: F::Error,
+    pub error: io::Error,
 }
 
-impl<F: Framing> AttemptError<F> {
-    fn new(next_attempt_in: Duration, retries: u32, start_time: Instant, error: F::Error) -> Self {
+impl AttemptError {
+    fn new(next_attempt_in: Duration, retries: u32, start_time: Instant, error: io::Error) -> Self {
         Self {
             next_attempt_in,
             retries,
@@ -221,7 +219,7 @@ impl<F: Framing> AttemptError<F> {
 }
 
 #[derive(Debug)]
-pub struct Client<F: Framing> {
+pub struct Client {
     /// Server address to connect to
     addr: Address,
     /// Backoff strategy trait object
@@ -235,10 +233,9 @@ pub struct Client<F: Framing> {
     /// Time of the first attempt, reset if the connection is established,
     /// see AttemptError::start_time
     start_time: Option<Instant>,
-    _marker: PhantomData<&'static F>,
 }
 
-impl<F: Framing> Client<F> {
+impl Client {
     /// Create a new `Client` that will connect to `addr` with
     /// the default backoff.
     pub fn new(addr: Address) -> Self {
@@ -257,7 +254,6 @@ impl<F: Framing> Client<F> {
             next_delay: None,
             retries: 0,
             start_time: None,
-            _marker: PhantomData,
         }
     }
 
@@ -269,7 +265,7 @@ impl<F: Framing> Client<F> {
         self.backoff = Box::new(backoff);
     }
 
-    pub async fn next(&mut self) -> Result<Connection<F>, AttemptError<F>> {
+    pub async fn next(&mut self) -> Result<TcpStream, AttemptError> {
         self.start_time.get_or_insert(Instant::now());
 
         if let Some((when, delay)) = self.next_delay.take() {

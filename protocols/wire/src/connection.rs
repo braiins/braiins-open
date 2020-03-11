@@ -137,7 +137,8 @@ pub struct Connection<F: Framing> {
 }
 
 impl<F: Framing> Connection<F> {
-    pub(crate) fn new(stream: TcpStream) -> Self {
+    /// Create a new `Connection` from an existing TCP stream
+    pub fn new(stream: TcpStream) -> Self {
         let framed_stream = Framed::new(stream, F::Codec::default());
 
         Self { framed_stream }
@@ -164,6 +165,12 @@ impl<F: Framing> Connection<F> {
 
     pub fn into_inner(self) -> Framed<TcpStream, F::Codec> {
         self.framed_stream
+    }
+}
+
+impl<F: Framing> From<TcpStream> for Connection<F> {
+    fn from(stream: TcpStream) -> Self {
+        Self::new(stream)
     }
 }
 

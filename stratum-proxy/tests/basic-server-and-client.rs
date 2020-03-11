@@ -73,10 +73,11 @@ async fn test_v2server() {
     });
 
     // Testing client
-    let mut connection = addr
-        .connect::<v2::Framing>()
+    let mut connection: Connection<v2::Framing> = addr
+        .connect()
         .await
-        .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
+        .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e))
+        .into();
     connection
         .send(
             test_utils::v2::build_setup_connection()
@@ -197,7 +198,7 @@ async fn test_v2_client(server_addr: &Address) {
     // Test client for V2
     utils::backoff(50, 4, move || {
         async move {
-            let mut conn = server_addr.connect::<v2::Framing>().await?;
+            let mut conn: Connection<v2::Framing> = server_addr.connect().await?.into();
 
             // Initialize server connection
             conn.send(
