@@ -34,5 +34,3 @@ pub use client::*;
 
 mod framing;
 pub use framing::*;
-
-pub mod split;

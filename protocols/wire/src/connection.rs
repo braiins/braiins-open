@@ -20,114 +20,17 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use std::convert::TryInto;
 use std::io;
-use std::net::{Shutdown, SocketAddr};
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use ii_async_compat::prelude::*;
-use pin_project::{pin_project, pinned_drop};
+use pin_project::pin_project;
 use tokio::net::{TcpStream, ToSocketAddrs};
-use tokio_util::codec::{Framed, FramedRead, FramedWrite};
+use tokio_util::codec::Framed;
 
 use crate::framing::Framing;
-use crate::split::{TcpDuplexRecv, TcpDuplexSend};
-
-#[pin_project]
-#[derive(Debug)]
-pub struct ConnectionTx<F: Framing> {
-    #[pin]
-    inner: FramedWrite<TcpDuplexSend, F::Codec>,
-}
-
-impl<F: Framing> ConnectionTx<F> {
-    pub async fn send_msg<M, E>(&mut self, message: M) -> Result<(), F::Error>
-    where
-        F::Error: From<E>,
-        M: TryInto<F::Tx, Error = E>,
-    {
-        let message = message.try_into()?;
-        self.send(message).await?;
-        Ok(())
-    }
-
-    pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.inner.get_ref().local_addr()
-    }
-
-    pub fn peer_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.inner.get_ref().peer_addr()
-    }
-
-    fn do_close(&mut self) {
-        let _ = self.inner.get_ref().shutdown(Shutdown::Both);
-    }
-
-    pub fn close(mut self) {
-        self.do_close();
-    }
-}
-
-impl<F: Framing> Sink<F::Tx> for ConnectionTx<F> {
-    type Error = F::Error;
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.project().inner.poll_ready(cx)
-    }
-
-    fn start_send(self: Pin<&mut Self>, item: F::Tx) -> Result<(), Self::Error> {
-        self.project().inner.start_send(item)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.project().inner.poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.project().inner.poll_close(cx)
-    }
-}
-
-#[pin_project(PinnedDrop)]
-#[derive(Debug)]
-pub struct ConnectionRx<F: Framing> {
-    #[pin]
-    inner: FramedRead<TcpDuplexRecv, F::Codec>,
-}
-
-impl<F: Framing> ConnectionRx<F> {
-    pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.inner.get_ref().local_addr()
-    }
-
-    pub fn peer_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.inner.get_ref().peer_addr()
-    }
-
-    fn do_close(&mut self) {
-        let _ = self.inner.get_ref().shutdown(Shutdown::Both);
-    }
-
-    pub fn close(mut self) {
-        self.do_close();
-    }
-}
-
-#[pinned_drop]
-impl<F: Framing> PinnedDrop for ConnectionRx<F> {
-    fn drop(mut self: Pin<&mut Self>) {
-        self.do_close();
-    }
-}
-
-impl<F: Framing> Stream for ConnectionRx<F> {
-    type Item = Result<F::Rx, F::Error>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        self.project().inner.poll_next(cx)
-    }
-}
 
 #[pin_project]
 #[derive(Debug)]
