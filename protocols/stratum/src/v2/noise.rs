@@ -91,8 +91,8 @@ impl Initiator {
         }
     }
 
-    pub async fn connect(self, connection: ii_wire::Connection<Framing>) -> Result<v2::Framed> {
-        let mut noise_framed_stream = connection.framed_stream;
+    pub async fn connect(self, connection: TcpStream) -> Result<v2::Framed> {
+        let mut noise_framed_stream = ii_wire::Connection::<Framing>::new(connection).into_inner();
 
         let handshake = handshake::Handshake::new(self);
         let transport_mode = handshake.run(&mut noise_framed_stream).await?;
@@ -433,7 +433,7 @@ pub(crate) mod test {
                 .expect("BUG: Cannot send a stream")
         });
 
-        let mut client = ii_wire::Client::<Framing>::new(addr);
+        let mut client = ii_wire::Client::new(addr);
         let connection = client
             .next()
             .await
