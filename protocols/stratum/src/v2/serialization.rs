@@ -1109,6 +1109,15 @@ mod test {
     use super::*;
     use crate::v2::types::*;
 
+    #[derive(PartialEq, Serialize, Deserialize, Default, Clone, Debug)]
+    struct SeqItem(u32, f32);
+
+    impl SeqItem {
+        fn make_seq() -> Vec<Self> {
+            vec![SeqItem(0, 0.0), SeqItem(1, 0.25)]
+        }
+    }
+
     #[test]
     fn v2_serialize_numerals() {
         let bytes = to_vec(&123u32).unwrap();
@@ -1288,6 +1297,76 @@ mod test {
         }
     }
 
+    #[rustfmt::skip]
+    static SEQ_BIN_255: &'static [u8] = &[
+        2u8,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        1, 0, 0, 0,
+        0, 0, 128, 62
+    ];
+
+    #[rustfmt::skip]
+    static SEQ_BIN_64K: &'static [u8] = &[
+        2u8, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        1, 0, 0, 0,
+        0, 0, 128, 62
+    ];
+
+    #[test]
+    fn v2_serialize_seq() {
+        let seq: Seq0_255<SeqItem> = SeqItem::make_seq()
+            .try_into()
+            .expect("Seq0_255 constructor failure");
+        let bytes = to_vec(&seq).expect("Serialization failure");
+        assert_eq!(&bytes, &SEQ_BIN_255);
+
+        let seq: Seq0_64k<SeqItem> = SeqItem::make_seq()
+            .try_into()
+            .expect("Seq0_64k constructor failure");
+        let bytes = to_vec(&seq).expect("Serialization failure");
+        assert_eq!(&bytes, &SEQ_BIN_64K);
+
+        // Overlong seq
+        let seq: Vec<SeqItem> = iter::repeat(SeqItem::default()).take(256).collect();
+        Seq0_255::try_from(seq.as_slice())
+            .err()
+            .expect("Seq0_255 constructor didn't fail but should have");
+
+        let seq: Vec<SeqItem> = iter::repeat(SeqItem::default()).take(1 << 16).collect();
+        Seq0_64k::try_from(seq.as_slice())
+            .err()
+            .expect("Seq0_64k constructor didn't fail but should have");
+    }
+
+    #[test]
+    fn v2_deserialize_seq() {
+        let seq: Seq0_255<SeqItem> = from_slice(&SEQ_BIN_255).expect("Deserialization failure");
+        let expected: Seq0_255<SeqItem> = SeqItem::make_seq()
+            .try_into()
+            .expect("Seq0_255 constructor failure");
+        assert_eq!(&seq, &expected);
+
+        let seq: Seq0_64k<SeqItem> = from_slice(&SEQ_BIN_64K).expect("Deserialization failure");
+        let expected: Seq0_64k<SeqItem> = SeqItem::make_seq()
+            .try_into()
+            .expect("Seq0_64k constructor failure");
+        assert_eq!(&seq, &expected);
+
+        // EOF
+        let bytes = [1u8];
+        match from_slice::<Seq0_255<SeqItem>>(&bytes) {
+            Err(Error::EOF) => {}
+            Err(err) => panic!(
+                "Deserialization failed with unexpected error value: {:?}",
+                err
+            ),
+            Ok(_) => panic!("Deserialization didn't fail but should have"),
+        }
+    }
+
     #[test]
     fn v2_serialization_roundtrip() {
         #[derive(PartialEq, Serialize, Deserialize, Debug)]
@@ -1295,20 +1374,6 @@ mod test {
             Unit,
             Tuple(f32),
             Struct { data: f64 },
-        }
-
-        #[derive(PartialEq, Serialize, Deserialize, Debug)]
-        struct SeqItem(u32, f32);
-
-        impl SeqItem {
-            fn make_seq() -> Vec<Self> {
-                vec![
-                    SeqItem(0, 0.0),
-                    SeqItem(1, 1.1),
-                    SeqItem(2, 2.2),
-                    SeqItem(3, 3.3),
-                ]
-            }
         }
 
         #[derive(PartialEq, Serialize, Deserialize, Debug)]
