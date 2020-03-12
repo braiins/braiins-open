@@ -340,23 +340,25 @@ macro_rules! sized_seq_type {
             }
         }
 
-        impl<T> From<$name<T>> for Vec<T>
+        // This should really be a From impl,
+        // but this can't be done with rustc 1.40 due to coherence rules.
+        // FIXME: this once bosminer/stratum upgrade to rustc 1.41
+        impl<T> Into<Vec<T>> for $name<T>
         where
             T: Serialize + for<'dx> Deserialize<'dx>,
         {
-            #[inline]
-            fn from(s: $name<T>) -> Vec<T> {
-                s.0
+            fn into(self) -> Vec<T> {
+                self.0
             }
         }
 
-        impl<T> From<$name<T>> for Box<[T]>
+        // FIXME: dtto
+        impl<T> Into<Box<[T]>> for $name<T>
         where
             T: Serialize + for<'dx> Deserialize<'dx>,
         {
-            #[inline]
-            fn from(s: $name<T>) -> Box<[T]> {
-                s.0.into_boxed_slice()
+            fn into(self) -> Box<[T]> {
+                self.0.into_boxed_slice()
             }
         }
 
