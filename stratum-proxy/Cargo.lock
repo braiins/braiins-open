@@ -461,6 +461,7 @@ dependencies = [
  "packed_struct_codegen",
  "serde",
  "serde_json",
+ "thiserror",
  "uint",
 ]
 
