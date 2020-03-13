@@ -176,9 +176,9 @@ impl Responder {
         }
     }
 
-    pub async fn accept(self, connection: ii_wire::Connection<Framing>) -> Result<v2::Framed> {
+    pub async fn accept(self, connection: TcpStream) -> Result<v2::Framed> {
         // Run the handshake and switch to transport mode
-        let mut noise_framed_stream = connection.framed_stream;
+        let mut noise_framed_stream = ii_wire::Connection::<Framing>::new(connection).into_inner();
 
         let handshake = handshake::Handshake::new(self);
         let transport_mode = handshake.run(&mut noise_framed_stream).await?;
@@ -383,7 +383,7 @@ pub(crate) mod test {
         assert_eq!(&message[..], &decrypted_msg, "Messages don't match");
     }
 
-    fn bind_test_server() -> Option<(ii_wire::Server<Framing>, ii_wire::Address)> {
+    fn bind_test_server() -> Option<(ii_wire::Server, ii_wire::Address)> {
         const ADDR: &'static str = "127.0.0.1";
         const MIN_PORT: u16 = 9999;
         const MAX_PORT: u16 = 10001;
@@ -391,7 +391,7 @@ pub(crate) mod test {
         // Find first available port for the test
         for port in MIN_PORT..MAX_PORT {
             let addr = ii_wire::Address(ADDR.into(), port);
-            if let Ok(server) = ii_wire::Server::<Framing>::bind(&addr) {
+            if let Ok(server) = ii_wire::Server::bind(&addr) {
                 return Some((server, addr));
             }
         }
