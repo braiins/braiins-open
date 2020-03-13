@@ -26,6 +26,7 @@ use std::time;
 
 use futures::channel::mpsc;
 use futures::future::{self, Either};
+use tokio::net::TcpStream;
 
 use ii_async_compat::prelude::*;
 use ii_async_compat::select;
@@ -248,7 +249,7 @@ pub async fn handle_connection(
 /// into an asynchronous task (which internally calls `next()` in a loop).
 #[derive(Debug)]
 pub struct ProxyServer<FN> {
-    server: Server<v2::noise::Framing>,
+    server: Server,
     listen_addr: SocketAddr,
     stratum_addr: SocketAddr,
     quit_tx: mpsc::Sender<()>,
@@ -283,7 +284,7 @@ where
             .next()
             .expect("Cannot resolve any IP address");
 
-        let server = Server::<v2::noise::Framing>::bind(&listen_addr)?;
+        let server = Server::bind(&listen_addr)?;
 
         let (quit_tx, quit_rx) = mpsc::channel(1);
 
@@ -306,7 +307,7 @@ where
     /// Helper method for accepting incoming connections
     async fn accept(
         &mut self,
-        connection_result: Result<Connection<v2::noise::Framing>>,
+        connection_result: std::io::Result<TcpStream>,
     ) -> Result<SocketAddr> {
         let connection = connection_result?;
 
@@ -371,7 +372,7 @@ where
         };
 
         // Remap the connection stratum error into stratum proxy local error
-        Some(self.accept(conn.map_err(Into::into)).await)
+        Some(self.accept(conn).await)
     }
 
     /// Creates a proxy server task that calls `.next()`

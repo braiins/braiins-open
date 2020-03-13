@@ -51,12 +51,12 @@ async fn test_v2server() {
     // FIXME: unwraps
 
     let addr = Address(ADDR.into(), PORT_V2);
-    let mut server = Server::<v2::Framing>::bind(&addr).unwrap();
+    let mut server = Server::bind(&addr).expect("BUG: cannot bind to address");
 
     // Spawn server task that reacts to any incoming message and responds
     // with SetupConnectionSuccess
     tokio::spawn(async move {
-        let mut conn = server.next().await.unwrap().unwrap();
+        let mut conn = Connection::<v2::Framing>::new(server.next().await.unwrap().unwrap());
         let frame = conn.next().await.unwrap().unwrap();
         let msg = v2::build_message_from_frame(frame).expect("Failed to build message from frame");
         // test handler verifies that the message
@@ -142,11 +142,13 @@ async fn test_v2server() {
 //}
 
 fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
-    let mut server = Server::<v1::Framing>::bind(&addr).unwrap();
+    let mut server = Server::bind(&addr).expect("BUG: cannot bind to address");
 
     async move {
         while let Some(conn) = server.next().await {
-            let mut conn = conn.unwrap();
+            let mut conn = Connection::<v1::Framing>::new(
+                conn.expect("BUG server did not provide connection"),
+            );
 
             while let Some(frame) = conn.next().await {
                 let frame = frame.expect("Receiving frame failed");

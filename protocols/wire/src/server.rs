@@ -20,7 +20,6 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use std::marker::PhantomData;
 use std::net::TcpListener as StdTcpListener;
 use std::net::ToSocketAddrs as StdToSocketAddrs;
 use std::pin::Pin;
@@ -28,38 +27,30 @@ use std::task::{Context, Poll};
 
 use ii_async_compat::prelude::*;
 use pin_project::pin_project;
-use tokio::net::TcpListener;
-
-use crate::{Connection, Framing};
+use tokio::net::{TcpListener, TcpStream};
 
 #[pin_project]
 #[derive(Debug)]
-pub struct Server<F: Framing> {
+pub struct Server {
     #[pin]
     tcp: TcpListener,
-    _marker: PhantomData<&'static F>,
 }
 
-impl<F: Framing> Server<F> {
-    pub fn bind<A: StdToSocketAddrs>(addr: A) -> Result<Server<F>, F::Error> {
+impl Server {
+    pub fn bind<A: StdToSocketAddrs>(addr: A) -> std::io::Result<Self> {
         let tcp = StdTcpListener::bind(addr)?;
         let tcp = TcpListener::from_std(tcp)?;
 
-        Ok(Server {
-            tcp,
-            _marker: PhantomData,
-        })
+        Ok(Server { tcp })
     }
 }
 
-impl<F: Framing> Stream for Server<F> {
-    type Item = Result<Connection<F>, F::Error>;
+impl Stream for Server {
+    type Item = std::io::Result<TcpStream>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let mut tcp = self.project().tcp;
 
-        Pin::new(&mut tcp.incoming())
-            .poll_next(cx)
-            .map(|opt| opt.map(|res| res.map(Connection::new).map_err(F::Error::from)))
+        Pin::new(&mut tcp.incoming()).poll_next(cx)
     }
 }
