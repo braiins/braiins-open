@@ -5,6 +5,12 @@ authors = ["Braiins <braiins@braiins.com>"]
 license = "GPL-3.0-or-later"
 edition = "2018"
 
+[[bin]]
+name = "ii-stratum-keytool"
+path = "src/keytool.rs"
+#test = false
+bench = false
+
 [dependencies]
 failure = "0.1.5"
 thiserror = "1.0"
@@ -25,9 +31,11 @@ ii-bitcoin = { path = "../../coins/bitcoin" }
 ii-wire = { path = "../wire" }
 ii-async-compat = { path = "../../utils-rs/async-compat" }
 ii-logging = { path = "../../utils-rs/logging" }
+structopt = "0.3"
+rand = "0.7.3"
 ed25519-dalek = { version = "1.0.0-pre.3", features = ["serde"] }
 bs58 = "0.3.0"
-rand = "0.7.3"
+anyhow = "1.0"
 
 [dev-dependencies]
 byte_string = "1.0.0"
