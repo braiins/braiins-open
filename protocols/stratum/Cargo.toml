@@ -25,6 +25,9 @@ ii-bitcoin = { path = "../../coins/bitcoin" }
 ii-wire = { path = "../wire" }
 ii-async-compat = { path = "../../utils-rs/async-compat" }
 ii-logging = { path = "../../utils-rs/logging" }
+ed25519-dalek = { version = "1.0.0-pre.3", features = ["serde"] }
+bs58 = "0.3.0"
+rand = "0.7.3"
 
 [dev-dependencies]
 byte_string = "1.0.0"

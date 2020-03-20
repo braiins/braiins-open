@@ -38,6 +38,7 @@ use crate::v2;
 pub mod codec;
 pub use codec::Codec;
 
+pub mod auth;
 mod handshake;
 
 pub use snow::Keypair;

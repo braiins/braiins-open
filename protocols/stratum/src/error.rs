@@ -158,6 +158,24 @@ impl From<snow::error::Error> for Error {
     }
 }
 
+impl From<ed25519_dalek::SignatureError> for Error {
+    fn from(e: ed25519_dalek::SignatureError) -> Self {
+        let msg = e.to_string();
+        Self {
+            inner: e.context(ErrorKind::Noise(msg)),
+        }
+    }
+}
+
+impl From<bs58::decode::Error> for Error {
+    fn from(e: bs58::decode::Error) -> Self {
+        let msg = e.to_string();
+        Self {
+            inner: e.context(ErrorKind::Noise(msg)),
+        }
+    }
+}
+
 impl From<std::str::Utf8Error> for Error {
     fn from(e: std::str::Utf8Error) -> Self {
         let msg = e.to_string();
