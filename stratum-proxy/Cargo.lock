@@ -217,6 +217,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bs58"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b170cd256a3f9fa6b9edae3e44a7dfdfc77e8124dbc3e2612d75f9c3e2396dae"
+
+[[package]]
 name = "byte-tools"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -312,6 +318,15 @@ dependencies = [
  "textwrap",
  "unicode-width",
  "vec_map",
+]
+
+[[package]]
+name = "clear_on_drop"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97276801e127ffb46b66ce23f35cc96bd454fa311294bced4bbace7baa8b1d17"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -413,6 +428,19 @@ dependencies = [
  "libc",
  "redox_users",
  "winapi 0.3.8",
+]
+
+[[package]]
+name = "ed25519-dalek"
+version = "1.0.0-pre.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978710b352437433c97b2bff193f2fb1dfd58a093f863dd95e225a19baa599a2"
+dependencies = [
+ "clear_on_drop",
+ "curve25519-dalek",
+ "rand",
+ "serde",
+ "sha2",
 ]
 
 [[package]]
@@ -649,7 +677,9 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bitcoin_hashes",
+ "bs58",
  "byteorder",
+ "ed25519-dalek",
  "failure",
  "hex",
  "ii-async-compat",
@@ -659,6 +689,7 @@ dependencies = [
  "lazy_static",
  "packed_struct",
  "packed_struct_codegen",
+ "rand",
  "serde",
  "serde_json",
  "snow",
