@@ -21,8 +21,8 @@
 // contact us at opensource@braiins.com.
 
 //! Keytool that allows:
-//! - generating private/public keypair for ED25519 curve
-//! - generating and signing a stratum server certificate with a specified master private key
+//! - generating public/secret keypair for ED25519 curve
+//! - generating and signing a stratum server certificate with a specified master secret key
 //! - validating a specified certificate
 
 use anyhow::{anyhow, Context, Result};
@@ -53,9 +53,9 @@ enum Command {
 #[derive(Debug, StructOpt)]
 struct GenKeyCommand {
     #[structopt(short = "p", long, parse(from_os_str), default_value = "public.key")]
-    pub_key_file: PathBuf,
-    #[structopt(short = "s", long, parse(from_os_str), default_value = "private.key")]
-    priv_key_file: PathBuf,
+    public_key_file: PathBuf,
+    #[structopt(short = "s", long, parse(from_os_str), default_value = "secret.key")]
+    secret_key_file: PathBuf,
 }
 
 impl GenKeyCommand {
@@ -103,12 +103,12 @@ impl GenKeyCommand {
         let keypair: Keypair = Keypair::generate(&mut csprng);
 
         Self::write_to_file(
-            &self.pub_key_file,
+            &self.public_key_file,
             noise::auth::Ed25519PublicKeyFormat::new(keypair.public),
             "public key",
         )?;
         Self::write_to_file(
-            &self.priv_key_file,
+            &self.secret_key_file,
             noise::auth::Ed25519SecretKeyFormat::new(keypair.secret),
             "secret key",
         )?;
@@ -118,13 +118,13 @@ impl GenKeyCommand {
     }
 }
 
-/// Command that creates a signed certificate from a specified `pub_key_to_sign`, signing the
+/// Command that creates a signed certificate from a specified `public_key_to_sign`, signing the
 /// certificate with `signing_key`.
 #[derive(Debug, StructOpt)]
 struct SignKeyCommand {
     /// File that contains the public key that we want to sign
     #[structopt(short, long, parse(from_os_str))]
-    pub_key_to_sign: PathBuf,
+    public_key_to_sign: PathBuf,
     /// Actual signing key
     #[structopt(short, long, parse(from_os_str))]
     signing_key: PathBuf,
@@ -170,8 +170,8 @@ impl SignKeyCommand {
     }
 
     fn execute(self) -> Result<()> {
-        let pub_key = Self::read_from_file::<noise::auth::Ed25519PublicKeyFormat>(
-            &self.pub_key_to_sign,
+        let public_key = Self::read_from_file::<noise::auth::Ed25519PublicKeyFormat>(
+            &self.public_key_to_sign,
             "public key to sign",
         )?;
 
@@ -185,7 +185,7 @@ impl SignKeyCommand {
         ))
         .map_err(|e| anyhow!("{}", e))?;
 
-        let signed_part = noise::auth::SignedPart::new(header, pub_key.into_inner());
+        let signed_part = noise::auth::SignedPart::new(header, public_key.into_inner());
 
         // Dalek crate requires the full Keypair for signing
         let real_signing_key = signing_key.into_inner();
@@ -202,7 +202,7 @@ impl SignKeyCommand {
         // Final step is to compose the certificate from all components and serialize it into a file
         let certificate = noise::auth::Certificate::new(signed_part, signature);
         // Derive the certificate file name from the public key filename
-        let mut cert_file = self.pub_key_to_sign.clone();
+        let mut cert_file = self.public_key_to_sign.clone();
         cert_file.set_extension("cert");
 
         GenKeyCommand::write_to_file(&cert_file, certificate, "certificate")
