@@ -44,21 +44,21 @@ use structopt::StructOpt;
 )]
 enum Command {
     /// Generate keypair
-    GenKey(GenKey),
+    GenKey(GenKeyCommand),
     /// Sign a specified key
-    SignKey(SignKey),
+    SignKey(SignKeyCommand),
 }
 
 /// Generates keypair and stores secret and public key into separate files
 #[derive(Debug, StructOpt)]
-struct GenKey {
+struct GenKeyCommand {
     #[structopt(short = "p", long, parse(from_os_str), default_value = "public.key")]
     pub_key_file: PathBuf,
     #[structopt(short = "s", long, parse(from_os_str), default_value = "private.key")]
     priv_key_file: PathBuf,
 }
 
-impl GenKey {
+impl GenKeyCommand {
     fn open_new_file(file: &PathBuf, descr: &str) -> Result<File> {
         OpenOptions::new()
             .write(true)
@@ -121,7 +121,7 @@ impl GenKey {
 /// Command that creates a signed certificate from a specified `pub_key_to_sign`, signing the
 /// certificate with `signing_key`.
 #[derive(Debug, StructOpt)]
-struct SignKey {
+struct SignKeyCommand {
     /// File that contains the public key that we want to sign
     #[structopt(short, long, parse(from_os_str))]
     pub_key_to_sign: PathBuf,
@@ -133,7 +133,7 @@ struct SignKey {
     valid_for_days: usize,
 }
 
-impl SignKey {
+impl SignKeyCommand {
     fn open_file(file: &PathBuf, descr: &str) -> Result<File> {
         OpenOptions::new().read(true).open(file).context(format!(
             "cannot open {} ({:?})",
@@ -205,7 +205,7 @@ impl SignKey {
         let mut cert_file = self.pub_key_to_sign.clone();
         cert_file.set_extension("cert");
 
-        GenKey::write_to_file(&cert_file, certificate, "certificate")
+        GenKeyCommand::write_to_file(&cert_file, certificate, "certificate")
     }
 }
 
