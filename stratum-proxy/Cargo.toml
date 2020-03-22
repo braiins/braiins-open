@@ -17,6 +17,7 @@ ii-stratum = { path = "../protocols/stratum" }
 ii-wire = { path = "../protocols/wire" }
 ii-async-compat = { path = "../utils-rs/async-compat" }
 ii-logging = { path = "../utils-rs/logging" }
+structopt = "0.3"
 
 [features]
 v2json = ["ii-stratum/v2json"]

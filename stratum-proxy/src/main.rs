@@ -24,60 +24,31 @@
 //! requested pool
 
 use std::cell::RefCell;
+use structopt::StructOpt;
 
-use clap::{self, Arg};
 use ctrlc;
 
 use ii_async_compat::tokio;
-use ii_logging::macros::*;
-use ii_stratum_proxy::server;
-
-// TODO: defaults for listen & remote addrs?
-// static V2_ADDR: &'static str = "127.0.0.1:3334";
-// static V1_ADDR: &'static str = "127.0.0.1:3335";
+use ii_stratum_proxy::{
+    error::{Result, ResultExt},
+    frontend::Args,
+    server,
+};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     ii_async_compat::setup_panic_handling();
     let _log_guard =
         ii_logging::setup_for_app(ii_logging::LoggingConfig::ASYNC_LOGGER_DRAIN_CHANNEL_SIZE);
 
-    let args = clap::App::new("stratum-proxy")
-        .arg(
-            Arg::with_name("listen")
-                .short("l")
-                .long("listen")
-                .value_name("HOSTNAME:PORT")
-                .help("Address the V2 end listen on")
-                .required(true)
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("remote")
-                .short("r")
-                .long("remote")
-                .value_name("HOSTNAME:PORT")
-                .help("Address the V1 end connects to")
-                .required(true)
-                .takes_value(true),
-        )
-        .get_matches();
+    let args = Args::from_args();
 
-    // Unwraps should be ok as long as the flags are required
-    let v2_addr = args.value_of("listen").unwrap();
-    let v1_addr = args.value_of("remote").unwrap();
-
-    let server = match server::ProxyServer::listen(
-        v2_addr.to_string(),
-        v1_addr.to_string(),
+    let server = server::ProxyServer::listen(
+        args.listen_address,
+        args.upstream_address,
         server::handle_connection,
-    ) {
-        Ok(task) => task,
-        Err(err) => {
-            error!("Can't bind the server: {}", err);
-            return;
-        }
-    };
+    )
+    .context("Cannot bind the server")?;
 
     let quit = RefCell::new(server.quit_channel());
     ctrlc::set_handler(move || {
@@ -87,4 +58,5 @@ async fn main() {
     .expect("Could not set SIGINT handler");
 
     server.run().await;
+    Ok(())
 }

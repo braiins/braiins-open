@@ -29,6 +29,7 @@
 
 use std::convert::TryInto;
 use std::net::SocketAddr;
+use std::str::FromStr;
 
 use ii_async_compat::prelude::*;
 
@@ -224,13 +225,11 @@ async fn test_v2_client(server_addr: &Address) {
 
 #[tokio::test]
 async fn test_v2server_full() {
-    // TODO: Remove the String addresses once proxy uses Address
-    // This resolves to dbg.stratum.slushpool.com
-    let addr_v1 = format!("{}:{}", "52.212.249.159", 3333);
-    let addr_v2_str = format!("{}:{}", ADDR, PORT_V2_FULL);
+    let addr_v1 = Address::from_str("stratum.slushpool.com:3333")
+        .expect("BUG: cannot build stratum v1 address");
     let addr_v2 = Address(ADDR.into(), PORT_V2_FULL);
 
-    let v2server = server::ProxyServer::listen(addr_v2_str, addr_v1, server::handle_connection)
+    let v2server = server::ProxyServer::listen(addr_v2.clone(), addr_v1, server::handle_connection)
         .expect("BUG: Could not bind v2server");
     let mut v2server_quit = v2server.quit_channel();
 

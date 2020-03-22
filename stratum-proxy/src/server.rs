@@ -21,7 +21,6 @@
 // contact us at opensource@braiins.com.
 
 use std::net::SocketAddr;
-use std::net::ToSocketAddrs;
 use std::time;
 
 use futures::channel::mpsc;
@@ -33,9 +32,9 @@ use ii_async_compat::select;
 use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
-use ii_wire::{Connection, Server};
+use ii_wire::{Address, Client, Connection, Server};
 
-use crate::error::{ErrorKind, Result, ResultExt};
+use crate::error::{ErrorKind, Result};
 use crate::translation::V2ToV1Translation;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
@@ -43,7 +42,9 @@ pub struct ConnTranslation {
     /// Actual protocol translator
     translation: V2ToV1Translation,
     /// Upstream connection
-    v1_conn: Connection<v1::Framing>,
+    v1_conn: v1::Framed,
+    /// Address of the v1 upstream peer
+    v1_peer_addr: SocketAddr,
     // TODO to be removed as the translator may send out items directly via a particular connection
     // (when treated as a sink)
     /// Frames from the translator to be sent out via V1 connection
@@ -64,7 +65,8 @@ impl ConnTranslation {
     fn new(
         v2_conn: v2::Framed,
         v2_peer_addr: SocketAddr,
-        v1_conn: Connection<v1::Framing>,
+        v1_conn: v1::Framed,
+        v1_peer_addr: SocketAddr,
     ) -> Self {
         let (v1_translation_tx, v1_translation_rx) =
             mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
@@ -76,6 +78,7 @@ impl ConnTranslation {
         Self {
             translation,
             v1_conn,
+            v1_peer_addr,
             v1_translation_rx,
             v2_conn,
             v2_peer_addr,
@@ -159,10 +162,9 @@ impl ConnTranslation {
         let mut v1_translation_rx = self.v1_translation_rx;
         let mut translation = self.translation;
 
-        let v1_peer_addr = self.v1_conn.peer_addr()?;
         // TODO make connections 'optional' so that we can remove them from the instance and use
         //  the rest of the instance in as 'borrowed mutable reference'.
-        let (mut v1_conn_tx, mut v1_conn_rx) = self.v1_conn.into_inner().split();
+        let (mut v1_conn_tx, mut v1_conn_rx) = self.v1_conn.split();
         let (v2_conn_tx, mut v2_conn_rx) = self.v2_conn.split();
 
         // TODO factor out the frame pumping functionality and append the JoinHandle of this task
@@ -197,7 +199,7 @@ impl ConnTranslation {
                         None => {
                             Err(format!(
                                 "Upstream V1 stratum connection dropped ({:?})",
-                                v1_peer_addr
+                                self.v1_peer_addr
                             ))?;
                         }
                     }
@@ -221,19 +223,31 @@ impl ConnTranslation {
 pub async fn handle_connection(
     v2_conn: v2::Framed,
     v2_peer_addr: SocketAddr,
-    stratum_addr: SocketAddr,
+    stratum_addr: Address,
 ) {
     info!("Opening connection to V1: {:?}", stratum_addr);
-    let v1_conn = match Connection::connect(&stratum_addr).await {
-        Ok(conn) => conn,
+    let mut v1_client = Client::new(stratum_addr.clone());
+
+    // TODO Attempt only once to connect -> consider using the backoff for a few rounds before
+    // failing. Also
+    let (v1_conn, v1_peer_addr) = match v1_client.next().await {
+        Ok(conn) => {
+            let conn = Connection::<v1::Framing>::new(conn);
+            let peer_addr = conn.peer_addr().expect("TODO: handle peer address failure");
+            // Use the connection only to build the Framed object with V1 framing
+            (conn.into_inner(), peer_addr)
+        }
         Err(e) => {
-            error!("Connection to Stratum V1 failed: {}", e);
+            error!(
+                "Connection to upstream Stratum V1 ({}) failed: {}",
+                stratum_addr, e
+            );
             return;
         }
     };
     info!("V1 connection setup");
 
-    let translation = ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn);
+    let translation = ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn, v1_peer_addr);
 
     if let Err(e) = translation.run().await {
         info!("Terminating connection from: {} ({})", v2_peer_addr, e);
@@ -250,8 +264,8 @@ pub async fn handle_connection(
 #[derive(Debug)]
 pub struct ProxyServer<FN> {
     server: Server,
-    listen_addr: SocketAddr,
-    stratum_addr: SocketAddr,
+    listen_addr: Address,
+    stratum_addr: Address,
     quit_tx: mpsc::Sender<()>,
     quit_rx: Option<mpsc::Receiver<()>>,
     /// Closure that generates a handler in the form of a Future that the main server run() task
@@ -262,28 +276,15 @@ pub struct ProxyServer<FN> {
 impl<FN, FT> ProxyServer<FN>
 where
     FT: Future<Output = ()> + Send + 'static,
-    FN: Fn(v2::Framed, SocketAddr, SocketAddr) -> FT,
+    FN: Fn(v2::Framed, SocketAddr, Address) -> FT,
 {
     /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
     /// specified `get_connection_handler` that builds the connection handler `Future` on demand
     pub fn listen(
-        listen_addr: String,
-        stratum_addr: String,
+        listen_addr: Address,
+        stratum_addr: Address,
         get_connection_handler: FN,
     ) -> Result<ProxyServer<FN>> {
-        let listen_addr = listen_addr
-            .to_socket_addrs()
-            .context(ErrorKind::BadIp(listen_addr))?
-            .next()
-            .expect("Cannot resolve any IP address");
-
-        //let stratum_addr = ii_wire::Address::from_str(stratum_addr.as_str())?;
-        let stratum_addr = stratum_addr
-            .to_socket_addrs()
-            .context(ErrorKind::BadIp(stratum_addr))?
-            .next()
-            .expect("Cannot resolve any IP address");
-
         let server = Server::bind(&listen_addr)?;
 
         let (quit_tx, quit_rx) = mpsc::channel(1);
@@ -328,7 +329,7 @@ where
         tokio::spawn((self.get_connection_handler)(
             server_framed_stream,
             peer_addr,
-            self.stratum_addr,
+            self.stratum_addr.clone(),
         ));
 
         Ok(peer_addr)

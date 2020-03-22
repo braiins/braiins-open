@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Braiins Systems s.r.o.
+// Copyright (C) 2020  Braiins Systems s.r.o.
 //
 // This file is part of Braiins Open-Source Initiative (BOSI).
 //
@@ -20,15 +20,28 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-//! Stratum proxy library provides functionality for proxying any combination of Stratum V1 and V2
-//! protocol version
+use structopt::StructOpt;
 
-// Increase recursion limit as e.g. `select!` macro  and other complex macros quickly run out of
-// the default recursion limit if more complex statements are used
-#![recursion_limit = "256"]
+use ii_wire::Address;
 
-pub mod error;
-pub mod frontend;
-pub mod server;
-pub mod translation;
-pub mod util;
+#[derive(StructOpt, Debug)]
+#[structopt(name = "stratum-proxy", about = "Stratum V2->V1 translating proxy.")]
+pub struct Args {
+    /// Listen address
+    #[structopt(
+        short = "l",
+        long = "listen",
+        default_value = "localhost:3336",
+        help = "Address to listen on for incoming Stratum V2 connections"
+    )]
+    pub listen_address: Address,
+
+    /// Remote V1 endpoint where to connect to
+    #[structopt(
+        short = "u",
+        long = "v1-upstream",
+        name = "HOSTNAME:PORT",
+        help = "Address of the upstream Stratum V1 server that the proxy connects to"
+    )]
+    pub upstream_address: Address,
+}
