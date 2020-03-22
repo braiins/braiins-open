@@ -21,6 +21,7 @@
 // contact us at opensource@braiins.com.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time;
 
 use futures::channel::mpsc;
@@ -34,7 +35,7 @@ use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_wire::{Address, Client, Connection, Server};
 
-use crate::error::{ErrorKind, Result};
+use crate::error::{ErrorKind, Result, ResultExt};
 use crate::translation::V2ToV1Translation;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
@@ -223,34 +224,94 @@ impl ConnTranslation {
 pub async fn handle_connection(
     v2_conn: v2::Framed,
     v2_peer_addr: SocketAddr,
-    stratum_addr: Address,
+    v1_conn: v1::Framed,
+    v1_peer_addr: SocketAddr,
 ) {
-    info!("Opening connection to V1: {:?}", stratum_addr);
-    let mut v1_client = Client::new(stratum_addr.clone());
-
-    // TODO Attempt only once to connect -> consider using the backoff for a few rounds before
-    // failing. Also
-    let (v1_conn, v1_peer_addr) = match v1_client.next().await {
-        Ok(conn) => {
-            let conn = Connection::<v1::Framing>::new(conn);
-            let peer_addr = conn.peer_addr().expect("TODO: handle peer address failure");
-            // Use the connection only to build the Framed object with V1 framing
-            (conn.into_inner(), peer_addr)
-        }
-        Err(e) => {
-            error!(
-                "Connection to upstream Stratum V1 ({}) failed: {}",
-                stratum_addr, e
-            );
-            return;
-        }
-    };
-    info!("V1 connection setup");
-
     let translation = ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn, v1_peer_addr);
 
     if let Err(e) = translation.run().await {
         info!("Terminating connection from: {} ({})", v2_peer_addr, e);
+    }
+}
+
+struct ProxyConnection<FN> {
+    /// Downstream connection that is to be handled
+    v2_downstream_conn: TcpStream,
+    /// Upstream server that we should try to connect to
+    v1_upstream_addr: Address,
+    /// See ProxyServer
+    get_connection_handler: Arc<FN>,
+}
+
+impl<FN, FT> ProxyConnection<FN>
+where
+    FT: Future<Output = ()>,
+    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr) -> FT,
+{
+    fn new(
+        v2_downstream_conn: TcpStream,
+        v1_upstream_addr: Address,
+        get_connection_handler: Arc<FN>,
+    ) -> Self {
+        Self {
+            v2_downstream_conn,
+            v1_upstream_addr,
+            get_connection_handler,
+        }
+    }
+
+    /// Handle incoming connection:
+    ///  - establish upstream V1 connection
+    ///  - establish noise handshake (if configured)
+    ///  - run the custom connection handler that
+    async fn do_handle(self) -> Result<SocketAddr> {
+        let v2_peer_addr = self.v2_downstream_conn.peer_addr()?;
+
+        // Connect to upstream V1 server
+        let mut v1_client = Client::new(self.v1_upstream_addr);
+        // TODO Attempt only once to connect -> consider using the backoff for a few rounds before
+        // failing. Also
+        // Use the connection only to build the Framed object with V1 framing and to extract the
+        // peer address
+        let v1_conn = v1_client.next().await.context("V1 upstream connection")?;
+        let v1_peer_addr = v1_conn.peer_addr().context("V1 upstream peer address")?;
+        let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
+        info!(
+            "Established translation connection with upstream V1 {} for V2 peer: {}",
+            v1_peer_addr, v2_peer_addr
+        );
+
+        // Run the noise handshake
+        // TODO: The server static key pair along with its signature (aka its "certificate")
+        //  still needs to be passed to the server. This implementation doesn't prevent MITM!
+        //  as nobody can trust this server yet without a signed pubkey
+        let static_key =
+            v2::noise::generate_keypair().expect("BUG: Failed to generate static public key");
+        let responder = v2::noise::Responder::new(static_key);
+
+        // Accept the connection and attempt to perform the full Noise handshake
+        let v2_framed_stream = responder.accept(self.v2_downstream_conn).await?;
+
+        // Start processing of both ends
+        // TODO adjust connection handler to return a Result
+        (self.get_connection_handler)(
+            v2_framed_stream,
+            v2_peer_addr,
+            v1_framed_stream,
+            v1_peer_addr,
+        )
+        .await;
+
+        Ok(v2_peer_addr)
+    }
+
+    /// Handle connection by delegating it to a method that is able to handle a Result so that we
+    /// have info/error reporting in a single place
+    async fn handle(self) {
+        match self.do_handle().await {
+            Ok(peer) => info!("Closing connection from {} ...", peer),
+            Err(err) => error!("Connection error: {}", err),
+        }
     }
 }
 
@@ -265,18 +326,17 @@ pub async fn handle_connection(
 pub struct ProxyServer<FN> {
     server: Server,
     listen_addr: Address,
-    stratum_addr: Address,
+    v1_upstream_addr: Address,
     quit_tx: mpsc::Sender<()>,
     quit_rx: Option<mpsc::Receiver<()>>,
-    /// Closure that generates a handler in the form of a Future that the main server run() task
-    /// executes
-    get_connection_handler: FN,
+    /// Closure that generates a handler in the form of a Future that will be passed to the
+    get_connection_handler: Arc<FN>,
 }
 
 impl<FN, FT> ProxyServer<FN>
 where
     FT: Future<Output = ()> + Send + 'static,
-    FN: Fn(v2::Framed, SocketAddr, Address) -> FT,
+    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr) -> FT + Send + Sync + 'static,
 {
     /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
     /// specified `get_connection_handler` that builds the connection handler `Future` on demand
@@ -292,10 +352,10 @@ where
         Ok(ProxyServer {
             server,
             listen_addr,
-            stratum_addr,
+            v1_upstream_addr: stratum_addr,
             quit_rx: Some(quit_rx),
             quit_tx,
-            get_connection_handler,
+            get_connection_handler: Arc::new(get_connection_handler),
         })
     }
 
@@ -306,31 +366,20 @@ where
     }
 
     /// Helper method for accepting incoming connections
-    async fn accept(
-        &mut self,
-        connection_result: std::io::Result<TcpStream>,
-    ) -> Result<SocketAddr> {
+    async fn accept(&self, connection_result: std::io::Result<TcpStream>) -> Result<SocketAddr> {
         let connection = connection_result?;
 
         let peer_addr = connection.peer_addr()?;
-        // TODO: The server static key pair along with its signature (aka its "certificate")
-        //  still needs to be passed to the server. This implementation doesn't prevent MITM!
-        //  as nobody can trust this server yet without a signed pubkey
-        let static_key = v2::noise::generate_keypair().expect(
-            "BUG: Failed to generate static \
-             public key",
-        );
-        let responder = v2::noise::Responder::new(static_key);
-
-        // Accept the connection and attempt to perform the full Noise handshake
-        let server_framed_stream = responder.accept(connection).await?;
 
         // Fully secured connection has been established
-        tokio::spawn((self.get_connection_handler)(
-            server_framed_stream,
-            peer_addr,
-            self.stratum_addr.clone(),
-        ));
+        tokio::spawn(
+            ProxyConnection::new(
+                connection,
+                self.v1_upstream_addr.clone(),
+                self.get_connection_handler.clone(),
+            )
+            .handle(),
+        );
 
         Ok(peer_addr)
     }
@@ -383,7 +432,7 @@ where
     pub async fn run(mut self) {
         info!(
             "Stratum proxy service starting @ {} -> {}",
-            self.listen_addr, self.stratum_addr
+            self.listen_addr, self.v1_upstream_addr
         );
 
         while let Some(result) = self.next().await {
