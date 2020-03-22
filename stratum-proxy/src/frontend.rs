@@ -20,9 +20,16 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use std::convert::TryFrom;
+use std::path::PathBuf;
 use structopt::StructOpt;
+use tokio::{fs::File, io::AsyncReadExt};
 
+use ii_async_compat::tokio;
+use ii_stratum::v2;
 use ii_wire::Address;
+
+use crate::error::{Result, ResultExt};
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "stratum-proxy", about = "Stratum V2->V1 translating proxy.")]
@@ -44,4 +51,80 @@ pub struct Args {
         help = "Address of the upstream Stratum V1 server that the proxy connects to"
     )]
     pub upstream_address: Address,
+
+    #[structopt(
+        long,
+        help = "Disable noise protocol handshake, all services will be provided unencrypted"
+    )]
+    pub insecure: bool,
+
+    /// Certificate file
+    #[structopt(short = "c", long, parse(from_os_str), required_unless("insecure"))]
+    pub certificate_file: Option<PathBuf>,
+
+    /// Secret key as counter part of the public key in the configured public certificate
+    #[structopt(short = "s", long, parse(from_os_str), required_unless("insecure"))]
+    pub secret_key_file: Option<PathBuf>,
+}
+
+impl Args {
+    /// Optionally read certificate and secret keypair
+    /// Return:
+    ///  - None - when `insecure` is true
+    ///  - build `Certificate` +  `Ed25519SecretKeyFormat` pair otherwise
+    pub async fn read_certificate_secret_key_pair(
+        &self,
+    ) -> Result<
+        Option<(
+            v2::noise::auth::Certificate,
+            v2::noise::auth::Ed25519SecretKeyFormat,
+        )>,
+    > {
+        let certificate_key_pair = match self.insecure {
+            true => None,
+            false => {
+                let certificate = read_from_file::<v2::noise::auth::Certificate>(
+                    self.certificate_file.as_ref(),
+                    "Certificate",
+                )
+                .await?;
+                let secret_key = read_from_file::<v2::noise::auth::Ed25519SecretKeyFormat>(
+                    self.secret_key_file.as_ref(),
+                    "Secret key",
+                )
+                .await?;
+                Some((certificate, secret_key))
+            }
+        };
+
+        Ok(certificate_key_pair)
+    }
+}
+
+pub async fn read_from_file<T: TryFrom<String>>(
+    file_path_buf: Option<&PathBuf>,
+    error_context_descr: &str,
+) -> Result<T>
+where
+    T: TryFrom<String>,
+    <T as std::convert::TryFrom<std::string::String>>::Error: failure::Fail, //std::fmt::Display,
+{
+    let file_path_buf =
+        file_path_buf.expect(format!("BUG: missing path {}", error_context_descr).as_str());
+
+    let mut file = File::open(file_path_buf).await?;
+    let mut file_content = String::new();
+    file.read_to_string(&mut file_content)
+        .await
+        .context(format!(
+            "Cannot read {} ({:?})",
+            error_context_descr, file_path_buf
+        ))?;
+
+    let parsed_file_content = T::try_from(file_content).context(format!(
+        "Cannot parse {} ({:?})",
+        error_context_descr, file_path_buf,
+    ))?;
+
+    Ok(parsed_file_content)
 }

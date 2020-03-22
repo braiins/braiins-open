@@ -229,8 +229,9 @@ async fn test_v2server_full() {
         .expect("BUG: cannot build stratum v1 address");
     let addr_v2 = Address(ADDR.into(), PORT_V2_FULL);
 
-    let v2server = server::ProxyServer::listen(addr_v2.clone(), addr_v1, server::handle_connection)
-        .expect("BUG: Could not bind v2server");
+    let v2server =
+        server::ProxyServer::listen(addr_v2.clone(), addr_v1, server::handle_connection, None)
+            .expect("BUG: Could not bind v2server");
     let mut v2server_quit = v2server.quit_channel();
 
     tokio::spawn(v2server.run());

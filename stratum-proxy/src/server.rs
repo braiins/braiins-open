@@ -232,6 +232,37 @@ pub async fn handle_connection(
     translation.run().await
 }
 
+/// Security context is held by the server and provided to each (noise secured) connection so
+/// that it can successfully perform the noise handshake and authenticate itself to the client
+/// NOTE: this struct doesn't intentionally derive Debug to prevent leakage of the secure key
+/// into log messages
+struct SecurityContext {
+    /// Noise message that contains the necessary part of the certificate
+    _signature_noise_message: v2::noise::auth::SignatureNoiseMessage,
+    /// Static key pair that the server will use within the noise handshake
+    static_key_pair: v2::noise::Keypair,
+}
+
+impl SecurityContext {
+    fn from_certificate_and_secret_key(
+        certificate: v2::noise::auth::Certificate,
+        secret_key: v2::noise::auth::Ed25519SecretKeyFormat,
+    ) -> Result<Self> {
+        let _signature_noise_message = certificate.build_noise_message();
+        let secret_key = secret_key.into_inner();
+        let public_key = certificate.validate_secret_key(&secret_key)?;
+        let static_key_pair = v2::noise::Keypair {
+            private: std::vec::Vec::from(&secret_key.to_bytes()[..]),
+            public: std::vec::Vec::from(&public_key.to_bytes()[..]),
+        };
+
+        Ok(Self {
+            _signature_noise_message,
+            static_key_pair,
+        })
+    }
+}
+
 struct ProxyConnection<FN> {
     /// Downstream connection that is to be handled
     v2_downstream_conn: TcpStream,
@@ -239,6 +270,8 @@ struct ProxyConnection<FN> {
     v1_upstream_addr: Address,
     /// See ProxyServer
     get_connection_handler: Arc<FN>,
+    /// Security context for noise handshake
+    security_context: Option<Arc<SecurityContext>>,
 }
 
 impl<FN, FT> ProxyConnection<FN>
@@ -249,12 +282,14 @@ where
     fn new(
         v2_downstream_conn: TcpStream,
         v1_upstream_addr: Address,
+        security_context: Option<Arc<SecurityContext>>,
         get_connection_handler: Arc<FN>,
     ) -> Self {
         Self {
             v2_downstream_conn,
             v1_upstream_addr,
             get_connection_handler,
+            security_context,
         }
     }
 
@@ -279,16 +314,15 @@ where
             v1_peer_addr, v2_peer_addr
         );
 
-        // Run the noise handshake
-        // TODO: The server static key pair along with its signature (aka its "certificate")
-        //  still needs to be passed to the server. This implementation doesn't prevent MITM!
-        //  as nobody can trust this server yet without a signed pubkey
-        let static_key =
-            v2::noise::generate_keypair().expect("BUG: Failed to generate static public key");
-        let responder = v2::noise::Responder::new(static_key);
-
-        // Accept the connection and attempt to perform the full Noise handshake
-        let v2_framed_stream = responder.accept(self.v2_downstream_conn).await?;
+        let v2_framed_stream = match self.security_context {
+            // Establish noise responder and run the handshake
+            Some(security_context) => {
+                // TODO pass the signature message once the Responder API is adjusted
+                let responder = v2::noise::Responder::new(&security_context.static_key_pair);
+                responder.accept(self.v2_downstream_conn).await?
+            }
+            None => Connection::<v2::Framing>::new(self.v2_downstream_conn).into_inner(),
+        };
 
         // Start processing of both ends
         // TODO adjust connection handler to return a Result
@@ -322,7 +356,6 @@ where
 /// (a stream-like interface) or, as a higher-level interface,
 /// the `run()` method turns the `ProxyServer`
 /// into an asynchronous task (which internally calls `next()` in a loop).
-#[derive(Debug)]
 pub struct ProxyServer<FN> {
     server: Server,
     listen_addr: Address,
@@ -331,6 +364,8 @@ pub struct ProxyServer<FN> {
     quit_rx: Option<mpsc::Receiver<()>>,
     /// Closure that generates a handler in the form of a Future that will be passed to the
     get_connection_handler: Arc<FN>,
+    /// Security context for noise handshake
+    security_context: Option<Arc<SecurityContext>>,
 }
 
 impl<FN, FT> ProxyServer<FN>
@@ -344,10 +379,21 @@ where
         listen_addr: Address,
         stratum_addr: Address,
         get_connection_handler: FN,
+        certificate_secret_key_pair: Option<(
+            v2::noise::auth::Certificate,
+            v2::noise::auth::Ed25519SecretKeyFormat,
+        )>,
     ) -> Result<ProxyServer<FN>> {
         let server = Server::bind(&listen_addr)?;
 
         let (quit_tx, quit_rx) = mpsc::channel(1);
+
+        let security_context = match certificate_secret_key_pair {
+            Some((certificate, secret_key)) => Some(Arc::new(
+                SecurityContext::from_certificate_and_secret_key(certificate, secret_key)?,
+            )),
+            None => None,
+        };
 
         Ok(ProxyServer {
             server,
@@ -356,6 +402,7 @@ where
             quit_rx: Some(quit_rx),
             quit_tx,
             get_connection_handler: Arc::new(get_connection_handler),
+            security_context,
         })
     }
 
@@ -376,6 +423,9 @@ where
             ProxyConnection::new(
                 connection,
                 self.v1_upstream_addr.clone(),
+                self.security_context
+                    .as_ref()
+                    .map(|context| context.clone()),
                 self.get_connection_handler.clone(),
             )
             .handle(),
