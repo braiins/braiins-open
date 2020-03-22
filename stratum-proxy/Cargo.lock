@@ -728,6 +728,7 @@ dependencies = [
  "ii-stratum",
  "ii-wire",
  "serde_json",
+ "structopt",
  "uint",
 ]
 
