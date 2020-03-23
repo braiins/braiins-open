@@ -161,7 +161,7 @@ pub struct Responder {
 
 impl Responder {
     /// TODO add static keypair signature and store it inside the instance
-    pub fn new(static_keypair: Keypair) -> Self {
+    pub fn new(static_keypair: &Keypair) -> Self {
         let params: NoiseParams = PARAMS.parse().expect("BUG: cannot parse noise parameters");
 
         // Initialize our initiator using a builder.
@@ -295,7 +295,7 @@ pub(crate) mod test {
     pub(crate) fn perform_handshake() -> (TransportMode, TransportMode) {
         let mut initiator = Initiator::new();
         let static_key = generate_keypair().expect("BUG: Failed to generate static public key");
-        let mut responder = Responder::new(static_key);
+        let mut responder = Responder::new(&static_key);
         let mut initiator_in_msg: Option<handshake::Message> = None;
 
         // Verify that responder expects to receive the first message
@@ -415,7 +415,7 @@ pub(crate) mod test {
         // with SetupConnectionSuccess
         tokio::spawn(async move {
             let static_key = generate_keypair().expect("BUG: Failed to generate static public key");
-            let responder = Responder::new(static_key);
+            let responder = Responder::new(&static_key);
 
             let conn = server
                 .next()
