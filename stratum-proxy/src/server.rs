@@ -226,12 +226,10 @@ pub async fn handle_connection(
     v2_peer_addr: SocketAddr,
     v1_conn: v1::Framed,
     v1_peer_addr: SocketAddr,
-) {
+) -> Result<()> {
     let translation = ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn, v1_peer_addr);
 
-    if let Err(e) = translation.run().await {
-        info!("Terminating connection from: {} ({})", v2_peer_addr, e);
-    }
+    translation.run().await
 }
 
 struct ProxyConnection<FN> {
@@ -245,7 +243,7 @@ struct ProxyConnection<FN> {
 
 impl<FN, FT> ProxyConnection<FN>
 where
-    FT: Future<Output = ()>,
+    FT: Future<Output = Result<()>>,
     FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr) -> FT,
 {
     fn new(
@@ -264,7 +262,7 @@ where
     ///  - establish upstream V1 connection
     ///  - establish noise handshake (if configured)
     ///  - run the custom connection handler that
-    async fn do_handle(self) -> Result<SocketAddr> {
+    async fn do_handle(self) -> Result<()> {
         let v2_peer_addr = self.v2_downstream_conn.peer_addr()?;
 
         // Connect to upstream V1 server
@@ -300,17 +298,19 @@ where
             v1_framed_stream,
             v1_peer_addr,
         )
-        .await;
-
-        Ok(v2_peer_addr)
+        .await
     }
 
     /// Handle connection by delegating it to a method that is able to handle a Result so that we
     /// have info/error reporting in a single place
     async fn handle(self) {
+        let v2_peer_addr = self
+            .v2_downstream_conn
+            .peer_addr()
+            .expect("BUG: cannot read V2 peer address");
         match self.do_handle().await {
-            Ok(peer) => info!("Closing connection from {} ...", peer),
-            Err(err) => error!("Connection error: {}", err),
+            Ok(()) => info!("Closing connection from {} ...", v2_peer_addr),
+            Err(err) => error!("Connection error: {}, peer: {}", err, v2_peer_addr),
         }
     }
 }
@@ -335,7 +335,7 @@ pub struct ProxyServer<FN> {
 
 impl<FN, FT> ProxyServer<FN>
 where
-    FT: Future<Output = ()> + Send + 'static,
+    FT: Future<Output = Result<()>> + Send + 'static,
     FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr) -> FT + Send + Sync + 'static,
 {
     /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
