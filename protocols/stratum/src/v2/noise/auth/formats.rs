@@ -24,10 +24,11 @@
 
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
+use std::fmt;
 use std::time::SystemTime;
 
 use super::{SignatureNoiseMessage, SignedPart, SignedPartHeader};
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorKind, Result};
 
 /// Generates implementation of conversions from/to Base58 encoding that we use for representing
 /// keys, signatures etc.
@@ -56,10 +57,15 @@ macro_rules! impl_encoding_conversion {
             }
         }
 
-        /// Helper Serializer
-        impl Into<String> for $full_name {
-            fn into(self) -> String {
-                bs58::encode(&self.inner.to_bytes()[..]).into_string()
+        impl From<$full_name> for String {
+            fn from(value: $full_name) -> Self {
+                bs58::encode(&value.inner.to_bytes()[..]).into_string()
+            }
+        }
+
+        impl fmt::Display for $full_name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", String::from(self.clone()))
             }
         }
     };
@@ -193,6 +199,24 @@ impl Certificate {
             signed_part_header: signed_part.header,
             pubkey: Ed25519PublicKeyFormat::new(signed_part.pubkey),
             signature: EncodedSignature::new(signature),
+        }
+    }
+
+    /// TODO implement unit test
+    pub fn validate_secret_key(
+        &self,
+        secret_key: &ed25519_dalek::SecretKey,
+    ) -> Result<ed25519_dalek::PublicKey> {
+        let public_key = Ed25519PublicKeyFormat::new(ed25519_dalek::PublicKey::from(secret_key));
+
+        match public_key == self.pubkey {
+            true => Ok(public_key.into_inner()),
+            false => Err(ErrorKind::Noise(format!(
+                "Invalid certificate: public key({}) doesn't match public key({}) generated from \
+                 secret key",
+                public_key.inner, self.pubkey.inner,
+            ))
+            .into()),
         }
     }
 
