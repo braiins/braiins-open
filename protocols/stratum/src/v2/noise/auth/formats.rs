@@ -284,6 +284,7 @@ pub mod test {
         let (signed_part, _authority_keypair, signature) = build_test_signed_part_and_auth();
         let certificate = Certificate::new(signed_part, signature);
 
+        // TODO fix test to use the serialization methods!
         let serialized_cert =
             serde_json::to_string(&certificate).expect("BUG: cannot serialize certificate");
         let deserialized_cert = serde_json::from_str(serialized_cert.as_str())
