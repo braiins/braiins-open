@@ -71,13 +71,13 @@ impl Args {
     /// Optionally read certificate and secret keypair
     /// Return:
     ///  - None - when `insecure` is true
-    ///  - build `Certificate` +  `Ed25519SecretKeyFormat` pair otherwise
+    ///  - build `Certificate` + `StaticSecretKeyFormat` pair otherwise
     pub async fn read_certificate_secret_key_pair(
         &self,
     ) -> Result<
         Option<(
             v2::noise::auth::Certificate,
-            v2::noise::auth::Ed25519SecretKeyFormat,
+            v2::noise::auth::StaticSecretKeyFormat,
         )>,
     > {
         let certificate_key_pair = match self.insecure {
@@ -88,7 +88,7 @@ impl Args {
                     "Certificate",
                 )
                 .await?;
-                let secret_key = read_from_file::<v2::noise::auth::Ed25519SecretKeyFormat>(
+                let secret_key = read_from_file::<v2::noise::auth::StaticSecretKeyFormat>(
                     self.secret_key_file.as_ref(),
                     "Secret key",
                 )

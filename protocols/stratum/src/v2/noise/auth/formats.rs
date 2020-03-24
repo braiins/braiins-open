@@ -28,70 +28,144 @@ use std::fmt;
 use std::time::SystemTime;
 
 use super::{SignatureNoiseMessage, SignedPart, SignedPartHeader};
-use crate::error::{Error, ErrorKind, Result};
+use crate::error::{Error, Result};
+use crate::v2::noise::{StaticPublicKey, StaticSecretKey};
 
-/// Generates implementation of conversions from/to Base58 encoding that we use for representing
-/// keys, signatures etc.
-macro_rules! impl_encoding_conversion {
-    ($full_name:tt, $ed25519_struct:tt) => {
-        // NOTE: $request and $handler_fn need to be tt because of https://github.com/dtolnay/async-trait/issues/46
-
-        impl $full_name {
-            pub fn new(inner: ed25519_dalek::$ed25519_struct) -> Self {
+/// Generates implementation for the encoded type, Display trait and the file format and
+macro_rules! impl_basic_type {
+    ($encoded_struct_type:tt, $format_struct_type:ident, $inner_encoded_struct_type:ty,
+     $format_struct_inner_rename:expr, $( $tr:tt ), *) => {
+        /// Helper that ensures serialization of the `$inner_encoded_struct_type` into a prefered
+        /// encoding
+        #[derive(Serialize, Deserialize, Debug, $( $tr ), *)]
+        #[serde(into = "String", try_from = "String")]
+        pub struct $encoded_struct_type {
+            inner: $inner_encoded_struct_type,
+        }
+        impl $encoded_struct_type {
+            pub fn new(inner: $inner_encoded_struct_type) -> Self {
                 Self { inner }
             }
 
-            pub fn into_inner(self) -> ed25519_dalek::$ed25519_struct {
+            pub fn into_inner(self) -> $inner_encoded_struct_type {
                 self.inner
             }
         }
-
-        impl TryFrom<String> for $full_name {
+        impl fmt::Display for $encoded_struct_type {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", String::from(self.clone()))
+            }
+        }
+        #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+        pub struct $format_struct_type {
+            #[serde(rename = $format_struct_inner_rename)]
+            inner: $encoded_struct_type,
+        }
+        impl $format_struct_type {
+            pub fn new(inner: $inner_encoded_struct_type) -> Self {
+                Self {
+                    inner: $encoded_struct_type::new(inner),
+                }
+            }
+            pub fn into_inner(self) -> $inner_encoded_struct_type {
+                self.inner.into_inner()
+            }
+        }
+        impl TryFrom<String> for $format_struct_type {
             type Error = Error;
 
             fn try_from(value: String) -> Result<Self> {
-                let bytes = bs58::decode(value).into_vec()?;
-                Ok(Self::new(ed25519_dalek::$ed25519_struct::from_bytes(
-                    &bytes,
-                )?))
+                serde_json::from_str(value.as_str()).map_err(Into::into)
             }
         }
-
-        impl From<$full_name> for String {
-            fn from(value: $full_name) -> Self {
-                bs58::encode(&value.inner.to_bytes()[..]).into_string()
-            }
-        }
-
-        impl fmt::Display for $full_name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{}", String::from(self.clone()))
+        /// Helper serializer into string
+        impl TryFrom<$format_struct_type> for String {
+            type Error = Error;
+            fn try_from(value: $format_struct_type) -> Result<String> {
+                serde_json::to_string_pretty(&value).map_err(Into::into)
             }
         }
     };
 }
 
-/// Helper that ensures serialization of the `ed25519::PublicKey` into a prefered encoding
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-#[serde(into = "String", try_from = "String")]
-struct EncodedPublicKey {
-    inner: ed25519_dalek::PublicKey,
+/// Generates implementation of conversions from/to Base58 encoding that we use for representing
+/// Ed25519 keys, signatures etc.
+macro_rules! generate_ed25519_structs {
+    ($encoded_struct_type:tt, $format_struct_type:ident, $inner_encoded_struct_type:ty,
+     $format_struct_inner_rename:expr, $( $tr:tt ), *) => {
+        impl_basic_type!(
+            $encoded_struct_type,
+            $format_struct_type,
+            $inner_encoded_struct_type,
+            $format_struct_inner_rename,
+            $($tr), *
+        );
+
+        impl TryFrom<String> for $encoded_struct_type {
+            type Error = Error;
+
+            fn try_from(value: String) -> Result<Self> {
+                let bytes = bs58::decode(value).into_vec()?;
+                Ok(Self::new(<$inner_encoded_struct_type>::from_bytes(&bytes)?))
+            }
+        }
+
+        impl From<$encoded_struct_type> for String {
+            fn from(value: $encoded_struct_type) -> Self {
+                bs58::encode(&value.into_inner().to_bytes()[..]).into_string()
+            }
+        }
+    };
 }
 
-impl_encoding_conversion!(EncodedPublicKey, PublicKey);
+macro_rules! generate_noise_keypair_structs {
+    ($encoded_struct_type:tt, $format_struct_type: ident, $inner_encoded_struct_type:ty,
+     $format_struct_inner_rename:expr) => {
+        impl_basic_type!(
+            $encoded_struct_type,
+            $format_struct_type,
+            $inner_encoded_struct_type,
+            $format_struct_inner_rename,
+            PartialEq,
+            Clone
+        );
 
-/// Publickey that can represents itself in base64 encoding
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(into = "String", try_from = "String")]
-pub struct EncodedSecretKey {
-    inner: ed25519_dalek::SecretKey,
+        impl TryFrom<String> for $encoded_struct_type {
+            type Error = Error;
+
+            fn try_from(value: String) -> Result<Self> {
+                let bytes = bs58::decode(value).into_vec()?;
+                Ok(Self::new(bytes))
+            }
+        }
+
+        impl From<$encoded_struct_type> for String {
+            fn from(value: $encoded_struct_type) -> Self {
+                bs58::encode(&value.into_inner()).into_string()
+            }
+        }
+    };
 }
 
-impl_encoding_conversion!(EncodedSecretKey, SecretKey);
+generate_ed25519_structs!(
+    EncodedEd25519PublicKey,
+    Ed25519PublicKeyFormat,
+    ed25519_dalek::PublicKey,
+    "ed25519_public_key",
+    PartialEq,
+    Clone
+);
+
+generate_ed25519_structs!(
+    EncodedEd25519SecretKey,
+    Ed25519SecretKeyFormat,
+    ed25519_dalek::SecretKey,
+    "ed25519_secret_key",
+);
 
 /// Required by serde's Serialize trait, `ed25519_dalek::SecretKey` doesn't support
 /// clone
-impl Clone for EncodedSecretKey {
+impl Clone for EncodedEd25519SecretKey {
     fn clone(&self) -> Self {
         // Cloning the secret key should never fail and is considered bug as the original private
         // key is correct
@@ -102,85 +176,36 @@ impl Clone for EncodedSecretKey {
     }
 }
 
-/// Signature that can be represented in encoded form
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-#[serde(into = "String", try_from = "String")]
-pub struct EncodedSignature {
-    inner: ed25519_dalek::Signature,
-}
-
-impl_encoding_conversion!(EncodedSignature, Signature);
-
-/// Public key intended e.g. for json serialization where the 'inner' field has an explicit
-/// name denoting the keytype
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Ed25519PublicKeyFormat {
-    #[serde(rename = "ed25519_public_key")]
-    inner: EncodedPublicKey,
-}
-
-impl Ed25519PublicKeyFormat {
-    pub fn new(inner: ed25519_dalek::PublicKey) -> Self {
-        Self {
-            inner: EncodedPublicKey::new(inner),
-        }
-    }
-    pub fn into_inner(self) -> ed25519_dalek::PublicKey {
-        self.inner.into_inner()
+/// Required only to comply with the required interface of impl_ed25519_encoding_conversion macro
+/// that generates
+impl PartialEq for EncodedEd25519SecretKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.as_bytes() == other.inner.as_bytes()
     }
 }
 
-impl TryFrom<String> for Ed25519PublicKeyFormat {
-    type Error = Error;
+generate_ed25519_structs!(
+    EncodedEd25519Signature,
+    Ed25519SignatureFormat,
+    ed25519_dalek::Signature,
+    "ed25519_signature",
+    PartialEq,
+    Clone
+);
 
-    fn try_from(value: String) -> Result<Self> {
-        serde_json::from_str(value.as_str()).map_err(Into::into)
-    }
-}
+generate_noise_keypair_structs!(
+    EncodedStaticPublicKey,
+    StaticPublicKeyFormat,
+    StaticPublicKey,
+    "noise_public_key"
+);
 
-/// Helper serializer into string
-impl TryFrom<Ed25519PublicKeyFormat> for String {
-    type Error = Error;
-    fn try_from(value: Ed25519PublicKeyFormat) -> Result<String> {
-        serde_json::to_string_pretty(&value).map_err(Into::into)
-    }
-}
-
-/// Secret key intended e.g. for json serialization where the 'inner' field has an explicit
-/// name denoting the keytype
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Ed25519SecretKeyFormat {
-    #[serde(rename = "ed25519_secret_key")]
-    inner: EncodedSecretKey,
-}
-
-impl Ed25519SecretKeyFormat {
-    pub fn new(inner: ed25519_dalek::SecretKey) -> Self {
-        Self {
-            inner: EncodedSecretKey::new(inner),
-        }
-    }
-
-    pub fn into_inner(self) -> ed25519_dalek::SecretKey {
-        self.inner.into_inner()
-    }
-}
-
-impl TryFrom<String> for Ed25519SecretKeyFormat {
-    type Error = Error;
-
-    fn try_from(value: String) -> Result<Self> {
-        serde_json::from_str(value.as_str()).map_err(Into::into)
-    }
-}
-
-/// Helper serializer into string
-impl TryFrom<Ed25519SecretKeyFormat> for String {
-    type Error = Error;
-    fn try_from(value: Ed25519SecretKeyFormat) -> Result<String> {
-        serde_json::to_string_pretty(&value).map_err(Into::into)
-    }
-}
+generate_noise_keypair_structs!(
+    EncodedStaticSecretKey,
+    StaticSecretKeyFormat,
+    StaticSecretKey,
+    "noise_secret_key"
+);
 
 /// Certificate is intended to be serialized and deserialized from/into a file and loaded on the
 /// stratum server.
@@ -189,43 +214,44 @@ impl TryFrom<Ed25519SecretKeyFormat> for String {
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Certificate {
     signed_part_header: SignedPartHeader,
-    pubkey: Ed25519PublicKeyFormat,
-    signature: EncodedSignature,
+    pub public_key: StaticPublicKeyFormat,
+    signature: EncodedEd25519Signature,
 }
 
 impl Certificate {
     pub fn new(signed_part: SignedPart, signature: ed25519_dalek::Signature) -> Self {
         Self {
             signed_part_header: signed_part.header,
-            pubkey: Ed25519PublicKeyFormat::new(signed_part.pubkey),
-            signature: EncodedSignature::new(signature),
+            public_key: StaticPublicKeyFormat::new(signed_part.pubkey),
+            signature: EncodedEd25519Signature::new(signature),
         }
     }
 
-    /// TODO implement unit test
-    pub fn validate_secret_key(
-        &self,
-        secret_key: &ed25519_dalek::SecretKey,
-    ) -> Result<ed25519_dalek::PublicKey> {
-        let public_key = Ed25519PublicKeyFormat::new(ed25519_dalek::PublicKey::from(secret_key));
-
-        match public_key == self.pubkey {
-            true => Ok(public_key.into_inner()),
-            false => Err(ErrorKind::Noise(format!(
-                "Invalid certificate: public key({}) doesn't match public key({}) generated from \
-                 secret key",
-                public_key.inner, self.pubkey.inner,
-            ))
-            .into()),
-        }
-    }
+    // TODO research if it is possible to generate the public key via existing 'snow' API as we don't
+    // want to cross the API boundary that carefully hides the underalying type of the keys
+    //    /// TODO implement unit test
+    //    /// Ensures that the secret key generates the same public key as the one present in this
+    //    /// certificate
+    //    pub fn validate_secret_key(&self, secret_key: StaticSecretKey) -> Result<StaticPublicKey> {
+    //        let public_key = SecretStaticKeyFormat::new(ed25519_dalek::PublicKey::from(secret_key));
+    //
+    //        match public_key == self.pubkey {
+    //            true => Ok(public_key.into_inner()),
+    //            false => Err(ErrorKind::Noise(format!(
+    //                "Invalid certificate: public key({}) doesn't match public key({}) generated from \
+    //                 secret key",
+    //                public_key.inner, self.pubkey.inner,
+    //            ))
+    //            .into()),
+    //        }
+    //    }
 
     /// See  https://docs.rs/ed25519-dalek/1.0.0-pre.3/ed25519_dalek/struct.PublicKey.html on
     /// details for the strict verification
     pub fn validate(&self, authority_pubkey: &ed25519_dalek::PublicKey) -> Result<()> {
         let signed_part = SignedPart::new(
             self.signed_part_header.clone(),
-            self.pubkey.clone().into_inner(),
+            self.public_key.clone().into_inner(),
         );
         signed_part.verify_with(authority_pubkey, &self.signature.inner)?;
         signed_part.verify_expiration(SystemTime::now())
@@ -233,7 +259,7 @@ impl Certificate {
 
     pub fn from_noise_message(
         signature_noise_message: SignatureNoiseMessage,
-        pubkey: ed25519_dalek::PublicKey,
+        pubkey: StaticPublicKey,
     ) -> Self {
         Self::new(
             SignedPart::new(signature_noise_message.header, pubkey),
@@ -271,7 +297,8 @@ pub mod test {
 
     #[test]
     fn certificate_validate() {
-        let (signed_part, authority_keypair, signature) = build_test_signed_part_and_auth();
+        let (signed_part, authority_keypair, _static_keypair, signature) =
+            build_test_signed_part_and_auth();
         let certificate = Certificate::new(signed_part, signature);
 
         certificate
@@ -281,7 +308,8 @@ pub mod test {
 
     #[test]
     fn certificate_serialization() {
-        let (signed_part, _authority_keypair, signature) = build_test_signed_part_and_auth();
+        let (signed_part, _authority_keypair, _static_keypair, signature) =
+            build_test_signed_part_and_auth();
         let certificate = Certificate::new(signed_part, signature);
 
         // TODO fix test to use the serialization methods!

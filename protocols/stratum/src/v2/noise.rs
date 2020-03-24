@@ -24,15 +24,16 @@
 //! the selected handshake pattern on initiator as well as on responder and eventually provide a
 //! TransportState of the noise, that will be used for running the AEAD communnication.
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use snow::{params::NoiseParams, Builder, HandshakeState, TransportState};
+use std::convert::TryFrom;
 use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, FramedParts};
 
 use ii_async_compat::prelude::*;
 use ii_wire;
 
-use crate::error::{Error, ErrorKind, Result};
+use crate::error::{Error, ErrorKind, Result, ResultExt};
 use crate::v2;
 
 pub mod codec;
@@ -41,7 +42,13 @@ pub use codec::Codec;
 pub mod auth;
 mod handshake;
 
-pub use snow::Keypair;
+/// Static keypair (aka 's' and 'rs') from the noise handshake patterns. This has to be used by
+/// users of this noise when Building the responder
+pub use snow::Keypair as StaticKeypair;
+/// Snow doesn't have a dedicated public key type, we will need it for authentication
+pub type StaticPublicKey = Vec<u8>;
+/// Snow doesn't have a dedicated secret key type, we will need it for authentication
+pub type StaticSecretKey = Vec<u8>;
 
 const PARAMS: &'static str = "Noise_NX_25519_ChaChaPoly_BLAKE2s";
 // TODO: the following constants are public in snow but the constants module itself is private.
@@ -65,7 +72,8 @@ impl ii_wire::Framing for Framing {
 /// Tcp stream that produces/consumes noise frames
 type NoiseFramedTcpStream = Framed<TcpStream, <Framing as ii_wire::Framing>::Codec>;
 
-pub fn generate_keypair() -> Result<Keypair> {
+/// Generates noise specific static keypair specific for the current params
+pub fn generate_keypair() -> Result<StaticKeypair> {
     let params: NoiseParams = PARAMS.parse().expect("BUG: cannot parse noise parameters");
     let builder: Builder<'_> = Builder::new(params);
     builder.generate_keypair().map_err(Into::into)
@@ -74,10 +82,13 @@ pub fn generate_keypair() -> Result<Keypair> {
 pub struct Initiator {
     stage: usize,
     handshake_state: HandshakeState,
+    /// Public key that the Initiatior will use to verify the authenticity of the static public
+    /// key of the Responder
+    authority_public_key: ed25519_dalek::PublicKey,
 }
 
 impl Initiator {
-    pub fn new() -> Self {
+    pub fn new(authority_public_key: ed25519_dalek::PublicKey) -> Self {
         let params: NoiseParams = PARAMS.parse().expect("BUG: cannot parse noise parameters");
 
         // Initialize our initiator using a builder.
@@ -89,6 +100,7 @@ impl Initiator {
         Self {
             stage: 0,
             handshake_state,
+            authority_public_key,
         }
     }
 
@@ -105,16 +117,23 @@ impl Initiator {
     /// TODO: verify the signature of the remote static public key based on:
     ///  - remote central authority public key (must be provided to Initiator instance upon
     ///    creation)
-    fn verify_remote_static_key_signature(&mut self, signature: BytesMut) -> Result<()> {
-        let _remote_static_key = self
+    fn verify_remote_static_key_signature(
+        &mut self,
+        signature_noise_message: BytesMut,
+    ) -> Result<()> {
+        let remote_static_key = self
             .handshake_state
             .get_remote_static()
             .expect("BUG: remote static has not been provided yet");
-        if signature != &b"my-valid-sign"[..] {
-            Err(ErrorKind::Noise(
-                "Static key signature is invalid".to_string(),
-            ))?;
-        }
+        let remote_static_key = StaticPublicKey::from(remote_static_key);
+        let signature_noise_message =
+            auth::SignatureNoiseMessage::try_from(&signature_noise_message[..])?;
+
+        let certificate =
+            auth::Certificate::from_noise_message(signature_noise_message, remote_static_key);
+        certificate
+            .validate(&self.authority_public_key)
+            .context("Validation of certificate")?;
 
         Ok(())
     }
@@ -142,7 +161,8 @@ impl handshake::Step for Initiator {
                 // <- e, ee, s, es
                 let in_msg = in_msg.ok_or(ErrorKind::Noise("No message arrived".to_string()))?;
                 let signature_len = self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
-                self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
+                self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))
+                    .context("Certificate signature verification")?;
                 handshake::StepResult::Done
             }
             _ => {
@@ -157,11 +177,14 @@ impl handshake::Step for Initiator {
 pub struct Responder {
     stage: usize,
     handshake_state: HandshakeState,
+    /// Serialized signature noise message that can be directly provided as part of the
+    /// handshake - see `step()`
+    signature_noise_message: Bytes,
 }
 
 impl Responder {
     /// TODO add static keypair signature and store it inside the instance
-    pub fn new(static_keypair: &Keypair) -> Self {
+    pub fn new(static_keypair: &StaticKeypair, signature_noise_message: Bytes) -> Self {
         let params: NoiseParams = PARAMS.parse().expect("BUG: cannot parse noise parameters");
 
         // Initialize our initiator using a builder.
@@ -174,6 +197,7 @@ impl Responder {
         Self {
             stage: 0,
             handshake_state,
+            signature_noise_message,
         }
     }
 
@@ -211,7 +235,7 @@ impl handshake::Step for Responder {
                 // -> e, ee, s, es [encrypted signature]
                 let len_written = self
                     .handshake_state
-                    .write_message(&b"my-valid-sign"[..], &mut buf)?;
+                    .write_message(&self.signature_noise_message, &mut buf)?;
                 noise_bytes.extend_from_slice(&buf[..len_written]);
                 handshake::StepResult::NoMoreReply(handshake::Message::new(noise_bytes))
             }
@@ -290,12 +314,40 @@ impl TransportMode {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
+    use bytes::buf::BufMutExt;
     use handshake::Step as _;
 
+    /// Helper that builds:
+    /// - serialized signature noise message
+    /// - certification authority key pair
+    /// - server (responder) static key pair
+    fn build_serialized_signature_noise_message_and_keypairs(
+    ) -> (Bytes, ed25519_dalek::Keypair, StaticKeypair) {
+        let (signed_part, authority_keypair, static_keypair, signature) =
+            auth::test::build_test_signed_part_and_auth();
+        let certificate = auth::Certificate::new(signed_part, signature);
+        let signature_noise_message = certificate.build_noise_message();
+        let mut writer = BytesMut::new().writer();
+        signature_noise_message
+            .serialize_to_writer(&mut writer)
+            .expect("BUG: Cannot serialize signature noise message");
+        let serialized_signature_noise_message = writer.into_inner();
+
+        (
+            serialized_signature_noise_message.freeze(),
+            authority_keypair,
+            static_keypair,
+        )
+    }
+
     pub(crate) fn perform_handshake() -> (TransportMode, TransportMode) {
-        let mut initiator = Initiator::new();
-        let static_key = generate_keypair().expect("BUG: Failed to generate static public key");
-        let mut responder = Responder::new(&static_key);
+        // Prepare test certificate and a serialized noise message that contains the signature
+        let (signature_noise_message, authority_keypair, static_keypair) =
+            build_serialized_signature_noise_message_and_keypairs();
+
+        let mut initiator = Initiator::new(authority_keypair.public);
+
+        let mut responder = Responder::new(&static_keypair, signature_noise_message);
         let mut initiator_in_msg: Option<handshake::Message> = None;
 
         // Verify that responder expects to receive the first message
@@ -411,11 +463,14 @@ pub(crate) mod test {
         let expected_frame_copy =
             v2::framing::Frame::from_serialized_payload(true, 0, 0x16, payload);
 
+        // Prepare test certificate and a serialized noise message that contains the signature
+        let (signature_noise_message, authority_keypair, static_keypair) =
+            build_serialized_signature_noise_message_and_keypairs();
+
         // Spawn server task that reacts to any incoming message and responds
         // with SetupConnectionSuccess
         tokio::spawn(async move {
-            let static_key = generate_keypair().expect("BUG: Failed to generate static public key");
-            let responder = Responder::new(&static_key);
+            let responder = Responder::new(&static_keypair, signature_noise_message);
 
             let conn = server
                 .next()
@@ -440,7 +495,7 @@ pub(crate) mod test {
             .await
             .expect("BUG: Cannot connect to noise endpoint");
 
-        let initiator = Initiator::new();
+        let initiator = Initiator::new(authority_keypair.public);
         let mut client_framed_stream = initiator
             .connect(connection)
             .await

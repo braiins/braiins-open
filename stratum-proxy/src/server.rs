@@ -20,6 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use bytes::Bytes;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time;
@@ -29,7 +30,7 @@ use futures::future::{self, Either};
 use tokio::net::TcpStream;
 
 use ii_async_compat::prelude::*;
-use ii_async_compat::select;
+use ii_async_compat::{bytes, select};
 use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
@@ -237,27 +238,32 @@ pub async fn handle_connection(
 /// NOTE: this struct doesn't intentionally derive Debug to prevent leakage of the secure key
 /// into log messages
 struct SecurityContext {
-    /// Noise message that contains the necessary part of the certificate
-    _signature_noise_message: v2::noise::auth::SignatureNoiseMessage,
+    /// Serialized Signature noise message that contains the necessary part of the certificate for
+    /// succesfully authenticating with the Initiator. We store it as Bytes as it will be shared
+    /// to among all incoming connections
+    signature_noise_message: Bytes,
     /// Static key pair that the server will use within the noise handshake
-    static_key_pair: v2::noise::Keypair,
+    static_key_pair: v2::noise::StaticKeypair,
 }
 
 impl SecurityContext {
     fn from_certificate_and_secret_key(
         certificate: v2::noise::auth::Certificate,
-        secret_key: v2::noise::auth::Ed25519SecretKeyFormat,
+        secret_key: v2::noise::auth::StaticSecretKeyFormat,
     ) -> Result<Self> {
-        let _signature_noise_message = certificate.build_noise_message();
-        let secret_key = secret_key.into_inner();
-        let public_key = certificate.validate_secret_key(&secret_key)?;
-        let static_key_pair = v2::noise::Keypair {
-            private: std::vec::Vec::from(&secret_key.to_bytes()[..]),
-            public: std::vec::Vec::from(&public_key.to_bytes()[..]),
+        let signature_noise_message = certificate
+            .build_noise_message()
+            .serialize_to_bytes_mut()?
+            .freeze();
+        // TODO secret key validation is currently not possible
+        //let public_key = certificate.validate_secret_key(&secret_key)?;
+        let static_key_pair = v2::noise::StaticKeypair {
+            private: secret_key.into_inner(),
+            public: certificate.public_key.into_inner(),
         };
 
         Ok(Self {
-            _signature_noise_message,
+            signature_noise_message,
             static_key_pair,
         })
     }
@@ -318,9 +324,13 @@ where
             // Establish noise responder and run the handshake
             Some(security_context) => {
                 // TODO pass the signature message once the Responder API is adjusted
-                let responder = v2::noise::Responder::new(&security_context.static_key_pair);
+                let responder = v2::noise::Responder::new(
+                    &security_context.static_key_pair,
+                    security_context.signature_noise_message.clone(),
+                );
                 responder.accept(self.v2_downstream_conn).await?
             }
+            // Insecure operation has been configured
             None => Connection::<v2::Framing>::new(self.v2_downstream_conn).into_inner(),
         };
 
@@ -381,7 +391,7 @@ where
         get_connection_handler: FN,
         certificate_secret_key_pair: Option<(
             v2::noise::auth::Certificate,
-            v2::noise::auth::Ed25519SecretKeyFormat,
+            v2::noise::auth::StaticSecretKeyFormat,
         )>,
     ) -> Result<ProxyServer<FN>> {
         let server = Server::bind(&listen_addr)?;

@@ -170,9 +170,9 @@ impl SignKeyCommand {
     }
 
     fn execute(self) -> Result<()> {
-        let public_key = Self::read_from_file::<noise::auth::Ed25519PublicKeyFormat>(
+        let public_key = Self::read_from_file::<noise::auth::StaticPublicKeyFormat>(
             &self.public_key_to_sign,
-            "public key to sign",
+            "static public key to sign",
         )?;
 
         let signing_key = Self::read_from_file::<noise::auth::Ed25519SecretKeyFormat>(

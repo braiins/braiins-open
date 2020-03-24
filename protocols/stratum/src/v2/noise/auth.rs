@@ -30,7 +30,7 @@ use std::time::{Duration, SystemTime};
 use ii_async_compat::bytes;
 
 use crate::error::{Error, ErrorKind, Result, ResultExt};
-use crate::v2;
+use crate::v2::{self, noise::StaticPublicKey};
 
 mod formats;
 pub use formats::*;
@@ -119,11 +119,11 @@ impl SignedPartHeader {
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SignedPart {
     header: SignedPartHeader,
-    pubkey: ed25519_dalek::PublicKey,
+    pubkey: StaticPublicKey,
 }
 
 impl SignedPart {
-    pub fn new(header: SignedPartHeader, pubkey: ed25519_dalek::PublicKey) -> Self {
+    pub fn new(header: SignedPartHeader, pubkey: StaticPublicKey) -> Self {
         Self { header, pubkey }
     }
 
@@ -192,27 +192,40 @@ impl TryFrom<&[u8]> for SignatureNoiseMessage {
 }
 
 #[cfg(test)]
-pub mod test {
-    use super::*;
+pub(crate) mod test {
+    use super::{
+        super::{generate_keypair, StaticKeypair},
+        *,
+    };
     use rand::rngs::OsRng;
     const TEST_CERT_VALIDITY: Duration = Duration::from_secs(3600);
 
-    // Helper that builds a `SignedPart` (as a based e.g. for a noise message or a certificate,
+    // Helper that builds a `SignedPart` (as a base e.g. for a noise message or a certificate),
     // testing authority `ed25519_dalek::Keypair` (that actually generated the signature) and the
     // `ed25519_dalek::Signature`
-    pub(crate) fn build_test_signed_part_and_auth(
-    ) -> (SignedPart, ed25519_dalek::Keypair, ed25519_dalek::Signature) {
+    pub(crate) fn build_test_signed_part_and_auth() -> (
+        SignedPart,
+        ed25519_dalek::Keypair,
+        StaticKeypair,
+        ed25519_dalek::Signature,
+    ) {
         let mut csprng = OsRng {};
-        let to_be_signed_keypair = ed25519_dalek::Keypair::generate(&mut csprng);
+        let to_be_signed_keypair =
+            generate_keypair().expect("BUG: cannot generate noise static keypair");
         let authority_keypair = ed25519_dalek::Keypair::generate(&mut csprng);
         let header = SignedPartHeader::with_duration(TEST_CERT_VALIDITY)
             .expect("BUG: cannot prepare certificate header");
 
-        let signed_part = SignedPart::new(header, to_be_signed_keypair.public);
+        let signed_part = SignedPart::new(header, to_be_signed_keypair.public.clone());
         let signature = signed_part
             .sign_with(&authority_keypair)
             .expect("BUG: cannot sign");
-        (signed_part, authority_keypair, signature)
+        (
+            signed_part,
+            authority_keypair,
+            to_be_signed_keypair,
+            signature,
+        )
     }
 
     #[test]
@@ -251,7 +264,8 @@ pub mod test {
 
     #[test]
     fn signature_noise_message_serialization() {
-        let (signed_part, authority_keypair, _signature) = build_test_signed_part_and_auth();
+        let (signed_part, authority_keypair, _static_keypair, _signature) =
+            build_test_signed_part_and_auth();
 
         let noise_message = SignatureNoiseMessage {
             header: signed_part.header.clone(),
