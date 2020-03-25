@@ -314,7 +314,6 @@ impl TransportMode {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use bytes::buf::BufMutExt;
     use handshake::Step as _;
 
     /// Helper that builds:
@@ -326,18 +325,12 @@ pub(crate) mod test {
         let (signed_part, authority_keypair, static_keypair, signature) =
             auth::test::build_test_signed_part_and_auth();
         let certificate = auth::Certificate::new(signed_part, signature);
-        let signature_noise_message = certificate.build_noise_message();
-        let mut writer = BytesMut::new().writer();
-        signature_noise_message
-            .serialize_to_writer(&mut writer)
-            .expect("BUG: Cannot serialize signature noise message");
-        let serialized_signature_noise_message = writer.into_inner();
-
-        (
-            serialized_signature_noise_message.freeze(),
-            authority_keypair,
-            static_keypair,
-        )
+        let signature_noise_message = certificate
+            .build_noise_message()
+            .serialize_to_bytes_mut()
+            .expect("BUG: Cannot serialize signature noise message")
+            .freeze();
+        (signature_noise_message, authority_keypair, static_keypair)
     }
 
     pub(crate) fn perform_handshake() -> (TransportMode, TransportMode) {
