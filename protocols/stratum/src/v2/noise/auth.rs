@@ -29,7 +29,7 @@ use std::time::{Duration, SystemTime};
 
 use ii_async_compat::bytes;
 
-use crate::error::{Error, ErrorKind, Result};
+use crate::error::{Error, ErrorKind, Result, ResultExt};
 use crate::v2;
 
 mod formats;
@@ -167,6 +167,16 @@ impl SignatureNoiseMessage {
     pub fn serialize_to_writer<T: std::io::Write>(&self, writer: &mut T) -> Result<()> {
         v2::serialization::to_writer(writer, self)?;
         Ok(())
+    }
+
+    pub fn serialize_to_bytes_mut(&self) -> Result<BytesMut> {
+        let mut writer = BytesMut::new().writer();
+        self.serialize_to_writer(&mut writer)
+            .context("Serialize noise message")?;
+
+        let serialized_signature_noise_message = writer.into_inner();
+
+        Ok(serialized_signature_noise_message)
     }
 }
 
