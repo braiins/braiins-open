@@ -217,7 +217,7 @@ pub struct Certificate {
     signed_part_header: SignedPartHeader,
     pub public_key: StaticPublicKeyFormat,
     authority_public_key: Ed25519PublicKeyFormat,
-    signature: EncodedEd25519Signature,
+    signature: Ed25519SignatureFormat,
 }
 
 impl Certificate {
@@ -226,7 +226,7 @@ impl Certificate {
             signed_part_header: signed_part.header,
             public_key: StaticPublicKeyFormat::new(signed_part.pubkey),
             authority_public_key: Ed25519PublicKeyFormat::new(signed_part.authority_public_key),
-            signature: EncodedEd25519Signature::new(signature),
+            signature: Ed25519SignatureFormat::new(signature),
         }
     }
 
@@ -275,7 +275,7 @@ impl Certificate {
     pub fn build_noise_message(&self) -> SignatureNoiseMessage {
         SignatureNoiseMessage {
             header: self.signed_part_header.clone(),
-            signature: self.signature.inner.clone(),
+            signature: self.signature.clone().into_inner(),
         }
     }
 }
