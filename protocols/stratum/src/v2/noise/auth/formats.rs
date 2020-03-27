@@ -105,14 +105,15 @@ macro_rules! generate_ed25519_structs {
             type Error = Error;
 
             fn try_from(value: String) -> Result<Self> {
-                let bytes = bs58::decode(value).into_vec()?;
+                // Decode with checksum, don't verify version
+                let bytes = bs58::decode(value).with_check(None).into_vec()?;
                 Ok(Self::new(<$inner_encoded_struct_type>::from_bytes(&bytes)?))
             }
         }
 
         impl From<$encoded_struct_type> for String {
             fn from(value: $encoded_struct_type) -> Self {
-                bs58::encode(&value.into_inner().to_bytes()[..]).into_string()
+                bs58::encode(&value.into_inner().to_bytes()[..]).with_check().into_string()
             }
         }
     };
@@ -134,14 +135,14 @@ macro_rules! generate_noise_keypair_structs {
             type Error = Error;
 
             fn try_from(value: String) -> Result<Self> {
-                let bytes = bs58::decode(value).into_vec()?;
+                let bytes = bs58::decode(value).with_check(None).into_vec()?;
                 Ok(Self::new(bytes))
             }
         }
 
         impl From<$encoded_struct_type> for String {
             fn from(value: $encoded_struct_type) -> Self {
-                bs58::encode(&value.into_inner()).into_string()
+                bs58::encode(&value.into_inner()).with_check().into_string()
             }
         }
     };
