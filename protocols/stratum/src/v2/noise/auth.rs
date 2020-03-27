@@ -120,11 +120,20 @@ impl SignedPartHeader {
 pub struct SignedPart {
     header: SignedPartHeader,
     pubkey: StaticPublicKey,
+    authority_public_key: ed25519_dalek::PublicKey,
 }
 
 impl SignedPart {
-    pub fn new(header: SignedPartHeader, pubkey: StaticPublicKey) -> Self {
-        Self { header, pubkey }
+    pub fn new(
+        header: SignedPartHeader,
+        pubkey: StaticPublicKey,
+        authority_public_key: ed25519_dalek::PublicKey,
+    ) -> Self {
+        Self {
+            header,
+            pubkey,
+            authority_public_key,
+        }
     }
 
     fn serialize_to_buf(&self) -> Result<BytesMut> {
@@ -135,18 +144,24 @@ impl SignedPart {
 
     /// Generates the actual ed25519_dalek::Signature that is ready to be embedded into the certificate
     pub fn sign_with(&self, keypair: &ed25519_dalek::Keypair) -> Result<ed25519_dalek::Signature> {
+        assert_eq!(
+            keypair.public,
+            self.authority_public_key,
+            "BUG: Signing Authority public key ({}) inside the certificate doesn't match the key \
+             we are trying to sign with (its public key is: {})",
+            EncodedEd25519PublicKey::new(keypair.public),
+            EncodedEd25519PublicKey::new(self.authority_public_key)
+        );
+
         let signed_part_buf = self.serialize_to_buf()?;
         Ok(keypair.sign(&signed_part_buf[..]))
     }
 
-    /// Verifies this instance has a valid signature
-    fn verify_with(
-        &self,
-        pubkey: &ed25519_dalek::PublicKey,
-        signature: &ed25519_dalek::Signature,
-    ) -> Result<()> {
+    /// Verifies the specifed `signature` against this signed part
+    fn verify(&self, signature: &ed25519_dalek::Signature) -> Result<()> {
         let signed_part_buf = self.serialize_to_buf()?;
-        pubkey.verify_strict(&signed_part_buf[..], signature)?;
+        self.authority_public_key
+            .verify_strict(&signed_part_buf[..], signature)?;
         Ok(())
     }
 
@@ -216,7 +231,11 @@ pub(crate) mod test {
         let header = SignedPartHeader::with_duration(TEST_CERT_VALIDITY)
             .expect("BUG: cannot prepare certificate header");
 
-        let signed_part = SignedPart::new(header, to_be_signed_keypair.public.clone());
+        let signed_part = SignedPart::new(
+            header,
+            to_be_signed_keypair.public.clone(),
+            authority_keypair.public,
+        );
         let signature = signed_part
             .sign_with(&authority_keypair)
             .expect("BUG: cannot sign");

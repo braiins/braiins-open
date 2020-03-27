@@ -82,8 +82,9 @@ pub fn generate_keypair() -> Result<StaticKeypair> {
 pub struct Initiator {
     stage: usize,
     handshake_state: HandshakeState,
-    /// Public key that the Initiatior will use to verify the authenticity of the static public
-    /// key of the Responder
+    /// Public key that the Initiatior will use to construct a 'Certificate' on the fly from
+    /// the SignatureNoiseMessage and of the static public key of the `Responder` and will verify
+    /// the authenticity of the static public key of the Responder
     authority_public_key: ed25519_dalek::PublicKey,
 }
 
@@ -129,10 +130,13 @@ impl Initiator {
         let signature_noise_message =
             auth::SignatureNoiseMessage::try_from(&signature_noise_message[..])?;
 
-        let certificate =
-            auth::Certificate::from_noise_message(signature_noise_message, remote_static_key);
+        let certificate = auth::Certificate::from_noise_message(
+            signature_noise_message,
+            remote_static_key,
+            self.authority_public_key,
+        );
         certificate
-            .validate(&self.authority_public_key)
+            .validate()
             .context("Validation of certificate")?;
 
         Ok(())

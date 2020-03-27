@@ -193,24 +193,26 @@ impl SignKeyCommand {
             "static public key to sign",
         )?;
 
-        let signing_key = Self::read_from_file::<noise::auth::Ed25519SecretKeyFormat>(
+        let authority_secret_key = Self::read_from_file::<noise::auth::Ed25519SecretKeyFormat>(
             &self.signing_key,
             "signing key",
-        )?;
+        )?
+        .into_inner();
+
+        // Dalek crate requires the full Keypair for signing
+        let authority_keypair = ed25519_dalek::Keypair {
+            // Derive the public key from the secret key
+            public: (&authority_secret_key).into(),
+            secret: authority_secret_key,
+        };
 
         let header = noise::auth::SignedPartHeader::with_duration(Duration::from_secs(
             (self.valid_for_days * 24 * 60 * 60) as u64,
         ))
         .map_err(|e| anyhow!("{}", e))?;
 
-        let signed_part = noise::auth::SignedPart::new(header, public_key.into_inner());
-
-        // Dalek crate requires the full Keypair for signing
-        let real_signing_key = signing_key.into_inner();
-        let authority_keypair = ed25519_dalek::Keypair {
-            public: (&real_signing_key).into(),
-            secret: real_signing_key,
-        };
+        let signed_part =
+            noise::auth::SignedPart::new(header, public_key.into_inner(), authority_keypair.public);
 
         let signature = signed_part
             .sign_with(&authority_keypair)

@@ -215,6 +215,7 @@ generate_noise_keypair_structs!(
 pub struct Certificate {
     signed_part_header: SignedPartHeader,
     pub public_key: StaticPublicKeyFormat,
+    authority_public_key: Ed25519PublicKeyFormat,
     signature: EncodedEd25519Signature,
 }
 
@@ -223,6 +224,7 @@ impl Certificate {
         Self {
             signed_part_header: signed_part.header,
             public_key: StaticPublicKeyFormat::new(signed_part.pubkey),
+            authority_public_key: Ed25519PublicKeyFormat::new(signed_part.authority_public_key),
             signature: EncodedEd25519Signature::new(signature),
         }
     }
@@ -248,21 +250,23 @@ impl Certificate {
 
     /// See  https://docs.rs/ed25519-dalek/1.0.0-pre.3/ed25519_dalek/struct.PublicKey.html on
     /// details for the strict verification
-    pub fn validate(&self, authority_pubkey: &ed25519_dalek::PublicKey) -> Result<()> {
+    pub fn validate(&self) -> Result<()> {
         let signed_part = SignedPart::new(
             self.signed_part_header.clone(),
             self.public_key.clone().into_inner(),
+            self.authority_public_key.clone().into_inner(),
         );
-        signed_part.verify_with(authority_pubkey, &self.signature.inner)?;
+        signed_part.verify(&self.signature.clone().into_inner())?;
         signed_part.verify_expiration(SystemTime::now())
     }
 
     pub fn from_noise_message(
         signature_noise_message: SignatureNoiseMessage,
         pubkey: StaticPublicKey,
+        authority_public_key: ed25519_dalek::PublicKey,
     ) -> Self {
         Self::new(
-            SignedPart::new(signature_noise_message.header, pubkey),
+            SignedPart::new(signature_noise_message.header, pubkey, authority_public_key),
             signature_noise_message.signature,
         )
     }
@@ -297,13 +301,11 @@ pub mod test {
 
     #[test]
     fn certificate_validate() {
-        let (signed_part, authority_keypair, _static_keypair, signature) =
+        let (signed_part, _authority_keypair, _static_keypair, signature) =
             build_test_signed_part_and_auth();
         let certificate = Certificate::new(signed_part, signature);
 
-        certificate
-            .validate(&authority_keypair.public)
-            .expect("BUG: Certificate not valid!");
+        certificate.validate().expect("BUG: Certificate not valid!");
     }
 
     #[test]
