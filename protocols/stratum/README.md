@@ -1,19 +1,19 @@
 # Overview
 
-This is Stratum protocol software package that provides:
+This is a Stratum protocol software package that provides:
 
 - Stratum V1/V2 primitives implemented in Rust
 - [Simulator](sim/README.md) used to verify the design of Stratum V2
 
 ## Stratum Server Certificate Workflow
 
-Stratum V2 security is based on noise handshake, where the static public key of the stratum server is signed by a simple **Certification Authority**. Any stratum client is required to have a preconfigured the public key of this certification authority and use it to verify the authenticity of the static public key presented by the server.
+Stratum V2 security is based on [noise handshake](https://noiseprotocol.org/noise.html#handshake-patterns), where the static public key of the stratum server is signed by a simple **Certification Authority**. Any stratum client is required to have preconfigured the public key of this certification authority and use it to verify the authenticity of the static public key presented by the server.
 
 ### Building the Tool
 
-For security reasons, we recommend using the tool from sources.
+For security reasons, we recommend using the tool built from sources.
 
-Setup the Rust toolchain installed via [rustup](https://rustup.rs/)
+Setup the Rust toolchain installed via [rustup](https://rustup.rs/).
 
 ### Workflow
 The overall workflow requires:
@@ -46,9 +46,7 @@ The resulting keys are in:
 
 #### Signing the server public key
 
- We will sign the public key from the previous step with the **CA Private Key
-** and produce a certificate that has a specified validity (defaults to 90
- days).
+ We will sign the public key from the previous step with the **CA Private Key** and produce a certificate that has a specified validity (defaults to 90 days).
 
 ```
 cargo run -- sign-key --public-key-to-sign server-noise-static-public.key
@@ -63,11 +61,7 @@ The following files are to be uploaded to the stratum server that provides
 
 #### Testing Stratum Client Setup
 
-In case, you decide to run the miner against your own stratum V2 endpoint (e
-.g. [ii-stratum-proxy](../../stratum-proxy/README.md))
-) you
- have to pass it the actual public key of the Pool CA that has been used for
-  signing.
+In case you decide to run the miner against your own stratum V2 endpoint (e.g. [ii-stratum-proxy](../../stratum-proxy/README.md)) you have to pass it the actual public key of the Pool CA that has been used for signing.
 
 
 ## Running Protocol Test suite
