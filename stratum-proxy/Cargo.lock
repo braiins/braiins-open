@@ -730,6 +730,7 @@ dependencies = [
 name = "ii-stratum-proxy"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "bitcoin_hashes",
  "bytes 0.5.2",
@@ -743,6 +744,7 @@ dependencies = [
  "ii-wire",
  "serde_json",
  "structopt",
+ "thiserror",
  "tokio",
  "uint",
 ]
@@ -1073,9 +1075,9 @@ checksum = "369a6ed065f249a159e06c45752c780bda2fb53c995718f9e484d08daa9eb42e"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.12"
+version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8872cf6f48eee44265156c111456a700ab3483686b3f96df4cf5481c89157319"
+checksum = "9c9e470a8dc4aeae2dee2f335e8f533e2d4b347e1434e5671afc49b054592f27"
 dependencies = [
  "unicode-xid 0.2.0",
 ]
@@ -1280,7 +1282,7 @@ checksum = "ca13fc1a832f793322228923fbb3aba9f3f44444898f835d31ad1b74fa0a2bf8"
 dependencies = [
  "proc-macro2",
  "quote 1.0.2",
- "syn 1.0.19",
+ "syn 1.0.7",
 ]
 
 [[package]]

@@ -25,11 +25,11 @@ pub mod framing;
 pub mod messages;
 pub mod rpc;
 
-use self::error::ErrorKind;
+use self::error::Error;
 pub use self::framing::codec::Codec;
 pub use self::framing::{Frame, Framing};
 use self::rpc::*;
-use crate::error::{Result, ResultExt};
+use crate::error::Result;
 use crate::{AnyPayload, Message};
 
 use async_trait::async_trait;
@@ -134,9 +134,7 @@ pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protoco
                     as Box<dyn AnyPayload<Protocol>>,
                 Method::ClientReconnect => Box::new(messages::ClientReconnect::try_from(request)?)
                     as Box<dyn AnyPayload<Protocol>>,
-                _ => {
-                    return Err(ErrorKind::Rpc(format!("Unsupported request {:?}", request)).into())
-                }
+                _ => return Err(Error::Rpc(format!("Unsupported request {:?}", request)).into()),
             };
             (id, payload)
         }
@@ -149,7 +147,7 @@ pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protoco
             } else if response.payload.result.is_some() {
                 Box::new(response.payload.result.unwrap().clone()) as Box<dyn AnyPayload<Protocol>>
             } else {
-                return Err(ErrorKind::Rpc(format!(
+                return Err(Error::Rpc(format!(
                     "Malformed response no error, no result specified {:?}",
                     response
                 ))
@@ -204,9 +202,7 @@ impl TryFrom<&str> for HexBytes {
     type Error = crate::error::Error;
 
     fn try_from(value: &str) -> Result<Self> {
-        Ok(HexBytes(
-            hex_decode(value).context("Parsing hex bytes failed")?,
-        ))
+        Ok(HexBytes(hex_decode(value)?))
     }
 }
 
@@ -254,9 +250,9 @@ impl TryFrom<&str> for PrevHash {
         let mut prev_hash_cursor = std::io::Cursor::new(Vec::new());
 
         // Decode the plain byte array and sanity check
-        let prev_hash_stratum_order = hex_decode(value).context("Parsing hex bytes failed")?;
+        let prev_hash_stratum_order = hex_decode(value)?;
         if prev_hash_stratum_order.len() != 32 {
-            return Err(ErrorKind::Json(format!(
+            return Err(Error::Json(format!(
                 "Incorrect prev hash length: {}",
                 prev_hash_stratum_order.len()
             ))
@@ -309,7 +305,7 @@ impl TryFrom<&str> for HexU32Le {
     type Error = crate::error::Error;
 
     fn try_from(value: &str) -> Result<Self> {
-        let parsed_bytes: [u8; 4] = FromHex::from_hex(value).context("parse u32 hex value")?;
+        let parsed_bytes: [u8; 4] = FromHex::from_hex(value)?;
         Ok(HexU32Le(u32::from_le_bytes(parsed_bytes)))
     }
 }
@@ -340,7 +336,7 @@ impl TryFrom<&str> for HexU32Be {
     type Error = crate::error::Error;
 
     fn try_from(value: &str) -> Result<Self> {
-        let parsed_bytes: [u8; 4] = FromHex::from_hex(value).context("parse u32 hex value")?;
+        let parsed_bytes: [u8; 4] = FromHex::from_hex(value)?;
         Ok(HexU32Be(u32::from_be_bytes(parsed_bytes)))
     }
 }

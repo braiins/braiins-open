@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::time::{Duration, SystemTime};
 
-use crate::error::{Error, ErrorKind, Result, ResultExt};
+use crate::error::{Error, Result};
 use crate::v2::{self, noise::StaticPublicKey};
 
 mod formats;
@@ -69,14 +69,14 @@ impl SignedPartHeader {
     pub fn verify_expiration(&self, now: SystemTime) -> Result<()> {
         let now_timestamp = Self::system_time_to_unix_time_u32(&now)?;
         if now_timestamp < self.valid_from {
-            return Err(ErrorKind::Noise(format!(
+            return Err(Error::Noise(format!(
                 "Certificate not yet valid, valid from: {:?}, now: {:?}",
                 self.valid_from, now
             ))
             .into());
         }
         if now_timestamp > self.not_valid_after {
-            return Err(ErrorKind::Noise(format!(
+            return Err(Error::Noise(format!(
                 "Certificate expired, not valid after: {:?}, now: {:?}",
                 self.valid_from, now
             ))
@@ -89,7 +89,7 @@ impl SignedPartHeader {
         t.duration_since(SystemTime::UNIX_EPOCH)
             .map(|duration| duration.as_secs() as u32)
             .map_err(|e| {
-                ErrorKind::Noise(format!(
+                Error::Noise(format!(
                     "Cannot convert system time to unix timestamp: {}",
                     e
                 ))
@@ -101,7 +101,7 @@ impl SignedPartHeader {
         SystemTime::UNIX_EPOCH
             .checked_add(Duration::from_secs(unix_timestamp.into()))
             .ok_or(
-                ErrorKind::Noise(
+                Error::Noise(
                     format!(
                         "Cannot convert unix timestamp ({}) to system time",
                         unix_timestamp
@@ -184,8 +184,7 @@ impl SignatureNoiseMessage {
 
     pub fn serialize_to_bytes_mut(&self) -> Result<BytesMut> {
         let mut writer = BytesMut::new().writer();
-        self.serialize_to_writer(&mut writer)
-            .context("Serialize noise message")?;
+        self.serialize_to_writer(&mut writer)?;
 
         let serialized_signature_noise_message = writer.into_inner();
 
