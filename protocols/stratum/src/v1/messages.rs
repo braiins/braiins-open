@@ -504,3 +504,39 @@ impl Submit {
 }
 
 impl_conversion_request!(Submit, Method::Submit, visit_submit);
+
+/// Server initiated message requiring client to perform a reconnect, all fields are optional and
+/// we don't know which of them the server sends
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct ClientReconnect(Vec<String>);
+
+impl ClientReconnect {
+    pub fn host(&self) -> Option<&String> {
+        if self.0.len() > 0 {
+            Some(&self.0[0])
+        } else {
+            None
+        }
+    }
+    pub fn port(&self) -> Option<&String> {
+        if self.0.len() > 1 {
+            Some(&self.0[1])
+        } else {
+            None
+        }
+    }
+
+    pub fn wait_time(&self) -> Option<&String> {
+        if self.0.len() > 2 {
+            Some(&self.0[2])
+        } else {
+            None
+        }
+    }
+}
+
+impl_conversion_request!(
+    ClientReconnect,
+    Method::ClientReconnect,
+    visit_client_reconnect
+);

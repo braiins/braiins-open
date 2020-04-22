@@ -60,6 +60,8 @@ pub enum Method {
     Notify,
     #[serde(rename = "mining.set_version_mask")]
     SetVersionMask,
+    #[serde(rename = "client.reconnect")]
+    ClientReconnect,
     /// Catch all variant
     Unknown(String),
 }
@@ -82,6 +84,7 @@ impl<'de> de::Deserialize<'de> for Method {
             "mining.submit" => Submit,
             "mining.notify" => Notify,
             "mining.set_version_mask" => SetVersionMask,
+            "client.reconnect" => ClientReconnect,
             _ => Unknown(method),
         };
 
