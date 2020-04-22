@@ -124,7 +124,7 @@ macro_rules! impl_conversion_response {
                 // to the visitor pattern. We shouldn't clone any part of the incoming message
                 // However, since the result is being passed by reference
                 serde_json::from_value(result.0.clone())
-                    .context("Failed to parse response")
+                    .context(format!("Failed to parse response ({:?})", result))
                     .map_err(Into::into)
             }
         }
