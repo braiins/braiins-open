@@ -270,10 +270,6 @@ impl Subscribe {
 //  let port = req.param_to_string(3, ErrorKind::Subscribe("Invalid TCP port".into()))?;
 impl_conversion_request!(Subscribe, Method::Subscribe, visit_subscribe);
 
-/// Custom subscriptions
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Subscription(pub String, pub String);
-
 /// Subscription response
 /// TODO: Do we need to track any subscription ID's or anyhow validate those fields?
 /// see StratumError for reasons why this structure doesn't have named fields

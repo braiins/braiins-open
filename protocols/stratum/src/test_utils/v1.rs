@@ -149,15 +149,7 @@ pub fn build_mining_submit_ok_response_message() -> Rpc {
 
 pub fn build_subscribe_ok_result() -> SubscribeResult {
     SubscribeResult(
-        vec![
-            serde_json::to_value(Subscription(
-                "mining.set_difficulty".to_string(),
-                "4".to_string(),
-            ))
-            .expect("BUG: Subscription should always serialize"),
-            serde_json::to_value(Subscription("mining.notify".to_string(), "1".to_string()))
-                .expect("BUG: Subscription should always serialize"),
-        ],
+        vec![],
         ExtraNonce1(HexBytes::try_from(EXTRA_NONCE_1).expect("Cannot parse extra nonce 1")),
         EXTRA_NONCE_2_SIZE,
     )
