@@ -215,6 +215,9 @@ pub trait Handler: 'static + Send {
     ) {
     }
 
+    async fn visit_reconnect(&mut self, _header: &framing::Header, _payload: &messages::Reconnect) {
+    }
+
     async fn visit_set_target(
         &mut self,
         _header: &framing::Header,
@@ -312,6 +315,7 @@ pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protoco
         }
         MessageType::NewMiningJob => Box::new(messages::NewMiningJob::try_from(frame)?),
         MessageType::SetNewPrevHash => Box::new(messages::SetNewPrevHash::try_from(frame)?),
+        MessageType::Reconnect => Box::new(messages::Reconnect::try_from(frame)?),
         MessageType::SetTarget => Box::new(messages::SetTarget::try_from(frame)?),
         MessageType::SubmitSharesStandard => {
             Box::new(messages::SubmitSharesStandard::try_from(frame)?)
