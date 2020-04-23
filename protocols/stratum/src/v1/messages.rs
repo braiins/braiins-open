@@ -278,10 +278,10 @@ pub struct Subscription(pub String, pub String);
 /// TODO: Do we need to track any subscription ID's or anyhow validate those fields?
 /// see StratumError for reasons why this structure doesn't have named fields
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct SubscribeResult(pub Vec<Subscription>, pub ExtraNonce1, pub usize);
+pub struct SubscribeResult(pub Vec<serde_json::Value>, pub ExtraNonce1, pub usize);
 
 impl SubscribeResult {
-    pub fn subscriptions(&self) -> &Vec<Subscription> {
+    pub fn subscriptions(&self) -> &Vec<serde_json::Value> {
         &self.0
     }
 

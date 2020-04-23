@@ -114,7 +114,7 @@ pub const MINING_BROKEN_REQ_JSON: &str = concat!(
 /// TODO: find out how to fill in extra nonce 1 and extra nonce 2 size from predefined constants
 pub const MINING_SUBSCRIBE_OK_RESULT_JSON: &str = concat!(
     r#"{"id":1,"#,
-    r#""result":[[["mining.set_difficulty","4"],["mining.notify","1"]],"6c6f010000000c",4],"#,
+    r#""result":[[],"6c6f010000000c",4],"#,
     r#""error":null}"#
 );
 
@@ -150,8 +150,13 @@ pub fn build_mining_submit_ok_response_message() -> Rpc {
 pub fn build_subscribe_ok_result() -> SubscribeResult {
     SubscribeResult(
         vec![
-            Subscription("mining.set_difficulty".to_string(), "4".to_string()),
-            Subscription("mining.notify".to_string(), "1".to_string()),
+            serde_json::to_value(Subscription(
+                "mining.set_difficulty".to_string(),
+                "4".to_string(),
+            ))
+            .expect("BUG: Subscription should always serialize"),
+            serde_json::to_value(Subscription("mining.notify".to_string(), "1".to_string()))
+                .expect("BUG: Subscription should always serialize"),
         ],
         ExtraNonce1(HexBytes::try_from(EXTRA_NONCE_1).expect("Cannot parse extra nonce 1")),
         EXTRA_NONCE_2_SIZE,
