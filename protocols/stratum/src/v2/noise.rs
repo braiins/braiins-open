@@ -82,6 +82,7 @@ pub fn generate_keypair() -> Result<StaticKeypair> {
     builder.generate_keypair().map_err(Into::into)
 }
 
+#[derive(Debug)]
 pub struct Initiator {
     stage: usize,
     handshake_state: HandshakeState,
