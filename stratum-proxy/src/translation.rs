@@ -68,7 +68,7 @@ impl SeqId {
 }
 
 /// Compound struct for all translation options that can be tweaked in `V2ToV1Translation`
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct V2ToV1TranslationOptions {
     /// Try to send `extranonce.subscribe` during handshake
     pub try_enable_xnsub: bool,
