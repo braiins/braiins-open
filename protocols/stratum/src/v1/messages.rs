@@ -508,17 +508,18 @@ impl_conversion_request!(Submit, Method::Submit, visit_submit);
 /// Server initiated message requiring client to perform a reconnect, all fields are optional and
 /// we don't know which of them the server sends
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct ClientReconnect(pub Vec<String>);
+pub struct ClientReconnect(pub Vec<serde_json::Value>);
 
 impl ClientReconnect {
-    pub fn host(&self) -> Option<&String> {
+    pub fn host(&self) -> Option<&serde_json::Value> {
         if self.0.len() > 0 {
             Some(&self.0[0])
         } else {
             None
         }
     }
-    pub fn port(&self) -> Option<&String> {
+
+    pub fn port(&self) -> Option<&serde_json::Value> {
         if self.0.len() > 1 {
             Some(&self.0[1])
         } else {
@@ -526,7 +527,7 @@ impl ClientReconnect {
         }
     }
 
-    pub fn wait_time(&self) -> Option<&String> {
+    pub fn wait_time(&self) -> Option<&serde_json::Value> {
         if self.0.len() > 2 {
             Some(&self.0[2])
         } else {

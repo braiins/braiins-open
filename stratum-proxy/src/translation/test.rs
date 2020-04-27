@@ -189,30 +189,88 @@ fn test_diff_1_bitcoin_target() {
 
 #[test]
 fn test_parse_client_reconnect() {
+    use serde_json::Value;
     use v1::messages::ClientReconnect;
 
-    V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![]))
-        .expect(r#"Could not parse reconnect message without arguments"#);
+    assert_eq!(
+        (Str0_255::from_str(""), 0),
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![]))
+            .expect(r#"Could not parse reconnect message without arguments"#)
+    );
 
-    // lower boundary cases
-    V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
-        "".into(),
-        "0".into(),
-        "1".into(),
-    ]))
-    .expect(r#"Could not parse reconnect message with host="" and port="0"#);
+    // lower boundary case
+    assert_eq!(
+        (Str0_255::from_str(""), 0),
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            Value::String("".into()),
+            Value::String("0".into()),
+            Value::String("1".into()),
+        ]))
+        .expect(r#"Could not parse boundary_case with host="" and port="0"#)
+    );
+
+    // lower boundary case
+    assert_eq!(
+        (Str0_255::from_str(""), 0),
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            Value::String("".into()),
+            Value::Number(0.into()),
+            Value::Number(1.into()),
+        ]))
+        .expect(r#"Could not parse boundary_case with host="" and integeral port=0"#)
+    );
+
+    // random case
+    assert_eq!(
+        (Str0_255::from_str("some_host"), 1000),
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            Value::String("some_host".into()),
+            Value::Number(1000.into()),
+        ]))
+        .expect(r#"Could not parse regular case with host="some_host" and integeral port=1000"#)
+    );
+
+    // upper boundary case
+    assert_eq!(
+        (
+            Str0_255::from_string(repeat("h").take(255).collect::<String>()),
+            65535
+        ),
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            Value::String(repeat("h").take(255).collect::<String>()),
+            Value::String("65535".into()),
+            Value::String("1".into()),
+        ]))
+        .expect(
+            r#"Could not parse boundary_case with longest valid host and string port="65535"."#
+        )
+    );
 
     // upper boundary cases
-    V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
-        repeat("h").take(255).collect::<String>(),
-        "65535".into(),
-        "1".into(),
-    ]))
-    .expect(r#"Could not parse reconnect message with longest valid host and port="65535"."#);
+    assert_eq!(
+        (
+            Str0_255::from_string(repeat("h").take(255).collect::<String>()),
+            65535
+        ),
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            Value::String(repeat("h").take(255).collect::<String>()),
+            Value::Number(65535.into()),
+            Value::Number(1.into()),
+        ]))
+        .expect(
+            r#"Could not parse boundary_case with longest valid host and integeral port=65535."#
+        )
+    );
 
     // non-ascii host name
-    V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec!["😊".into(), "1000".into()]))
-        .expect("Could not parse non-ascii utf-8 host-name string");
+    assert_eq!(
+        (Str0_255::from_str("😊"), 1000),
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            Value::String("😊".into()),
+            Value::Number(1000.into()),
+        ]))
+        .expect("Could not parse non-ascii utf-8 host-name string")
+    );
 }
 
 /// Test port number overflow, hostname overflow, invalid port number string, hexadecimal string
@@ -221,33 +279,29 @@ fn test_client_reconnect_parsing_with_invalid_arguments() {
     use v1::messages::ClientReconnect;
 
     if let Ok((_host, _port)) = V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
-        "some_host".into(),
-        "65536".into(), // invalid range
+        Value::String("some_host".into()),
+        Value::String("65536".into()), // invalid range
     ])) {
-        panic!("invalid port number not detected: {:?}", _port);
     } else if let Ok((_host, _port)) =
         V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
-            repeat("h").take(256).collect::<String>(), // too long host name
-            "1000".into(),
+            Value::String("some_host".into()),
+            Value::Number(65536.into()), // invalid range
+        ]))
+    {
+        panic!("invalid port number integer not detected: {:?}", _port);
+    } else if let Ok((_host, _port)) =
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            Value::String(repeat("h").take(256).collect::<String>()), // too long host name
+            Value::Number(1000.into()),
         ]))
     {
         panic!("too long hostname not detected: {:?}", _host);
     } else if let Ok((_host, _port)) =
         V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
-            "some_host".into(),
-            "bad_non-numeric-port_description".into(), // invalid port string
+            Value::String("some_host".into()),
+            Value::String("bad_non-numeric-port_description".into()), // invalid port string
         ]))
     {
         panic!("invalid non-numeric port value not detected: {:?}", _port);
-    } else if let Ok((_host, _port)) =
-        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
-            "some_host".into(),
-            "0xffff".into(), // hexadecimal port number is not allowed
-        ]))
-    {
-        panic!(
-            "hexadecimal port number is error and was not detected: {:?}",
-            _port
-        );
     }
 }

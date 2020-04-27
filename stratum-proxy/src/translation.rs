@@ -35,6 +35,7 @@ use futures::channel::mpsc;
 
 use bitcoin_hashes::{sha256d, Hash, HashEngine};
 use serde_json;
+use serde_json::Value;
 
 use ii_stratum::v1;
 use ii_stratum::v2::{
@@ -851,8 +852,11 @@ impl V2ToV1Translation {
     fn parse_client_reconnect(msg: &v1::messages::ClientReconnect) -> Result<(Str0_255, u16)> {
         let new_host = msg
             .host()
-            .unwrap_or(&"".to_string())
-            .clone()
+            .map(|host_val| match host_val {
+                Value::String(host_name) => host_name.clone(),
+                _ => "".to_owned(),
+            })
+            .unwrap_or("".to_owned())
             .try_into()
             // TODO Str0_255 conversion returns () as an error, therefore we cannot mention the
             // error here. Once this changes, the error mapping can be redone
@@ -863,15 +867,23 @@ impl V2ToV1Translation {
                 ))
             })?;
 
-        let new_port = match msg.port() {
-            Some(p) => p.parse::<u16>().map_err(|e| {
+        let new_port = msg
+            .port()
+            .map(|port_val| match port_val {
+                Value::Number(port) => port
+                    .as_u64()
+                    .map(|n| u16::try_from(n).map_err(|e| e.to_string()))
+                    .unwrap_or(Err("Port is not an unsigned integer".to_string())),
+                Value::String(port_str) => port_str.parse::<u16>().map_err(|e| e.to_string()),
+                _ => Ok(0),
+            })
+            .unwrap_or(Ok(0))
+            .map_err(|e| {
                 crate::error::ErrorKind::General(format!(
                     "Cannot parse port ({}) client.reconnect: {:?}",
                     e, msg
                 ))
-            })?,
-            None => 0,
-        };
+            })?;
 
         Ok((new_host, new_port))
     }
