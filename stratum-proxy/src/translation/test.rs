@@ -20,6 +20,8 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use std::iter::repeat;
+
 use futures::stream::StreamExt;
 
 use ii_async_compat::tokio;
@@ -183,4 +185,69 @@ fn test_diff_1_bitcoin_target() {
         expected_difficulty_1_target_uint256,
         V2ToV1Translation::DIFF1_TARGET
     );
+}
+
+#[test]
+fn test_parse_client_reconnect() {
+    use v1::messages::ClientReconnect;
+
+    V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![]))
+        .expect(r#"Could not parse reconnect message without arguments"#);
+
+    // lower boundary cases
+    V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+        "".into(),
+        "0".into(),
+        "1".into(),
+    ]))
+    .expect(r#"Could not parse reconnect message with host="" and port="0"#);
+
+    // upper boundary cases
+    V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+        repeat("h").take(255).collect::<String>(),
+        "65535".into(),
+        "1".into(),
+    ]))
+    .expect(r#"Could not parse reconnect message with longest valid host and port="65535"."#);
+
+    // non-ascii host name
+    V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec!["😊".into(), "1000".into()]))
+        .expect("Could not parse non-ascii utf-8 host-name string");
+}
+
+/// Test port number overflow, hostname overflow, invalid port number string, hexadecimal string
+#[test]
+fn test_client_reconnect_parsing_with_invalid_arguments() {
+    use v1::messages::ClientReconnect;
+
+    if let Ok((_host, _port)) = V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+        "some_host".into(),
+        "65536".into(), // invalid range
+    ])) {
+        panic!("invalid port number not detected: {:?}", _port);
+    } else if let Ok((_host, _port)) =
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            repeat("h").take(256).collect::<String>(), // too long host name
+            "1000".into(),
+        ]))
+    {
+        panic!("too long hostname not detected: {:?}", _host);
+    } else if let Ok((_host, _port)) =
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            "some_host".into(),
+            "bad_non-numeric-port_description".into(), // invalid port string
+        ]))
+    {
+        panic!("invalid non-numeric port value not detected: {:?}", _port);
+    } else if let Ok((_host, _port)) =
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            "some_host".into(),
+            "0xffff".into(), // hexadecimal port number is not allowed
+        ]))
+    {
+        panic!(
+            "hexadecimal port number is error and was not detected: {:?}",
+            _port
+        );
+    }
 }

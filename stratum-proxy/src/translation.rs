@@ -848,7 +848,6 @@ impl V2ToV1Translation {
 
     /// Parse the stratum V1 reconnect message into new host/port pair, where host is
     /// converted into stratum v2 specific type. This method catches host name overflow attempts.
-    /// TODO implement unit test for various combinations of the reconnect message
     fn parse_client_reconnect(msg: &v1::messages::ClientReconnect) -> Result<(Str0_255, u16)> {
         let new_host = msg
             .host()
