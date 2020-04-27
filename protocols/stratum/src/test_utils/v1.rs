@@ -258,6 +258,24 @@ pub fn build_authorize() -> Authorize {
 
 pub const MINING_AUTHORIZE_OK: &str = r#"{"id": 1,"error":null,"result":true}"#;
 
+pub const CLIENT_RECONNECT_JSON: &str =
+    r#"{"id":1,"method":"client.reconnect","params":["stratum.slushpool.com", 3333, 1]}"#;
+
+pub fn build_client_reconnect_request_message() -> Rpc {
+    build_request_message(Some(1), build_client_reconnect())
+}
+
+pub fn build_client_reconnect() -> ClientReconnect {
+    let deserialized =
+        Rpc::from_str(CLIENT_RECONNECT_JSON).expect("Cannot parse reconnect message");
+    let reconnect = if let Rpc::Request(req) = deserialized {
+        ClientReconnect::try_from(req).expect("Cannot build reconnect message")
+    } else {
+        panic!("Wrong reconnect message");
+    };
+    reconnect
+}
+
 /// Message payload visitor that compares the payload of the visited message (e.g. after
 /// deserialization test) with the payload built.
 /// This handler should be used in tests to verify that serialization and deserialization yield the

@@ -508,7 +508,7 @@ impl_conversion_request!(Submit, Method::Submit, visit_submit);
 /// Server initiated message requiring client to perform a reconnect, all fields are optional and
 /// we don't know which of them the server sends
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct ClientReconnect(Vec<String>);
+pub struct ClientReconnect(pub Vec<String>);
 
 impl ClientReconnect {
     pub fn host(&self) -> Option<&String> {
