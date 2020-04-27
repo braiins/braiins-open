@@ -79,6 +79,23 @@ async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<v1::Fra
     msg.accept(&mut test_utils::v1::TestIdentityHandler).await;
 }
 
+#[tokio::test]
+async fn test_client_reconnect_translate() {
+    let (v1_tx, _v1_rx) = mpsc::channel(1);
+    let (v2_tx, mut v2_rx) = mpsc::channel(1);
+    let mut tr_options = V2ToV1TranslationOptions::default();
+    tr_options.propagate_reconnect_downstream = true;
+    let mut translation = V2ToV1Translation::new(v1_tx, v2_tx, tr_options);
+
+    v1_simulate_incoming_message(
+        &mut translation,
+        test_utils::v1::build_client_reconnect_request_message(),
+    )
+    .await;
+
+    v2_verify_generated_response_message(&mut v2_rx).await;
+}
+
 /// This test simulates incoming connection to the translation and verifies that the translation
 /// emits corresponding V1 or V2 messages
 /// TODO we need a way to detect that translation is not responding and the entire test should fail
