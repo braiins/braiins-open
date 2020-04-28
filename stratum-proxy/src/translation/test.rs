@@ -320,5 +320,19 @@ fn test_client_reconnect_parsing_with_invalid_arguments() {
         ]))
     {
         panic!("invalid non-numeric port value not detected: {:?}", _port);
+    } else if let Ok((_host, _port)) =
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            Value::String("some_host".into()),
+            Value::Array(vec![1000.into()]), // invalid data type
+        ]))
+    {
+        panic!("invalid port data type not detected")
+    } else if let Ok((_host, _port)) =
+        V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
+            Value::Number(10.into()), // invalid data type
+            Value::Number(1000.into()),
+        ]))
+    {
+        panic!("invalid host name data type not detected")
     }
 }
