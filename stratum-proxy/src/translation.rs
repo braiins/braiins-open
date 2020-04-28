@@ -850,40 +850,44 @@ impl V2ToV1Translation {
     /// Parse the stratum V1 reconnect message into new host/port pair, where host is
     /// converted into stratum v2 specific type. This method catches host name overflow attempts.
     fn parse_client_reconnect(msg: &v1::messages::ClientReconnect) -> Result<(Str0_255, u16)> {
-        let new_host = msg
-            .host()
-            .map(|host_val| match host_val {
-                Value::String(host_name) => host_name.clone(),
-                _ => "".to_owned(),
-            })
-            .unwrap_or("".to_owned())
-            .try_into()
+        let new_host = match msg.host() {
+            Some(host_val) => match host_val {
+                Value::String(host_name) => Ok(host_name.clone()),
+                _ => Err("host name not a string"),
+            },
+            None => Ok("".to_owned()),
+        }
+        .and_then(|host_name| {
             // TODO Str0_255 conversion returns () as an error, therefore we cannot mention the
             // error here. Once this changes, the error mapping can be redone
-            .map_err(|_e| {
-                crate::error::ErrorKind::General(format!(
-                    "Cannot parse host (too long?) in client.reconnect: {:?}",
-                    msg
-                ))
-            })?;
+            Str0_255::try_from(host_name).map_err(|_e| "host name string too long")
+        })
+        .map_err(|e| {
+            crate::error::ErrorKind::General(format!(
+                "Cannot parse host ({}) in client.reconnect: {:?}",
+                e, msg
+            ))
+        })?;
 
-        let new_port = msg
-            .port()
-            .map(|port_val| match port_val {
-                Value::Number(port) => port
-                    .as_u64()
-                    .map(|n| u16::try_from(n).map_err(|e| e.to_string()))
-                    .unwrap_or(Err("Port is not an unsigned integer".to_string())),
-                Value::String(port_str) => port_str.parse::<u16>().map_err(|e| e.to_string()),
-                _ => Ok(0),
-            })
-            .unwrap_or(Ok(0))
-            .map_err(|e| {
-                crate::error::ErrorKind::General(format!(
-                    "Cannot parse port ({}) client.reconnect: {:?}",
-                    e, msg
-                ))
-            })?;
+        let new_port = match msg.port() {
+            Some(port_val) => match port_val {
+                Value::Number(port) => match port.as_u64() {
+                    Some(n) => u16::try_from(n).map_err(|_e| "invalid u16"),
+                    None => Err("invalid u16"),
+                },
+                Value::String(port_str) => port_str
+                    .parse::<u16>()
+                    .map_err(|_e| "invalid number string"),
+                _ => Err("port number neither string nor int"),
+            },
+            None => Ok(0),
+        }
+        .map_err(|e| {
+            crate::error::ErrorKind::General(format!(
+                "Cannot parse port ({}) client.reconnect: {:?}",
+                e, msg
+            ))
+        })?;
 
         Ok((new_host, new_port))
     }
