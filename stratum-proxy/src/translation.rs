@@ -1006,7 +1006,7 @@ impl v1::Handler for V2ToV1Translation {
         // We won't process the job as long as the channel is not operational
         if self.state != V2ToV1TranslationState::Operational {
             self.v1_deferred_notify = Some(payload.clone());
-            info!("Channel not yet operational, caching latest mining.notify from upstream");
+            debug!("Channel not yet operational, caching latest mining.notify from upstream");
             return;
         }
         self.perform_notify(payload)
