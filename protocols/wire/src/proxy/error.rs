@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Braiins Systems s.r.o.
+// Copyright (C) 2020  Braiins Systems s.r.o.
 //
 // This file is part of Braiins Open-Source Initiative (BOSI).
 //
@@ -20,32 +20,29 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-#[cfg(all(feature = "tokio03", feature = "tokio02"))]
-compile_error!("You can't use both Tokio 0.3 and 0.2. Note: The `tokio02` feature requires default features to be turned off");
+use thiserror::Error;
 
-#[cfg(feature = "tokio03")]
-pub(crate) use tokio;
-#[cfg(feature = "tokio03")]
-pub(crate) use tokio_util;
+/// Error type for this module
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Proxy protocol error: {0}")]
+    Proxy(String),
 
-#[cfg(feature = "tokio02")]
-pub(crate) use tokio02_ as tokio;
-#[cfg(feature = "tokio02")]
-pub(crate) use tokio02_util as tokio_util;
+    #[error("IO error: {0}")]
+    Io(#[from] tokio::io::Error),
 
-#[macro_use]
-extern crate ii_logging;
+    #[error("Invalid encoding of proxy header: {0}")]
+    Utf8(#[from] std::str::Utf8Error),
 
-mod connection;
-pub use connection::*;
+    #[error("Invalid address in proxy header: {0}")]
+    IPAddress(#[from] std::net::AddrParseError),
 
-mod server;
-pub use server::*;
+    #[error("Invalid port in proxy header: {0}")]
+    Port(#[from] std::num::ParseIntError),
 
-mod client;
-pub use client::*;
+    #[error("Invalid state: {0}")]
+    InvalidState(String),
+}
 
-mod framing;
-pub use framing::*;
-
-pub mod proxy;
+/// Convenient Result type, with our Error included
+pub type Result<T> = std::result::Result<T, Error>;
