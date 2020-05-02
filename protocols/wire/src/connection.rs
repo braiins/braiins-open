@@ -30,7 +30,7 @@ use crate::{tokio, tokio_util};
 use futures::prelude::*;
 use pin_project::pin_project;
 use tokio::net::{TcpStream, ToSocketAddrs};
-use tokio_util::codec::Framed;
+use tokio_util::codec::{Framed, FramedParts};
 
 use crate::framing::Framing;
 
@@ -46,6 +46,17 @@ impl<F: Framing> Connection<F> {
     pub fn new(stream: TcpStream) -> Self {
         let framed_stream = Framed::new(stream, F::Codec::default());
 
+        Self { framed_stream }
+    }
+
+    /// Create a new `Connection` from `FramedParts`.
+    ///
+    /// It can be used on previously framed stream to change to new codec
+    pub fn new_from_parts<C>(parts: FramedParts<TcpStream, C>) -> Self {
+        let mut new_parts = FramedParts::new(parts.io, F::Codec::default());
+        new_parts.read_buf = parts.read_buf;
+        new_parts.write_buf = parts.write_buf;
+        let framed_stream = Framed::from_parts(new_parts);
         Self { framed_stream }
     }
 

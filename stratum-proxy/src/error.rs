@@ -26,6 +26,8 @@ use std;
 use std::io;
 use thiserror::Error;
 
+use ii_wire::proxy::error::Error as ProxyError;
+
 #[derive(Error, Debug)]
 pub enum Error {
     /// General error used for more specific errors.
@@ -63,6 +65,10 @@ pub enum Error {
     /// File content error
     #[error("Invalid content of key/certificate file: {0}")]
     InvalidFile(String),
+
+    /// PROXY protocol error
+    #[error("PROXY protocol error: {0}")]
+    ProxyProtocol(#[from] ProxyError),
 }
 
 impl<T> From<futures::channel::mpsc::TrySendError<T>> for Error

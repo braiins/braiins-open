@@ -277,6 +277,7 @@ impl<'a> Responder<'a> {
         }
     }
 
+    /// Executes noise protocol handshake on provided connection
     pub async fn accept(self, connection: TcpStream) -> Result<v2::Framed> {
         self.accept_with_codec(connection, |noise_codec| {
             <v2::framing::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec))
@@ -297,6 +298,30 @@ impl<'a> Responder<'a> {
     {
         // Run the handshake and switch to transport mode
         let mut noise_framed_stream = ii_wire::Connection::<Framing>::new(connection).into_inner();
+
+        let handshake = handshake::Handshake::new(self);
+        let transport_mode = handshake.run(&mut noise_framed_stream).await?;
+
+        Ok(transport_mode.into_framed(noise_framed_stream, build_codec))
+    }
+
+    /// Executes noise protocol handshake on provided `FramedParts` - e.g. on stream and buffers returned
+    /// from previous phase (PROXY protocol etc.)
+    /// `C` - ii_wire::proxy::ProxyProtocolCodecV1
+    /// `parts` - `FramedParts` that will be transformed into a `Framed` once the noise handshake
+    /// is complete
+    /// `build_codec` - custom codec builder that is passed the noise codec
+    pub async fn accept_parts_with_codec<C, F, I, U>(
+        self,
+        parts: FramedParts<TcpStream, C>,
+        build_codec: F,
+    ) -> Result<Framed<TcpStream, U>>
+    where
+        F: FnOnce(Codec) -> U,
+        U: Encoder<I>,
+    {
+        let mut noise_framed_stream =
+            ii_wire::Connection::<Framing>::new_from_parts(parts).into_inner();
 
         let handshake = handshake::Handshake::new(self);
         let transport_mode = handshake.run(&mut noise_framed_stream).await?;

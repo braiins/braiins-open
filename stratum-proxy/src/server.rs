@@ -36,7 +36,10 @@ use ii_async_utils::FutureExt;
 use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
-use ii_wire::{Address, Client, Connection, Server};
+use ii_wire::{
+    proxy::{accept_v1_framed, Connector},
+    Address, Client, Connection, Server,
+};
 
 use crate::error::{Error, Result};
 use crate::translation::V2ToV1Translation;
@@ -274,6 +277,24 @@ impl SecurityContext {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ProxyConfig {
+    /// Expects PROXY protocol header on downstream connection
+    pub proxy_protocol_v1: bool,
+    /// If proxy protocol information is available from downstream connection,
+    /// passes it to upstream connection
+    pub pass_proxy_protocol_v1: bool,
+}
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        ProxyConfig {
+            proxy_protocol_v1: false,
+            pass_proxy_protocol_v1: false,
+        }
+    }
+}
+
 struct ProxyConnection<FN, T> {
     /// Downstream connection that is to be handled
     v2_downstream_conn: TcpStream,
@@ -284,6 +305,8 @@ struct ProxyConnection<FN, T> {
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
     generic_context: T,
+    /// Configuration of PROXY protocol
+    proxy_config: ProxyConfig,
 }
 
 impl<FN, FT, T> ProxyConnection<FN, T>
@@ -298,6 +321,7 @@ where
         security_context: Option<Arc<SecurityContext>>,
         get_connection_handler: Arc<FN>,
         generic_context: T,
+        proxy_config: ProxyConfig,
     ) -> Self {
         Self {
             v2_downstream_conn,
@@ -305,6 +329,7 @@ where
             get_connection_handler,
             security_context,
             generic_context,
+            proxy_config,
         }
     }
 
@@ -313,6 +338,15 @@ where
     ///  - establish noise handshake (if configured)
     ///  - run the custom connection handler that
     async fn do_handle(self, v2_peer_addr: SocketAddr) -> Result<()> {
+        if self.proxy_config.proxy_protocol_v1 {
+            self.do_handle_with_proxy_header(v2_peer_addr).await
+        } else {
+            self.do_handle_direct(v2_peer_addr).await
+        }
+    }
+
+    /// Handle incoming connection without PROXY protocol
+    async fn do_handle_direct(self, v2_peer_addr: SocketAddr) -> Result<()> {
         // Connect to upstream V1 server
         let mut v1_client = Client::new(self.v1_upstream_addr);
         // TODO Attempt only once to connect -> consider using the backoff for a few rounds before
@@ -320,6 +354,7 @@ where
         // Use the connection only to build the Framed object with V1 framing and to extract the
         // peer address
         let v1_conn = v1_client.next().await?;
+
         let v1_peer_addr = v1_conn.peer_addr()?;
         let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
         info!(
@@ -343,6 +378,70 @@ where
             }
             // Insecure operation has been configured
             None => Connection::<v2::Framing>::new(self.v2_downstream_conn).into_inner(),
+        };
+
+        // Start processing of both ends
+        // TODO adjust connection handler to return a Result
+        (self.get_connection_handler)(
+            v2_framed_stream,
+            v2_peer_addr,
+            v1_framed_stream,
+            v1_peer_addr,
+            self.generic_context.clone(),
+        )
+        .await
+    }
+
+    /// Handle incoming connection with proxy header
+    async fn do_handle_with_proxy_header(self, v2_peer_addr: SocketAddr) -> Result<()> {
+        let (proxy_info, parts) = accept_v1_framed(self.v2_downstream_conn).await?;
+        debug!("Received connection from downstream proxy - original source, {:?} original destination {:?}",
+        proxy_info.original_source, proxy_info.original_destination);
+        // Connect to upstream V1 server
+        let mut v1_client = Client::new(self.v1_upstream_addr);
+        // TODO Attempt only once to connect -> consider using the backoff for a few rounds before
+        // failing. Also
+        // Use the connection only to build the Framed object with V1 framing and to extract the
+        // peer address
+        let mut v1_conn = v1_client.next().await?;
+
+        if self.proxy_config.pass_proxy_protocol_v1 {
+            Connector::new()
+                .connect_to(
+                    &mut v1_conn,
+                    proxy_info.original_source,
+                    proxy_info.original_destination,
+                )
+                .await?;
+        }
+        let v1_peer_addr = v1_conn.peer_addr()?;
+        let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
+        info!(
+            "Established translation connection with upstream V1 {} for V2 peer: {}",
+            v1_peer_addr, v2_peer_addr
+        );
+
+        let v2_framed_stream = match self.security_context {
+            // Establish noise responder and run the handshake
+            Some(security_context) => {
+                // TODO pass the signature message once the Responder API is adjusted
+                let responder = v2::noise::Responder::new(
+                    &security_context.static_key_pair,
+                    security_context.signature_noise_message.clone(),
+                    vec![
+                        v2::noise::negotiation::EncryptionAlgorithm::AESGCM,
+                        v2::noise::negotiation::EncryptionAlgorithm::ChaChaPoly,
+                    ],
+                );
+
+                responder
+                    .accept_parts_with_codec(parts, |noise_codec| {
+                        <v2::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec))
+                    })
+                    .await?
+            }
+            // Insecure operation has been configured
+            None => Connection::<v2::Framing>::new_from_parts(parts).into_inner(),
         };
 
         // Start processing of both ends
@@ -393,6 +492,8 @@ pub struct ProxyServer<FN, T> {
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
     generic_context: T,
+    /// PROXY protocol configuration
+    proxy_config: ProxyConfig,
 }
 
 impl<FN, FT, T> ProxyServer<FN, T>
@@ -412,6 +513,7 @@ where
             v2::noise::auth::StaticSecretKeyFormat,
         )>,
         generic_context: T,
+        proxy_config: ProxyConfig,
     ) -> Result<ProxyServer<FN, T>> {
         let server = Server::bind(&listen_addr)?;
 
@@ -433,6 +535,7 @@ where
             get_connection_handler: Arc::new(get_connection_handler),
             security_context,
             generic_context,
+            proxy_config,
         })
     }
 
@@ -458,6 +561,7 @@ where
                     .map(|context| context.clone()),
                 self.get_connection_handler.clone(),
                 self.generic_context.clone(),
+                self.proxy_config,
             )
             .handle(),
         );

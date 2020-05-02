@@ -30,6 +30,7 @@ use structopt::StructOpt;
 
 use ii_stratum_proxy::frontend::{Args, Config};
 use ii_stratum_proxy::server;
+use ii_stratum_proxy::server::ProxyConfig;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -50,6 +51,7 @@ async fn main() -> Result<()> {
         server::handle_connection,
         config.read_certificate_secret_key_pair().await?,
         (),
+        ProxyConfig::default(),
     )
     .context("Cannot bind the server")?;
 
