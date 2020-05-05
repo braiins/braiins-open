@@ -36,6 +36,8 @@ use tokio::net::TcpStream;
 use tokio::prelude::*;
 use tokio_util::codec::{Decoder, Encoder};
 
+use crate::connection::Connection;
+use crate::framing::Framing;
 use codec::{ProxyProtocolCodecV1, MAX_HEADER_SIZE, MIN_HEADER_SIZE};
 use error::{Error, Result};
 
@@ -363,6 +365,21 @@ impl<T: AsyncRead + Unpin> ProxyStream<T> {
 //         self.get_pin_mut().poll_shutdown(cx)
 //     }
 // }
+
+impl<F> From<ProxyStream<TcpStream>> for Connection<F>
+where
+    F: Framing,
+    F::Codec: Default,
+{
+    fn from(stream: ProxyStream<TcpStream>) -> Self {
+        use tokio_util::codec::{Framed, FramedParts};
+        let mut parts = FramedParts::new(stream.inner, F::Codec::default());
+        parts.read_buf = stream.buf; // pass existing read buffer
+        Connection {
+            framed_stream: Framed::from_parts(parts),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

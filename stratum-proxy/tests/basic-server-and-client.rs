@@ -28,7 +28,7 @@
 //! communicating any failures/panics to the test harness.
 
 use std::convert::{TryFrom, TryInto};
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::str::FromStr;
 
 use futures::prelude::*;
@@ -38,12 +38,17 @@ use ii_stratum::test_utils;
 use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_stratum_proxy::server;
-use ii_wire::{proxy, Address, Connection, Server};
+use ii_wire::{
+    Address, Connection, Server,
+    {proxy, proxy::WithProxyInfo},
+};
 
 mod utils;
 
 static ADDR: &'static str = "127.0.0.1";
 static PORT_V1: u16 = 9001;
+const PORT_V1_FULL: u16 = 9091;
+const PORT_V1_WITH_PROXY: u16 = 9092;
 static PORT_V2: u16 = 9002;
 static PORT_V2_FULL: u16 = 9003;
 static PORT_V2_WITH_PROXY: u16 = 9004;
@@ -152,14 +157,34 @@ async fn test_v2server() {
 //    );
 //}
 
-fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
+fn v1server_task<A: ToSocketAddrs>(
+    addr: A,
+    expected_proxy_header: Option<proxy::ProxyInfo>,
+) -> impl Future<Output = ()> {
     let mut server = Server::bind(&addr).expect("BUG: cannot bind to address");
 
     async move {
         while let Some(conn) = server.next().await {
-            let mut conn = Connection::<v1::Framing>::new(
-                conn.expect("BUG server did not provide connection"),
-            );
+            let conn = conn.expect("BUG server did not provide connection");
+            let mut conn = match expected_proxy_header {
+                None => Connection::<v1::Framing>::new(conn),
+                Some(ref proxy_info) => {
+                    let proxy_stream = proxy::Acceptor::new()
+                        .accept(conn)
+                        .await
+                        .expect("Invalid proxy header");
+                    // test that data in PROXY header is same as expected
+                    assert_eq!(
+                        proxy_info.original_destination,
+                        proxy_stream.original_destination_addr()
+                    );
+                    assert_eq!(
+                        proxy_info.original_source,
+                        proxy_stream.original_peer_addr()
+                    );
+                    proxy_stream.into()
+                }
+            };
 
             while let Some(frame) = conn.next().await {
                 let frame = frame.expect("BUG: Receiving frame failed");
@@ -183,15 +208,14 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
 /// TODO this test is currently work in progress and is disfunctional. Code needs to be consolidated
 /// And factor out common code with V2 server as attempted above.
 #[tokio::test]
-#[ignore]
 async fn test_v1server() {
-    let addr = format!("{}:{}", ADDR, PORT_V1)
+    let addr: SocketAddr = format!("{}:{}", ADDR, PORT_V1)
         .parse()
         .expect("BUG: Failed to parse Address");
 
     // Spawn server task that reacts to any incoming message and responds
     // with SetupConnectionSuccess
-    tokio::spawn(v1server_task(addr));
+    tokio::spawn(v1server_task(addr, None));
 
     // Testing client
     let mut connection = Connection::<v1::Framing>::connect(&addr)
@@ -253,6 +277,7 @@ async fn test_v2_client(server_addr: &Address, proxy_header: &Option<proxy::Prox
             test_utils::v2::TestIdentityHandler
                 .handle_v2(response)
                 .await;
+
             Result::<(), Error>::Ok(())
         }
     })
@@ -261,10 +286,12 @@ async fn test_v2_client(server_addr: &Address, proxy_header: &Option<proxy::Prox
 }
 
 #[tokio::test]
-async fn test_v2server_full() {
-    let addr_v1 = Address::from_str("stratum.slushpool.com:3333")
-        .expect("BUG: cannot build stratum v1 address");
+async fn test_v2server_full_no_proxy() {
+    let addr_v1 = Address(ADDR.into(), PORT_V1_FULL);
     let addr_v2 = Address(ADDR.into(), PORT_V2_FULL);
+
+    // dummy pool server
+    tokio::spawn(v1server_task(addr_v1.clone(), None));
 
     let v2server = server::ProxyServer::listen(
         addr_v2.clone(),
@@ -282,14 +309,21 @@ async fn test_v2server_full() {
 
     // Signal the server to shut down
     let _ = v2server_quit.try_send(());
-    // TODO kill v1 test server
 }
 
 #[tokio::test]
 async fn test_v2server_full_with_proxy() {
-    let addr_v1 = Address::from_str("stratum.slushpool.com:3333")
-        .expect("BUG: cannot build stratum v1 address");
+    let addr_v1 = Address(ADDR.into(), PORT_V1_WITH_PROXY);
     let addr_v2 = Address(ADDR.into(), PORT_V2_WITH_PROXY);
+
+    let original_source: Option<SocketAddr> = "127.0.0.10:1234".parse().ok();
+    let original_destination: Option<SocketAddr> = "127.0.0.20:5678".parse().ok();
+    let proxy_info: proxy::ProxyInfo = (original_source, original_destination)
+        .try_into()
+        .expect("BUG: invalid addresses");
+
+    // dummy pool server
+    tokio::spawn(v1server_task(addr_v1.clone(), Some(proxy_info.clone())));
 
     let v2server = server::ProxyServer::listen(
         addr_v2.clone(),
@@ -299,21 +333,15 @@ async fn test_v2server_full_with_proxy() {
         (),
         server::ProxyConfig {
             proxy_protocol_v1: true,
-            pass_proxy_protocol_v1: false,
+            pass_proxy_protocol_v1: true,
         },
     )
     .expect("BUG: Could not bind v2server");
     let mut v2server_quit = v2server.quit_channel();
 
     tokio::spawn(v2server.run());
-    let original_source: Option<SocketAddr> = "127.0.0.10:1234".parse().ok();
-    let original_destination: Option<SocketAddr> = "127.0.0.20:5678".parse().ok();
-    let proxy_info: proxy::ProxyInfo = (original_source, original_destination)
-        .try_into()
-        .expect("BUG: invalid addresses");
     test_v2_client(&addr_v2, &Some(proxy_info)).await;
 
     // Signal the server to shut down
     let _ = v2server_quit.try_send(());
-    // TODO kill v1 test server
 }
