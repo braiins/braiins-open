@@ -42,6 +42,7 @@ use ii_wire::{
     Address, Connection, Server,
     {proxy, proxy::WithProxyInfo},
 };
+use tokio::process::Command;
 
 mod utils;
 
@@ -325,23 +326,46 @@ async fn test_v2server_full_with_proxy() {
     // dummy pool server
     tokio::spawn(v1server_task(addr_v1.clone(), Some(proxy_info.clone())));
 
-    let v2server = server::ProxyServer::listen(
-        addr_v2.clone(),
-        addr_v1,
-        server::handle_connection,
-        None,
-        (),
-        server::ProxyConfig {
-            proxy_protocol_v1: true,
-            pass_proxy_protocol_v1: true,
-        },
-    )
-    .expect("BUG: Could not bind v2server");
-    let mut v2server_quit = v2server.quit_channel();
+    // let v2server = server::ProxyServer::listen(
+    //     addr_v2.clone(),
+    //     addr_v1,
+    //     server::handle_connection,
+    //     None,
+    //     (),
+    //     server::ProxyConfig {
+    //         proxy_protocol_v1: true,
+    //         pass_proxy_protocol_v1: true,
+    //     },
+    // )
+    // .expect("BUG: Could not bind v2server");
+    // let mut v2server_quit = v2server.quit_channel();
+    //
+    // tokio::spawn(v2server.run());
+    // here we prefer full integration test with running ii-stratum-proxy process
+    // TODO: review if full exec is actually the desired state of the integration test
+    let mut exe_file = std::env::current_exe()
+        .expect("cannot get current exe path")
+        .parent()
+        .expect("cannot get deps dir")
+        .parent()
+        .expect("cannot get bin dir")
+        .to_owned();
+    exe_file.push("ii-stratum-proxy");
+    exe_file.set_extension(std::env::consts::EXE_EXTENSION);
+    assert!(exe_file.exists());
+    let mut child = Command::new(exe_file)
+        .arg("--proxy-protocol-v1")
+        .arg("--pass-proxy-protocol-v1")
+        .arg("--insecure")
+        .arg("-l")
+        .arg(addr_v2.to_string())
+        .arg("-u")
+        .arg(addr_v1.to_string())
+        .spawn()
+        .expect("cannot spawn proxy process");
 
-    tokio::spawn(v2server.run());
     test_v2_client(&addr_v2, &Some(proxy_info)).await;
 
-    // Signal the server to shut down
-    let _ = v2server_quit.try_send(());
+    // Kill proxy process
+    child.kill().ok();
 }
