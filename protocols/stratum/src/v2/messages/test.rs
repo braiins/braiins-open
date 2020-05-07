@@ -23,8 +23,8 @@
 use bytes::{buf::BufMutExt, BytesMut};
 
 use super::*;
-use crate::payload::SerializablePayload;
 use crate::test_utils::v2::*;
+use crate::AnyPayload;
 
 #[test]
 fn test_deserialize_setup_connection() {

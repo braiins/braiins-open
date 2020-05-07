@@ -28,10 +28,14 @@ use bytes::{
 };
 
 use ii_logging::macros::*;
+use ii_unvariant::GetId;
 
 use super::{noise, Protocol};
-use crate::error::{Error, Result};
-use crate::payload::{Payload, SerializablePayload};
+use crate::payload::Payload;
+use crate::{
+    error::{Error, Result},
+    AnyPayload,
+};
 
 pub mod codec;
 
@@ -179,7 +183,7 @@ impl Frame {
     ) -> Self
     // TODO review the static lifetime
     where
-        T: 'static + SerializablePayload<Protocol>,
+        T: 'static + AnyPayload<Protocol>,
     {
         let header = Header::new(is_channel_msg, ext_type, msg_type, None);
         Self {
@@ -214,6 +218,14 @@ impl Frame {
     }
 }
 
+impl GetId for Frame {
+    type Id = u8;
+
+    fn get_id(&self) -> Self::Id {
+        self.header.msg_type
+    }
+}
+
 /// Helper struct that groups all framing related associated types (Frame + Error +
 /// Codec) for the `ii_wire::Framing` trait
 #[derive(Debug)]
@@ -231,7 +243,6 @@ pub const PAYLOAD_CHANNEL_OFFSET: usize = 4;
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use async_trait::async_trait;
 
     #[test]
     fn test_header_serialization() {
@@ -327,16 +338,7 @@ pub(crate) mod test {
 
         struct TestPayload;
 
-        #[async_trait]
-        impl SerializablePayload<Protocol> for TestPayload {
-            async fn accept(
-                &self,
-                _header: &<Protocol as crate::Protocol>::Header,
-                _handler: &mut <Protocol as crate::Protocol>::Handler,
-            ) {
-                panic!("BUG: no handling for TestPayload");
-            }
-
+        impl AnyPayload<Protocol> for TestPayload {
             fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
                 writer.write(&EXPECTED_FRAME_BYTES[6..])?;
                 Ok(())

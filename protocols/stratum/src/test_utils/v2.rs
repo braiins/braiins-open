@@ -20,16 +20,17 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use async_trait::async_trait;
 use bitcoin_hashes::{hex::FromHex, sha256d, Hash};
 use std::fmt::Debug;
 use uint;
 
 use ii_logging::macros::*;
+use ii_unvariant::handler;
 
+use crate::error::Result;
 use crate::test_utils::common::*;
 use crate::test_utils::v1;
-use crate::v2::{framing, messages::*, types::*, Handler};
+use crate::v2::{framing, messages::*, telemetry, types::*};
 
 /// Message payload visitor that compares the payload of the visited message (e.g. after
 /// deserialization test) with the payload built.
@@ -38,78 +39,68 @@ use crate::v2::{framing, messages::*, types::*, Handler};
 pub struct TestIdentityHandler;
 
 impl TestIdentityHandler {
-    fn visit_and_check<P, F>(&self, header: &framing::Header, payload: &P, build: F)
+    #[inline]
+    fn check_payload<P, F>(&self, payload_result: Result<P>, build: F)
     where
         P: Debug + PartialEq,
         F: FnOnce() -> P,
     {
         // Build expected payload for verifying correct deserialization
+        let payload = payload_result.expect("BUG: Message parsing failed");
         let expected_payload = build();
-        trace!(
-            "V2 TestIdentityHandler: Header: {:x?} Message {:?}",
-            header,
-            payload
-        );
-        assert_eq!(expected_payload, *payload, "Message payloads don't match");
+        trace!("V2 TestIdentityHandler: Message {:?}", payload);
+        assert_eq!(expected_payload, payload, "Message payloads don't match");
     }
 }
 
-#[async_trait]
-impl Handler for TestIdentityHandler {
-    async fn visit_setup_connection(
+#[handler(async try framing::Frame suffix _v2)]
+impl TestIdentityHandler {
+    async fn handle_setup_connection(&mut self, msg: Result<SetupConnection>) {
+        self.check_payload(msg, build_setup_connection);
+    }
+
+    async fn handle_setup_connection_success(&mut self, msg: Result<SetupConnectionSuccess>) {
+        self.check_payload(msg, build_setup_connection_success);
+    }
+
+    async fn handle_open_standard_mining_channel(
         &mut self,
-        header: &framing::Header,
-        payload: &SetupConnection,
+        msg: Result<OpenStandardMiningChannel>,
     ) {
-        self.visit_and_check(header, payload, build_setup_connection);
+        self.check_payload(msg, build_open_channel);
     }
 
-    async fn visit_setup_connection_success(
+    async fn handle_open_standard_mining_channel_success(
         &mut self,
-        header: &framing::Header,
-        payload: &SetupConnectionSuccess,
+        msg: Result<OpenStandardMiningChannelSuccess>,
     ) {
-        self.visit_and_check(header, payload, build_setup_connection_success);
+        self.check_payload(msg, build_open_channel_success);
     }
 
-    async fn visit_open_standard_mining_channel(
-        &mut self,
-        header: &framing::Header,
-        payload: &OpenStandardMiningChannel,
-    ) {
-        self.visit_and_check(header, payload, build_open_channel);
+    async fn handle_new_mining_job(&mut self, msg: Result<NewMiningJob>) {
+        self.check_payload(msg, build_new_mining_job);
     }
 
-    async fn visit_open_standard_mining_channel_success(
-        &mut self,
-        header: &framing::Header,
-        payload: &OpenStandardMiningChannelSuccess,
-    ) {
-        self.visit_and_check(header, payload, build_open_channel_success);
+    async fn handle_set_new_prev_hash(&mut self, msg: Result<SetNewPrevHash>) {
+        self.check_payload(msg, build_set_new_prev_hash);
     }
 
-    async fn visit_new_mining_job(&mut self, header: &framing::Header, payload: &NewMiningJob) {
-        self.visit_and_check(header, payload, build_new_mining_job);
+    async fn handle_submit_shares_standard(&mut self, msg: Result<SubmitSharesStandard>) {
+        self.check_payload(msg, build_submit_shares);
     }
 
-    async fn visit_set_new_prev_hash(
-        &mut self,
-        header: &framing::Header,
-        payload: &SetNewPrevHash,
-    ) {
-        self.visit_and_check(header, payload, build_set_new_prev_hash);
+    async fn handle_submit_shares_success(&mut self, _msg: Result<SubmitSharesSuccess>) {
+        // self.check_payload(msg, build_submit_shares);
+        // TODO
     }
 
-    async fn visit_submit_shares_standard(
-        &mut self,
-        header: &framing::Header,
-        payload: &SubmitSharesStandard,
-    ) {
-        self.visit_and_check(header, payload, build_submit_shares);
+    async fn handle_reconnect(&mut self, msg: Result<Reconnect>) {
+        self.check_payload(msg, build_reconnect);
     }
 
-    async fn visit_reconnect(&mut self, header: &framing::Header, payload: &Reconnect) {
-        self.visit_and_check(header, payload, build_reconnect);
+    #[handle(_)]
+    async fn handle_everything(&mut self, frame: framing::Frame) {
+        panic!("BUG: No handler method for received frame: {:?}", frame);
     }
 }
 
@@ -222,5 +213,45 @@ pub fn build_reconnect() -> Reconnect {
     Reconnect {
         new_host: Str0_255::from_str(POOL_URL),
         new_port: POOL_PORT as u16,
+    }
+}
+
+pub fn build_open_telemetry_channel() -> telemetry::messages::OpenTelemetryChannel {
+    telemetry::messages::OpenTelemetryChannel {
+        req_id: 0,
+        dev_id: Default::default(),
+    }
+}
+
+pub fn build_open_telemetry_channel_success() -> telemetry::messages::OpenTelemetryChannelSuccess {
+    telemetry::messages::OpenTelemetryChannelSuccess {
+        req_id: 0,
+        channel_id: 0,
+    }
+}
+pub fn build_open_telemetry_channel_error() -> telemetry::messages::OpenTelemetryChannelError {
+    telemetry::messages::OpenTelemetryChannelError {
+        req_id: 0,
+        code: Default::default(),
+    }
+}
+pub fn build_submit_telemetry_data() -> telemetry::messages::SubmitTelemetryData {
+    telemetry::messages::SubmitTelemetryData {
+        channel_id: 0,
+        seq_num: 0,
+        telemetry_payload: Default::default(),
+    }
+}
+pub fn build_submit_telemetry_data_success() -> telemetry::messages::SubmitTelemetryDataSuccess {
+    telemetry::messages::SubmitTelemetryDataSuccess {
+        channel_id: 0,
+        last_seq_num: 0,
+    }
+}
+pub fn build_submit_telemetry_data_error() -> telemetry::messages::SubmitTelemetryDataError {
+    telemetry::messages::SubmitTelemetryDataError {
+        channel_id: 0,
+        seq_num: 0,
+        code: Default::default(),
     }
 }

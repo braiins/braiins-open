@@ -647,7 +647,6 @@ name = "ii-stratum"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "bitcoin_hashes",
  "bs58",
  "byteorder",
@@ -658,6 +657,7 @@ dependencies = [
  "ii-async-utils",
  "ii-bitcoin",
  "ii-logging",
+ "ii-unvariant",
  "ii-wire",
  "lazy_static",
  "packed_struct",
@@ -679,7 +679,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrayvec",
- "async-trait",
  "bitcoin_hashes",
  "bytes 0.5.4",
  "clap",
@@ -688,12 +687,31 @@ dependencies = [
  "ii-async-utils",
  "ii-logging",
  "ii-stratum",
+ "ii-unvariant",
  "ii-wire",
  "serde_json",
  "structopt",
  "thiserror",
  "tokio",
  "uint",
+]
+
+[[package]]
+name = "ii-unvariant"
+version = "0.1.0"
+dependencies = [
+ "ii-unvariant-macros",
+ "proc-macro-hack",
+]
+
+[[package]]
+name = "ii-unvariant-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro-hack",
+ "proc-macro2",
+ "quote 1.0.4",
+ "syn 1.0.20",
 ]
 
 [[package]]

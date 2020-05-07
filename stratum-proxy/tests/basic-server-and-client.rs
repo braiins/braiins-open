@@ -27,7 +27,7 @@
 //! NOTE: currently this test must be run with --nocapture flag as there is no reasonable way of
 //! communicating any failures/panics to the test harness.
 
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::net::SocketAddr;
 use std::str::FromStr;
 
@@ -59,9 +59,8 @@ async fn test_v2server() {
     tokio::spawn(async move {
         let mut conn = Connection::<v2::Framing>::new(server.next().await.unwrap().unwrap());
         let frame = conn.next().await.unwrap().unwrap();
-        let msg = v2::build_message_from_frame(frame).expect("Failed to build message from frame");
         // test handler verifies that the message
-        msg.accept(&mut test_utils::v2::TestIdentityHandler).await;
+        test_utils::v2::TestIdentityHandler.handle_v2(frame).await;
 
         // test response frame
         conn.send(
@@ -89,10 +88,8 @@ async fn test_v2server() {
         .expect("BUG: Could not send message");
 
     let response_frame = connection.next().await.unwrap().unwrap();
-    let response = v2::build_message_from_frame(response_frame)
-        .expect("Failed to build response message from frame");
-    response
-        .accept(&mut test_utils::v2::TestIdentityHandler)
+    test_utils::v2::TestIdentityHandler
+        .handle_v2(response_frame)
         .await;
 }
 
@@ -153,10 +150,12 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
 
             while let Some(frame) = conn.next().await {
                 let frame = frame.expect("Receiving frame failed");
-                let msg: ii_stratum::Message<v1::Protocol> =
-                    v1::build_message_from_frame(frame).expect("Cannot deserialize frame");
+                let deserialized =
+                    v1::rpc::Rpc::try_from(frame).expect("BUG: Frame deserialization failed");
                 // test handler verifies that the message
-                msg.accept(&mut test_utils::v1::TestIdentityHandler).await;
+                test_utils::v1::TestIdentityHandler
+                    .handle_v1(deserialized)
+                    .await;
 
                 // test response frame
                 let response = test_utils::v1::build_subscribe_ok_response_message();
@@ -191,9 +190,11 @@ async fn test_v1server() {
         .expect("BUG: Could not send request");
 
     let response_frame = connection.next().await.unwrap().unwrap();
-    let response = v1::build_message_from_frame(response_frame).expect("Cannot deserialize frame");
-    response
-        .accept(&mut test_utils::v1::TestIdentityHandler)
+
+    let deserialized =
+        v1::rpc::Rpc::try_from(response_frame).expect("BUG: Frame deserialization failed");
+    test_utils::v1::TestIdentityHandler
+        .handle_v1(deserialized)
         .await;
 }
 

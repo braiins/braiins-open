@@ -38,8 +38,10 @@ where
     // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait)
     let frame: v2::Frame = message.try_into().expect("Could not serialize message");
 
-    let msg = v2::build_message_from_frame(frame).expect("Deserialization failed");
-    msg.accept(translation).await;
+    translation
+        .handle_v2(frame)
+        .await
+        .expect("BUG: Message handling failed");
 }
 
 async fn v1_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
@@ -49,22 +51,22 @@ where
     // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait) as if it arrived to translation
     let frame: v1::Frame = message.try_into().expect("Deserialization failed");
 
-    let msg = v1::build_message_from_frame(frame).expect("Deserialization failed");
-    msg.accept(translation).await;
+    let deserialized = v1::rpc::Rpc::try_from(frame).expect("BUG: Message deserialization failed");
+
+    translation
+        .handle_v1(deserialized)
+        .await
+        .expect("BUG: V1 Frame handling failed");
 }
 
 async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<v2::Frame>) {
     // Pickup the response and verify it
     let v2_response_tx_frame = v2_rx.next().await.expect("At least 1 message was expected");
-
     // This is specific for the unit test only: Instead of sending the message via some
     // connection, the test case will deserialize it and inspect it using the identity
     // handler from test utils
-    let v2_response =
-        v2::build_message_from_frame(v2_response_tx_frame).expect("Deserialization failed");
-    // verify the response using testing identity handler
-    v2_response
-        .accept(&mut test_utils::v2::TestIdentityHandler)
+    test_utils::v2::TestIdentityHandler
+        .handle_v2(v2_response_tx_frame)
         .await;
 }
 
@@ -73,8 +75,10 @@ async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<v1::Fra
     // TODO add timeout
     let frame = v1_rx.next().await.expect("At least 1 message was expected");
 
-    let msg = v1::build_message_from_frame(frame).expect("Deserialization failed");
-    msg.accept(&mut test_utils::v1::TestIdentityHandler).await;
+    let deserialized = v1::rpc::Rpc::try_from(frame).expect("BUG: Message deserialization failed");
+    test_utils::v1::TestIdentityHandler
+        .handle_v1(deserialized)
+        .await;
 }
 
 #[tokio::test]

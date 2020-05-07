@@ -28,10 +28,10 @@ use std::fmt;
 use crate::error::Result;
 use crate::Protocol;
 
-pub use crate::AnyPayload as SerializablePayload;
+pub use crate::AnyPayload;
 
 ///// This trait allows lazy serialization of a frame payload
-//pub trait SerializablePayload: Send + Sync {
+//pub trait NewAnyPayload: Send + Sync {
 //    /// The payload is serialized to a specified `writer`
 //    fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()>;
 //}
@@ -47,14 +47,12 @@ pub use crate::AnyPayload as SerializablePayload;
 /// TODO: consider splitting this into 2 structs - one for SerializedBytes and one for LazyBytes
 pub enum Payload<P> {
     SerializedBytes(BytesMut),
-    LazyBytes(Box<dyn SerializablePayload<P>>),
+    LazyBytes(Box<dyn AnyPayload<P>>),
 }
 
 impl<P: Protocol> Payload<P> {
     /// Helper associated method that converts `serializable_payload` to `BytesMut`
-    fn serializable_payload_to_bytes_mut(
-        payload: &Box<dyn SerializablePayload<P>>,
-    ) -> Result<BytesMut> {
+    fn serializable_payload_to_bytes_mut(payload: &Box<dyn AnyPayload<P>>) -> Result<BytesMut> {
         // TODO: use some default capacity
         let payload_bytes = BytesMut::new();
         let mut writer = payload_bytes.writer();
@@ -62,12 +60,12 @@ impl<P: Protocol> Payload<P> {
         Ok(writer.into_inner())
     }
 
-    /// Build the payload from `SerializablePayload`. Note: we cannot use standard `From` trait
+    /// Build the payload from `NewAnyPayload`. Note: we cannot use standard `From` trait
     /// implementation for T due to conflicting blanket implementation in the std::convert module
-    /// TODO consider moving the 'static lifetime into `SerializablePayload`
+    /// TODO consider moving the 'static lifetime into `NewAnyPayload`
     pub fn from_serializable<T>(payload: T) -> Self
     where
-        T: 'static + SerializablePayload<P>,
+        T: 'static + AnyPayload<P>,
     {
         Self::LazyBytes(Box::new(payload))
     }
@@ -82,7 +80,7 @@ impl<P: Protocol> Payload<P> {
     }
 
     /// Consumes the payload and provides the serializable inner variant of the payload or None
-    pub fn into_serializable(self) -> Option<Box<dyn SerializablePayload<P>>> {
+    pub fn into_serializable(self) -> Option<Box<dyn AnyPayload<P>>> {
         match self {
             Self::SerializedBytes(_) => None,
             Self::LazyBytes(payload) => Some(payload),
@@ -148,7 +146,7 @@ impl<P: Protocol> From<BytesMut> for Payload<P> {
 ///  `impl<T> std::convert::From<T> for T;`
 //impl<P: Protocol, T> From<T> for Payload<P>
 //where
-//    T: SerializablePayload<P>,
+//    T: NewAnyPayload<P>,
 //{
 //    fn from(payload: T) -> Self {
 //        Self::LazyBytes(Box::new(payload))

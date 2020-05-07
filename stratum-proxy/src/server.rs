@@ -40,6 +40,7 @@ use ii_wire::{Address, Client, Connection, Server};
 
 use crate::error::{Error, Result};
 use crate::translation::V2ToV1Translation;
+use std::convert::TryFrom;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
 pub struct ConnTranslation {
@@ -94,8 +95,8 @@ impl ConnTranslation {
         translation: &mut V2ToV1Translation,
         frame: v1::framing::Frame,
     ) -> Result<()> {
-        let v1_msg = v1::build_message_from_frame(frame)?;
-        v1_msg.accept(translation).await;
+        let deserialized = v1::rpc::Rpc::try_from(frame)?;
+        translation.handle_v1(deserialized).await?;
         Ok(())
     }
 
@@ -106,8 +107,7 @@ impl ConnTranslation {
     ) -> Result<()> {
         match frame.header.extension_type {
             v2::extensions::BASE => {
-                let event_msg = v2::build_message_from_frame(frame)?;
-                event_msg.accept(translation).await;
+                translation.handle_v2(frame).await?;
             }
             // Report any other extension down the line
             _ => {

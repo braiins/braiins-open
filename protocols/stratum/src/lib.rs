@@ -20,8 +20,6 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use async_trait::async_trait;
-
 pub mod error;
 pub mod payload;
 pub mod v1;
@@ -37,28 +35,12 @@ pub const BIP320_N_VERSION_MAX_BITS: usize = 16;
 
 /// Describes protocol and its associated Handler
 pub trait Protocol {
-    type Handler: ?Sized + Send;
     type Header;
 }
 
-/// Payload that can accept a visitor or can be serialized
-#[async_trait]
 pub trait AnyPayload<P: Protocol>: Sync + Send {
-    async fn accept(&self, header: &P::Header, handler: &mut P::Handler);
     /// The payload is serialized to a specified `writer`
     fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()>;
-}
-
-/// Generic protocol message that can be handled via accepting a dedicated visitor (handler)
-pub struct Message<P: Protocol> {
-    pub header: P::Header,
-    payload: Box<dyn AnyPayload<P>>,
-}
-
-impl<P: Protocol> Message<P> {
-    pub async fn accept(&self, handler: &mut P::Handler) {
-        self.payload.accept(&self.header, handler).await;
-    }
 }
 
 // This is here because some test utilities need to be shared between

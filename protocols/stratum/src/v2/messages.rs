@@ -22,8 +22,6 @@
 
 //! All stratum V2 protocol messages
 
-use async_trait::async_trait;
-use packed_struct_codegen::PrimitiveEnum_u8;
 use serde;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -39,6 +37,9 @@ use crate::AnyPayload;
 #[cfg(feature = "v2json")]
 use serde_json as serialization;
 
+// use ii_unvariant::{id, unvariant, GetId, Id};
+use ii_unvariant::{id, Id};
+
 #[cfg(test)]
 mod test;
 
@@ -49,40 +50,7 @@ macro_rules! impl_base_message_conversion {
     };
 }
 
-/// All message recognized by the protocol
-#[derive(PrimitiveEnum_u8, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum MessageType {
-    SetupConnection = 0x00,
-    SetupConnectionSuccess = 0x01,
-    SetupConnectionError = 0x02,
-    ChannelEndpointChanged = 0x03,
-
-    // Mining Protocol
-    OpenStandardMiningChannel = 0x10,
-    OpenStandardMiningChannelSuccess = 0x11,
-    OpenStandardMiningChannelError = 0x12,
-    OpenExtendedMiningChannel = 0x13,
-    OpenExtendedMiningChannelSuccess = 0x14,
-    OpenExtendedMiningChannelError = 0x15,
-    UpdateChannel = 0x16,
-    UpdateChannelError = 0x17,
-    CloseChannel = 0x18,
-    SetExtranoncePrefix = 0x19,
-    SubmitSharesStandard = 0x1a,
-    SubmitSharesExtended = 0x1b,
-    SubmitSharesSuccess = 0x1c,
-    SubmitSharesError = 0x1d,
-    NewMiningJob = 0x1e,
-    NewExtendedMiningJob = 0x1f,
-    SetNewPrevHash = 0x20,
-    SetTarget = 0x21,
-    SetCustomMiningJob = 0x22,
-    SetCustomMiningJobSuccess = 0x23,
-    SetCustomMiningError = 0x24,
-    Reconnect = 0x25,
-    SetGroupChannel = 0x26,
-}
-
+#[id(0x00u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetupConnection {
     pub protocol: u8,
@@ -95,6 +63,7 @@ pub struct SetupConnection {
     pub device: DeviceInfo,
 }
 
+#[id(0x01u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetupConnectionSuccess {
     pub used_version: u16,
@@ -102,20 +71,29 @@ pub struct SetupConnectionSuccess {
     pub flags: u32,
 }
 
+#[id(0x02u8)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SetupConnectionError {
     pub flags: u32,
     pub code: Str0_255,
 }
 
+#[id(0x03u8)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ChannelEndpointChanged {
+    pub channel_id: u32,
+}
+
+#[id(0x10u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenStandardMiningChannel {
     pub req_id: u32,
-    pub user: Str1_255,
+    pub user: Str0_255,
     pub nominal_hashrate: f32,
     pub max_target: Uint256Bytes,
 }
 
+#[id(0x11u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenStandardMiningChannelSuccess {
     pub req_id: u32,
@@ -127,31 +105,47 @@ pub struct OpenStandardMiningChannelSuccess {
     pub group_channel_id: u32,
 }
 
+#[id(0x12u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenStandardMiningChannelError {
     pub req_id: u32,
     pub code: Str0_32,
 }
 
+#[id(0x16u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct UpdateChannel;
+pub struct UpdateChannel {
+    pub channel_id: u32,
+    pub nominal_hash_rate: f32,
+    pub maximum_target: Uint256Bytes,
+}
 
+#[id(0x17u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct UpdateChannelError;
+pub struct UpdateChannelError {
+    pub channel_id: u32,
+    pub error_code: Str0_32,
+}
 
-pub struct CloseChannel;
+#[id(0x18u8)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct CloseChannel {
+    pub channel_id: u32,
+    pub reason_code: Str0_32,
+}
 
+#[id(0x1au8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitSharesStandard {
     pub channel_id: u32,
     pub seq_num: u32,
     pub job_id: u32,
-
     pub nonce: u32,
     pub ntime: u32,
     pub version: u32,
 }
 
+#[id(0x1cu8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitSharesSuccess {
     pub channel_id: u32,
@@ -160,6 +154,7 @@ pub struct SubmitSharesSuccess {
     pub new_shares_sum: u32,
 }
 
+#[id(0x1du8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitSharesError {
     pub channel_id: u32,
@@ -167,6 +162,7 @@ pub struct SubmitSharesError {
     pub code: Str0_32,
 }
 
+#[id(0x1eu8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct NewMiningJob {
     pub channel_id: u32,
@@ -176,8 +172,20 @@ pub struct NewMiningJob {
     pub merkle_root: Uint256Bytes,
 }
 
-pub struct NewExtendedMiningJob;
+#[id(0x1fu8)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct NewExtendedMiningJob {
+    pub channel_id: u32,
+    pub job_id: u32,
+    pub future_job: bool,
+    pub version: u32,
+    pub version_rolling_allowed: bool,
+    pub merkle_path: Seq0_255<Uint256Bytes>,
+    pub coinbase_tx_prefix: Bytes0_64k,
+    pub coinbase_tx_suffix: Bytes0_64k,
+}
 
+#[id(0x20u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetNewPrevHash {
     pub channel_id: u32,
@@ -185,23 +193,23 @@ pub struct SetNewPrevHash {
     pub prev_hash: Uint256Bytes,
     pub min_ntime: u32,
     pub nbits: u32,
-    // TODO specify signature type
-    //pub signature: ??,
 }
 
 pub struct SetCustomMiningJob;
 pub struct SetCustomMiningJobSuccess;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct Reconnect {
-    pub new_host: Str0_255,
-    pub new_port: u16,
-}
-
+#[id(0x21u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetTarget {
     pub channel_id: u32,
     pub max_target: Uint256Bytes,
+}
+
+#[id(0x25u8)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Reconnect {
+    pub new_host: Str0_255,
+    pub new_port: u16,
 }
 
 pub struct SetGroupChannel;
@@ -213,6 +221,11 @@ impl_base_message_conversion!(
     visit_setup_connection_success
 );
 impl_base_message_conversion!(SetupConnectionError, false, visit_setup_connection_error);
+impl_base_message_conversion!(
+    ChannelEndpointChanged,
+    false,
+    visit_channel_endpoint_changed
+);
 impl_base_message_conversion!(
     OpenStandardMiningChannel,
     false,
@@ -231,10 +244,12 @@ impl_base_message_conversion!(
 
 impl_base_message_conversion!(UpdateChannel, true, visit_update_channel);
 impl_base_message_conversion!(UpdateChannelError, true, visit_update_channel_error);
+impl_base_message_conversion!(CloseChannel, true, visit_close_channel);
 impl_base_message_conversion!(SubmitSharesStandard, true, visit_submit_shares_standard);
 impl_base_message_conversion!(SubmitSharesSuccess, true, visit_submit_shares_success);
 impl_base_message_conversion!(SubmitSharesError, true, visit_submit_shares_error);
 impl_base_message_conversion!(NewMiningJob, true, visit_new_mining_job);
+impl_base_message_conversion!(NewExtendedMiningJob, true, visit_new_extended_mining_job);
 impl_base_message_conversion!(SetNewPrevHash, true, visit_set_new_prev_hash);
 impl_base_message_conversion!(Reconnect, false, visit_reconnect);
 impl_base_message_conversion!(SetTarget, true, visit_set_target);

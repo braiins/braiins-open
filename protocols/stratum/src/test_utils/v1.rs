@@ -20,7 +20,6 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use async_trait::async_trait;
 use bytes::BytesMut;
 use serde::Serialize;
 use std::convert::{TryFrom, TryInto};
@@ -28,9 +27,11 @@ use std::fmt::Debug;
 use std::str::FromStr;
 
 use ii_logging::macros::*;
+use ii_unvariant::handler;
 
 use super::common::*;
-use crate::v1::{framing::*, messages::*, rpc::*, ExtraNonce1, Handler, HexBytes, MessageId};
+use crate::error::Result;
+use crate::v1::{framing::*, messages::*, rpc::*, ExtraNonce1, HexBytes, MessageId};
 
 pub const MINING_CONFIGURE_REQ_JSON: &str = concat!(
     r#"{"id":0,"method":"mining.configure","#,
@@ -341,48 +342,56 @@ impl TestIdentityHandler {
     }
 }
 
-#[async_trait]
-impl Handler for TestIdentityHandler {
-    async fn visit_stratum_result(&mut self, id: &MessageId, payload: &StratumResult) {
+#[handler(async try Rpc suffix _v1)]
+impl TestIdentityHandler {
+    async fn handle_stratum_result(&mut self, msg: Result<StratumResultWithId>) {
+        let StratumResultWithId(id, msg) = msg.expect("BUG: message unvariation failed");
         self.visit_and_check(
-            id,
-            payload,
+            &id,
+            &msg,
             || {
                 StratumResult::new_from(build_subscribe_ok_result())
                     .expect("Cannot convert to stratum result")
             },
-            build_result_response_message(id.expect("Message ID missing"), payload),
+            build_result_response_message(id.expect("Message ID missing"), &msg),
             MINING_SUBSCRIBE_OK_RESULT_JSON,
         );
     }
 
-    async fn visit_configure(&mut self, id: &MessageId, payload: &Configure) {
-        self.visit_and_check_request(id, payload, build_configure, MINING_CONFIGURE_REQ_JSON);
+    async fn handle_notify(&mut self, msg: Result<NotifyWithId>) {
+        let NotifyWithId(id, msg) = msg.expect("BUG: message unvariation failed");
+
+        self.visit_and_check_request(&id, &msg, build_mining_notify, MINING_NOTIFY_JSON);
     }
 
-    async fn visit_subscribe(&mut self, id: &MessageId, payload: &Subscribe) {
-        self.visit_and_check_request(id, payload, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
+    async fn handle_configure(&mut self, payload: Result<ConfigureWithId>) {
+        let ConfigureWithId(id, msg) = payload.expect("BUG: message unvariation failed");
+        self.visit_and_check_request(&id, &msg, build_configure, MINING_CONFIGURE_REQ_JSON);
     }
 
-    async fn visit_authorize(&mut self, id: &MessageId, payload: &Authorize) {
-        self.visit_and_check_request(id, payload, build_authorize, MINING_AUTHORIZE_JSON);
+    async fn handle_subscribe(&mut self, payload: Result<SubscribeWithId>) {
+        let SubscribeWithId(id, msg) = payload.expect("BUG: message unvariation failed");
+        self.visit_and_check_request(&id, &msg, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
     }
 
-    async fn visit_set_difficulty(&mut self, id: &MessageId, payload: &SetDifficulty) {
-        self.visit_and_check_request(
-            id,
-            payload,
-            build_set_difficulty,
-            MINING_SET_DIFFICULTY_JSON,
-        );
+    async fn handle_authorize(&mut self, payload: Result<AuthorizeWithId>) {
+        let AuthorizeWithId(id, msg) = payload.expect("BUG: message unvariation failed");
+        self.visit_and_check_request(&id, &msg, build_authorize, MINING_AUTHORIZE_JSON);
     }
 
-    async fn visit_notify(&mut self, id: &MessageId, payload: &Notify) {
-        self.visit_and_check_request(id, payload, build_mining_notify, MINING_NOTIFY_JSON);
+    async fn handle_set_difficulty(&mut self, payload: Result<SetDifficultyWithId>) {
+        let SetDifficultyWithId(id, msg) = payload.expect("BUG: message unvariation failed");
+        self.visit_and_check_request(&id, &msg, build_set_difficulty, MINING_SET_DIFFICULTY_JSON);
     }
 
-    async fn visit_submit(&mut self, id: &MessageId, payload: &Submit) {
-        self.visit_and_check_request(id, payload, build_mining_submit, MINING_SUBMIT_JSON);
+    async fn handle_submit(&mut self, payload: Result<SubmitWithId>) {
+        let SubmitWithId(id, msg) = payload.expect("BUG: message unvariation failed");
+        self.visit_and_check_request(&id, &msg, build_mining_submit, MINING_SUBMIT_JSON);
+    }
+
+    #[handle(_)]
+    async fn handle_rest(&mut self, _rpc: Rpc) {
+        println!("unknown");
     }
 }
 

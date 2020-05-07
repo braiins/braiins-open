@@ -26,7 +26,6 @@
 //! - stratum request (with optional ID), request with NULL ID is considered a notification.
 //! - stratum response (associated with a previously issued request by the ID)
 
-use async_trait::async_trait;
 use serde;
 use serde::{de, Deserialize, Serialize};
 use serde_json;
@@ -35,9 +34,10 @@ use std::convert::TryFrom;
 use std::result::Result as StdResult;
 use std::str::FromStr;
 
-use super::{framing, Handler, Protocol};
+use super::{framing, Protocol};
 use crate::error::{Error, Result};
 use crate::AnyPayload;
+use ii_unvariant::{GetId, Id};
 
 /// All recognized methods of the V1 protocol have the 'mining.' prefix in json.
 #[derive(Serialize, Debug, PartialEq)]
@@ -126,6 +126,35 @@ impl StratumResult {
     }
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct StratumResultWithId(pub super::MessageId, pub StratumResult);
+
+impl GetId for StratumResultWithId {
+    type Id = &'static str;
+
+    fn get_id(&self) -> Self::Id {
+        super::RESULT_ATTRIBUTE
+    }
+}
+
+impl Id<&str> for StratumResultWithId {
+    const ID: &'static str = super::RESULT_ATTRIBUTE;
+}
+
+impl TryFrom<Rpc> for StratumResultWithId {
+    type Error = Error;
+
+    fn try_from(value: Rpc) -> Result<Self> {
+        if let Rpc::Response(r) = value {
+            let id = Some(r.id);
+            if let Some(e) = r.payload.result {
+                return Ok(Self(id, e));
+            }
+        }
+        Err(Error::General("TODO: ".into()))
+    }
+}
+
 // Note: this doesn't work due to conflicting implementation from core (
 // ```impl<T, U> std::convert::TryFrom<U> for T
 //            where U: std::convert::Into<T>; ```
@@ -139,13 +168,7 @@ impl StratumResult {
 //    }
 //}
 
-/// Specific protocol implementation for any stratum result
-#[async_trait::async_trait]
 impl AnyPayload<Protocol> for StratumResult {
-    async fn accept(&self, id: &<Protocol as crate::Protocol>::Header, handler: &mut dyn Handler) {
-        handler.visit_stratum_result(id, self).await;
-    }
-
     fn serialize_to_writer(&self, _writer: &mut dyn std::io::Write) -> Result<()> {
         panic!(
             "BUG: serialization of partial message without Rpc not supported {:?}",
@@ -164,22 +187,41 @@ pub struct StratumError(pub i32, pub String, pub Option<String>);
 //    pub trace_back: Option<String>,
 //}
 
-/// Specific protocol implementation for any stratum error
-#[async_trait::async_trait]
 impl AnyPayload<Protocol> for StratumError {
-    async fn accept(
-        &self,
-        id: &<Protocol as crate::Protocol>::Header,
-        handler: &mut <Protocol as crate::Protocol>::Handler,
-    ) {
-        handler.visit_stratum_error(id, self).await;
-    }
-
     fn serialize_to_writer(&self, _writer: &mut dyn std::io::Write) -> Result<()> {
         panic!(
             "BUG: serialization of partial message without Rpc not supported {:?}",
             self
         );
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct StratumErrorWithId(pub super::MessageId, pub StratumError);
+
+impl GetId for StratumErrorWithId {
+    type Id = &'static str;
+
+    fn get_id(&self) -> Self::Id {
+        super::ERROR_ATTRIBUTE
+    }
+}
+
+impl Id<&str> for StratumErrorWithId {
+    const ID: &'static str = super::ERROR_ATTRIBUTE;
+}
+
+impl TryFrom<Rpc> for StratumErrorWithId {
+    type Error = Error;
+
+    fn try_from(value: Rpc) -> Result<Self> {
+        if let Rpc::Response(r) = value {
+            let id = Some(r.id);
+            if let Some(e) = r.payload.error {
+                return Ok(Self(id, e));
+            }
+        }
+        Err(Error::General("TODO: ".into()))
     }
 }
 
@@ -212,6 +254,49 @@ pub struct Response {
 pub enum Rpc {
     Request(Request),
     Response(Response),
+}
+
+impl GetId for Rpc {
+    type Id = &'static str;
+
+    fn get_id(&self) -> Self::Id {
+        match self {
+            Rpc::Request(r) => r.get_id(),
+            Rpc::Response(r) => r.get_id(),
+        }
+    }
+}
+
+impl GetId for Request {
+    type Id = &'static str;
+
+    fn get_id(&self) -> Self::Id {
+        match &self.payload.method {
+            Method::Subscribe => "mining.subscribe",
+            Method::ExtranonceSubscribe => "mining.extranonce.subscribe",
+            Method::Authorize => "mining.authorize",
+            Method::SetDifficulty => "mining.set_difficulty",
+            Method::SetExtranonce => "mining.set_extranonce",
+            Method::Configure => "mining.configure",
+            Method::Submit => "mining.submit",
+            Method::Notify => "mining.notify",
+            Method::SetVersionMask => "mining.set_version_mask",
+            Method::ClientReconnect => "client.reconnect",
+            Method::Unknown(_unknown) => super::ERROR_ATTRIBUTE,
+        }
+    }
+}
+
+impl GetId for Response {
+    type Id = &'static str;
+
+    fn get_id(&self) -> Self::Id {
+        if let Some(_f) = &self.payload.result {
+            super::RESULT_ATTRIBUTE
+        } else {
+            super::ERROR_ATTRIBUTE
+        }
+    }
 }
 
 impl From<Request> for Rpc {
@@ -265,19 +350,10 @@ impl FromStr for Rpc {
     }
 }
 
-/// Each RPC is a `SerializablePayload` object that can be serialized into `writer` on demand
-#[async_trait]
 impl AnyPayload<Protocol> for Rpc {
     /// This will never get used as we don't do any handling on Rpc level. Since the RPC is also a
     /// SerializablePayload we have to provide a default implementation.
-    async fn accept(
-        &self,
-        _id: &<Protocol as crate::Protocol>::Header,
-        _handler: &mut <Protocol as crate::Protocol>::Handler,
-    ) {
-        panic!("BUG: Cannot accept handler for generic RPC {:?}", self);
-    }
-
+    ///
     fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
         serde_json::to_writer(writer, self).map_err(Into::into)
     }

@@ -12,7 +12,6 @@ bitcoin_hashes = "0.3.2"
 uint = "0.5.0"
 ctrlc = "3.1.0"
 serde_json = "1.0.39"
-async-trait = "0.1.17"
 futures = { version = "0.3.1", features = ["compat"] }
 bytes = "0.5"
 tokio = { version = "0.2.10", features = ["full"] }
@@ -20,6 +19,7 @@ ii-stratum = { path = "../protocols/stratum" }
 ii-wire = { path = "../protocols/wire" }
 ii-async-utils = { path = "../utils-rs/async-utils" }
 ii-logging = { path = "../utils-rs/logging" }
+ii-unvariant = { path = "../utils-rs/unvariant/unvariant" }
 structopt = "0.3"
 thiserror = "1.0.20"
 anyhow = "1.0.31"

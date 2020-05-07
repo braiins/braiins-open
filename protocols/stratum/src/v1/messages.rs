@@ -22,25 +22,55 @@
 
 //! Definition of all Stratum V1 messages
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 
-use super::error::Error;
+use ii_unvariant::{id, Id};
+
+use super::{error::Error, RESULT_ATTRIBUTE};
 
 use crate::error::Result;
 use crate::v1::{
-    rpc::{self, Method},
-    ExtraNonce1, HexBytes, HexU32Be, PrevHash, Protocol,
+    rpc::{self, Method, Rpc},
+    ExtraNonce1, HexBytes, HexU32Be, MessageId, PrevHash, Protocol,
 };
+use std::ops::Deref;
 
 #[cfg(test)]
 pub mod test;
 
 /// Generates implementation of conversions for various protocol request messages
 macro_rules! impl_conversion_request {
-    ($request:tt, $method:path, $handler_fn:tt) => {
+    ($request:tt, $method:path, $extended_request:tt) => {
         // NOTE: $request and $handler_fn need to be tt because of https://github.com/dtolnay/async-trait/issues/46
+
+        #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+        pub struct $extended_request(pub MessageId, pub $request);
+
+        impl TryFrom<rpc::Rpc> for $extended_request {
+            type Error = crate::error::Error;
+
+            fn try_from(value: Rpc) -> Result<Self> {
+                if let Rpc::Request(request) = value {
+                    let id = request.id;
+                    $request::try_from(request).map(|a| $extended_request(id, a))
+                } else {
+                    Err(Error::Rpc(format!("BUG: response handled as request")).into())
+                }
+            }
+        }
+
+        impl Id<&str> for $extended_request {
+            const ID: &'static str = $request::ID;
+        }
+
+        impl Deref for $extended_request {
+            type Target = $request;
+
+            fn deref(&self) -> &Self::Target {
+                &self.1
+            }
+        }
 
         impl TryFrom<$request> for rpc::RequestPayload {
             type Error = crate::error::Error;
@@ -55,10 +85,24 @@ macro_rules! impl_conversion_request {
             }
         }
 
+        impl TryFrom<rpc::Request> for Box<$request> {
+            type Error = crate::error::Error;
+
+            fn try_from(value: rpc::Request) -> Result<Self> {
+                $request::try_from(value)
+                    .map(|m| Box::new(m))
+                    .map_err(Into::into)
+            }
+        }
+
+        impl Id<&str> for Box<$request> {
+            const ID: &'static str = $request::ID;
+        }
+
         impl TryFrom<rpc::Request> for $request {
             type Error = crate::error::Error;
 
-            fn try_from(req: rpc::Request) -> std::result::Result<Self, Self::Error> {
+            fn try_from(req: rpc::Request) -> Result<Self> {
                 // Invariant: it's caller's responsibility to ensure not to pass wrong request
                 // for conversion
                 assert_eq!(req.payload.method, $method);
@@ -67,16 +111,7 @@ macro_rules! impl_conversion_request {
             }
         }
 
-        #[async_trait]
-        impl crate::payload::SerializablePayload<Protocol> for $request {
-            async fn accept(
-                &self,
-                id: &<Protocol as crate::Protocol>::Header,
-                handler: &mut <Protocol as crate::Protocol>::Handler,
-            ) {
-                handler.$handler_fn(id, self).await;
-            }
-
+        impl crate::AnyPayload<Protocol> for $request {
             fn serialize_to_writer(&self, _writer: &mut dyn std::io::Write) -> Result<()> {
                 panic!(
                     "BUG: serialization of partial request without Rpc not supported {:?}",
@@ -89,6 +124,10 @@ macro_rules! impl_conversion_request {
 
 macro_rules! impl_conversion_response {
     ($response:ty) => {
+        impl Id<&str> for $response {
+            const ID: &'static str = RESULT_ATTRIBUTE;
+        }
+
         impl TryFrom<$response> for rpc::ResponsePayload {
             type Error = crate::error::Error;
 
@@ -160,6 +199,7 @@ impl TryInto<(String, serde_json::Value)> for VersionRolling {
 }
 
 /// Mining configure
+#[id("mining.configure")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Configure(pub Vec<String>, pub serde_json::Value);
 
@@ -192,7 +232,7 @@ impl Configure {
         Ok(())
     }
 }
-impl_conversion_request!(Configure, Method::Configure, visit_configure);
+impl_conversion_request!(Configure, Method::Configure, ConfigureWithId);
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct ConfigureResult(pub serde_json::Value);
@@ -200,16 +240,18 @@ pub struct ConfigureResult(pub serde_json::Value);
 impl_conversion_response!(ConfigureResult);
 
 /// Extranonce subscriptionMessage
+#[id("mining.extranonce.subscribe")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct ExtranonceSubscribe();
 
 impl_conversion_request!(
     ExtranonceSubscribe,
     Method::ExtranonceSubscribe,
-    visit_extranonce_subscribe
+    ExtranonceSubscribeWithId
 );
 
 /// SetExtranonce message (sent if we subscribed with `ExtranonceSubscribe`)
+#[id("mining.set_extranonce")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SetExtranonce(pub ExtraNonce1, pub usize);
 
@@ -223,9 +265,10 @@ impl SetExtranonce {
     }
 }
 
-impl_conversion_request!(SetExtranonce, Method::SetExtranonce, visit_set_extranonce);
+impl_conversion_request!(SetExtranonce, Method::SetExtranonce, SetExtranonceWithId);
 
 /// Compounds all data required for mining subscription
+#[id("mining.subscribe")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Subscribe(
     pub Option<String>,
@@ -258,7 +301,7 @@ impl Subscribe {
 //      req.param_to_string(0, Error::Subscribe("Invalid signature".into()))?;
 //  let url = req.param_to_string(2, Error::Subscribe("Invalid pool URL".into()))?;
 //  let port = req.param_to_string(3, Error::Subscribe("Invalid TCP port".into()))?;
-impl_conversion_request!(Subscribe, Method::Subscribe, visit_subscribe);
+impl_conversion_request!(Subscribe, Method::Subscribe, SubscribeWithId);
 
 /// Subscription response
 /// TODO: Do we need to track any subscription ID's or anyhow validate those fields?
@@ -292,6 +335,7 @@ impl_conversion_response!(BooleanResult);
 /// Subscription response
 /// TODO: Do we need to track any subscription ID's or anyhow validate those fields?
 /// see StratumError for reasons why this structure doesn't have named fields
+#[id("mining.authorize")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Authorize(pub String, pub String);
 
@@ -305,11 +349,12 @@ impl Authorize {
     }
 }
 
-impl_conversion_request!(Authorize, Method::Authorize, visit_authorize);
+impl_conversion_request!(Authorize, Method::Authorize, AuthorizeWithId);
 
 /// Difficulty value set by the upstream stratum server
 /// Note, that we explicitly enforce 1 one element array so that serde doesn't flatten the
 /// 'params' JSON array to a single value, eliminating the array completely.
+#[id("mining.set_difficulty")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SetDifficulty(pub [f32; 1]);
 
@@ -319,7 +364,7 @@ impl SetDifficulty {
     }
 }
 
-impl_conversion_request!(SetDifficulty, Method::SetDifficulty, visit_set_difficulty);
+impl_conversion_request!(SetDifficulty, Method::SetDifficulty, SetDifficultyWithId);
 //#[derive(Deserialize)]
 //struct Helper(#[serde(with = "DurationDef")] Duration);
 //
@@ -360,6 +405,7 @@ pub struct Time(HexU32Be);
 
 /// New mining job notification
 /// TODO generate the field accessors
+#[id("mining.notify")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Notify(
     JobId,
@@ -412,11 +458,12 @@ impl Notify {
     }
 }
 
-impl_conversion_request!(Notify, Method::Notify, visit_notify);
+impl_conversion_request!(Notify, Method::Notify, NotifyWithId);
 
 /// Server may arbitrarily adjust version mask
 /// Note, that we explicitly enforce 1 one element array so that serde doesn't flatten the
 /// 'params' JSON array to a single value, eliminating the array completely.
+#[id("mining.set_version_mask")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SetVersionMask(pub [VersionMask; 1]);
 
@@ -426,11 +473,7 @@ impl SetVersionMask {
     }
 }
 
-impl_conversion_request!(
-    SetVersionMask,
-    Method::SetVersionMask,
-    visit_set_version_mask
-);
+impl_conversion_request!(SetVersionMask, Method::SetVersionMask, SetVersionMaskWithId);
 
 /// Combined username and worker
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
@@ -446,6 +489,7 @@ pub struct Nonce(HexU32Be);
 
 /// New mining job notification
 /// TODO generate the field accessors
+#[id("mining.submit")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Submit(UserName, JobId, ExtraNonce2, Time, Nonce, Version);
 
@@ -492,11 +536,11 @@ impl Submit {
         ((self.5).0).0
     }
 }
-
-impl_conversion_request!(Submit, Method::Submit, visit_submit);
+impl_conversion_request!(Submit, Method::Submit, SubmitWithId);
 
 /// Server initiated message requiring client to perform a reconnect, all fields are optional and
 /// we don't know which of them the server sends
+#[id("client.reconnect")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct ClientReconnect(pub Vec<serde_json::Value>);
 
@@ -529,5 +573,5 @@ impl ClientReconnect {
 impl_conversion_request!(
     ClientReconnect,
     Method::ClientReconnect,
-    visit_client_reconnect
+    ClientReconnectWithId
 );

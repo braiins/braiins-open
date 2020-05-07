@@ -27,6 +27,7 @@
 /// `message` - Message identifier (token)
 /// `is_channel_msg` - expected boolean value whether the message is a channel message
 /// `handler_fn` - handler method that is to be called after accept
+
 #[macro_export]
 macro_rules! impl_message_conversion {
     ($extension_id:expr, $message:tt, $is_channel_msg:expr, $handler_fn:tt) => {
@@ -41,7 +42,7 @@ macro_rules! impl_message_conversion {
                 Ok(framing::Frame::from_serializable_payload(
                     $is_channel_msg,
                     $extension_id,
-                    MessageType::$message as framing::MsgType,
+                    $message::ID as framing::MsgType,
                     m,
                 ))
             }
@@ -65,18 +66,21 @@ macro_rules! impl_message_conversion {
             }
         }
 
+        impl TryFrom<framing::Frame> for Box<$message> {
+            type Error = Error;
+
+            fn try_from(frame: framing::Frame) -> Result<Box<$message>> {
+                $message::try_from(frame).map(Box::new)
+            }
+        }
+
+        impl Id<u8> for Box<$message> {
+            const ID: u8 = $message::ID;
+        }
+
         /// Each message is a `AnyPayload/SerializablePayload` object that can be serialized into
         /// `writer`
-        #[async_trait]
         impl AnyPayload<Protocol> for $message {
-            async fn accept(
-                &self,
-                header: &<Protocol as crate::Protocol>::Header,
-                handler: &mut <Protocol as crate::Protocol>::Handler,
-            ) {
-                handler.$handler_fn(header, self).await;
-            }
-
             fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
                 serialization::to_writer(writer, self).map_err(Into::into)
             }

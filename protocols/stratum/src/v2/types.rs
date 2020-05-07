@@ -257,7 +257,7 @@ macro_rules! sized_bytes_type {
 
 macro_rules! sized_seq_type {
     ($name:ident, $min_len:expr, $max_len:expr) => {
-        #[derive(Serialize, Deserialize)]
+        #[derive(Clone, Serialize, Deserialize)]
         pub struct $name<T>(
             #[serde(bound(deserialize = "T: Serialize + for<'dx> Deserialize<'dx>"))] Vec<T>,
         )

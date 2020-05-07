@@ -24,17 +24,14 @@
 use crate::v2::serialization;
 use crate::{
     error::{Error, Result},
-    v2::{error, extensions, framing, types::*, Protocol},
-    AnyPayload, Message,
+    v2::{extensions, framing, types::*, Protocol},
+    AnyPayload,
 };
-use async_trait::async_trait;
-use packed_struct::prelude::*;
-use packed_struct_codegen::PrimitiveEnum_u8;
 use serde;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
-use ii_logging::macros::*;
+use ii_unvariant::{id, Id};
 
 /// Generates conversion for telemetry protocol messages (extension 1)
 macro_rules! impl_telemetry_message_conversion {
@@ -48,17 +45,7 @@ macro_rules! impl_telemetry_message_conversion {
     };
 }
 
-/// All message recognized by the protocol
-#[derive(PrimitiveEnum_u8, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum MessageType {
-    OpenTelemetryChannel = 0x00,
-    OpenTelemetryChannelSuccess = 0x01,
-    OpenTelemetryChannelError = 0x02,
-    SubmitTelemetryData = 0x03,
-    SubmitTelemetryDataSuccess = 0x04,
-    SubmitTelemetryDataError = 0x05,
-}
-
+#[id(0x00u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenTelemetryChannel {
     pub req_id: u32,
@@ -68,18 +55,21 @@ pub struct OpenTelemetryChannel {
     // pub telemetry_type: u32,
 }
 
+#[id(0x01u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenTelemetryChannelSuccess {
     pub req_id: u32,
     pub channel_id: u32,
 }
 
+#[id(0x02u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenTelemetryChannelError {
     pub req_id: u32,
     pub code: Str0_32,
 }
 
+#[id(0x03u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitTelemetryData {
     pub channel_id: u32,
@@ -87,12 +77,14 @@ pub struct SubmitTelemetryData {
     pub telemetry_payload: Bytes0_64k,
 }
 
+#[id(0x04u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitTelemetryDataSuccess {
     pub channel_id: u32,
     pub last_seq_num: u32,
 }
 
+#[id(0x05u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitTelemetryDataError {
     pub channel_id: u32,
@@ -122,50 +114,3 @@ impl_telemetry_message_conversion!(
     false,
     visit_submit_telemetry_data_error
 );
-
-/// Consumes `frame` and produces a Message object based on the payload type
-pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protocol>> {
-    trace!("V2: building telemetry message from frame {:x?}", frame);
-
-    // Payload that already contains deserialized message can be returned directly
-    // TODO this is duplicate chunk from v2::build_message_from_frame()
-    if frame.payload.is_serializable() {
-        let (header, payload) = frame.split();
-        let serializable_payload = payload
-            .into_serializable()
-            .expect("BUG: cannot convert payload into serializable");
-
-        return Ok(Message {
-            header,
-            payload: serializable_payload,
-        });
-    }
-    // Header will be consumed by the subsequent transformation of the frame into the actual
-    // payload for further handling. Therefore we create a copy for constructing a
-    // Message<Protocol >
-    let header = frame.header.clone();
-    // Deserialize the payload;h based on its type specified in the header
-    let payload: Box<dyn AnyPayload<Protocol>> = match MessageType::from_primitive(
-        frame.header.msg_type,
-    )
-    .ok_or(error::Error::UnknownMessage(
-        format!("Unexpected payload type, full header: {:x?}", frame.header).into(),
-    ))? {
-        MessageType::OpenTelemetryChannel => Box::new(OpenTelemetryChannel::try_from(frame)?),
-        MessageType::OpenTelemetryChannelSuccess => {
-            Box::new(OpenTelemetryChannelSuccess::try_from(frame)?)
-        }
-        MessageType::OpenTelemetryChannelError => {
-            Box::new(OpenTelemetryChannelError::try_from(frame)?)
-        }
-        MessageType::SubmitTelemetryData => Box::new(SubmitTelemetryData::try_from(frame)?),
-        MessageType::SubmitTelemetryDataSuccess => {
-            Box::new(SubmitTelemetryDataSuccess::try_from(frame)?)
-        }
-        MessageType::SubmitTelemetryDataError => {
-            Box::new(SubmitTelemetryDataError::try_from(frame)?)
-        }
-    };
-
-    Ok(Message { header, payload })
-}

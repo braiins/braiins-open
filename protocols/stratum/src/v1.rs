@@ -28,11 +28,8 @@ pub mod rpc;
 use self::error::Error;
 pub use self::framing::codec::Codec;
 pub use self::framing::{Frame, Framing};
-use self::rpc::*;
 use crate::error::Result;
-use crate::{AnyPayload, Message};
 
-use async_trait::async_trait;
 use bitcoin_hashes::hex::{FromHex, ToHex};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 use hex::FromHexError;
@@ -41,7 +38,8 @@ use std::convert::TryFrom;
 use std::mem::size_of;
 use tokio::net::TcpStream;
 
-use ii_logging::macros::*;
+const ERROR_ATTRIBUTE: &'static str = "error";
+const RESULT_ATTRIBUTE: &'static str = "result";
 
 //// Tcp stream that produces/consumes V2 frames
 pub type Framed = tokio_util::codec::Framed<TcpStream, <Framing as ii_wire::Framing>::Codec>;
@@ -50,117 +48,10 @@ pub type Framed = tokio_util::codec::Framed<TcpStream, <Framing as ii_wire::Fram
 /// TODO spread this type across the protocol and eliminate the `Option<u32>`
 pub type MessageId = Option<u32>;
 
-/// Protocol associates a custom handler with it
 pub struct Protocol;
 impl crate::Protocol for Protocol {
-    type Handler = dyn Handler;
     /// Simplified protocol 'header' really contains only an optional message ID
     type Header = MessageId;
-}
-
-/// Specifies all messages to be visited
-#[async_trait]
-pub trait Handler: 'static + Send {
-    /// Handles the result part of the response
-    async fn visit_stratum_result(&mut self, _id: &MessageId, _payload: &rpc::StratumResult) {}
-    /// Handles the error part of the response
-    async fn visit_stratum_error(&mut self, _id: &MessageId, _payload: &rpc::StratumError) {}
-
-    async fn visit_configure(&mut self, _id: &MessageId, _payload: &messages::Configure) {}
-
-    async fn visit_subscribe(&mut self, _id: &MessageId, _payload: &messages::Subscribe) {}
-
-    async fn visit_extranonce_subscribe(
-        &mut self,
-        _id: &MessageId,
-        _payload: &messages::ExtranonceSubscribe,
-    ) {
-    }
-
-    async fn visit_set_extranonce(&mut self, _id: &MessageId, _payload: &messages::SetExtranonce) {}
-
-    async fn visit_authorize(&mut self, _id: &MessageId, _payload: &messages::Authorize) {}
-
-    async fn visit_set_difficulty(&mut self, _id: &MessageId, _payload: &messages::SetDifficulty) {}
-
-    async fn visit_notify(&mut self, _id: &MessageId, _payload: &messages::Notify) {}
-
-    async fn visit_set_version_mask(
-        &mut self,
-        _id: &MessageId,
-        _payload: &messages::SetVersionMask,
-    ) {
-    }
-
-    async fn visit_submit(&mut self, _id: &MessageId, _payload: &messages::Submit) {}
-
-    async fn visit_client_reconnect(
-        &mut self,
-        _id: &MessageId,
-        _payload: &messages::ClientReconnect,
-    ) {
-    }
-}
-
-pub fn build_message_from_frame(frame: framing::Frame) -> Result<Message<Protocol>> {
-    // TODO extend try_from to implement downcast from SerializablePayload/AnyPayload to Rpc (that
-    //  implements SerializablePayload, too).
-    let rpc = Rpc::try_from(frame)?;
-
-    // The rest of the deserialization needs to be take care of also in case the Rpc was present
-    // in the frame in deserialized form.
-    trace!("V1: Deserialized V1 message payload: {:?}", rpc);
-    let (id, payload) = match rpc {
-        Rpc::Request(request) => {
-            let id = request.id;
-            let payload = match request.payload.method {
-                Method::Configure => Box::new(messages::Configure::try_from(request)?)
-                    as Box<dyn AnyPayload<Protocol>>,
-                Method::Subscribe => Box::new(messages::Subscribe::try_from(request)?)
-                    as Box<dyn AnyPayload<Protocol>>,
-                Method::Submit => {
-                    Box::new(messages::Submit::try_from(request)?) as Box<dyn AnyPayload<Protocol>>
-                }
-                Method::Authorize => Box::new(messages::Authorize::try_from(request)?)
-                    as Box<dyn AnyPayload<Protocol>>,
-                Method::SetDifficulty => Box::new(messages::SetDifficulty::try_from(request)?)
-                    as Box<dyn AnyPayload<Protocol>>,
-                Method::SetExtranonce => Box::new(messages::SetExtranonce::try_from(request)?)
-                    as Box<dyn AnyPayload<Protocol>>,
-                Method::Notify => {
-                    Box::new(messages::Notify::try_from(request)?) as Box<dyn AnyPayload<Protocol>>
-                }
-                Method::SetVersionMask => Box::new(messages::SetVersionMask::try_from(request)?)
-                    as Box<dyn AnyPayload<Protocol>>,
-                Method::ClientReconnect => Box::new(messages::ClientReconnect::try_from(request)?)
-                    as Box<dyn AnyPayload<Protocol>>,
-                _ => return Err(Error::Rpc(format!("Unsupported request {:?}", request)).into()),
-            };
-            (id, payload)
-        }
-        // This is not ideal implementation as we clone() the result or error parts of the response.
-        // Note, however, the unwrap() is safe as the error/result are 'Some'
-        Rpc::Response(response) => {
-            let id = response.id;
-            let msg = if response.payload.error.is_some() {
-                Box::new(response.payload.error.unwrap().clone()) as Box<dyn AnyPayload<Protocol>>
-            } else if response.payload.result.is_some() {
-                Box::new(response.payload.result.unwrap().clone()) as Box<dyn AnyPayload<Protocol>>
-            } else {
-                return Err(Error::Rpc(format!(
-                    "Malformed response no error, no result specified {:?}",
-                    response
-                ))
-                .into());
-            };
-            (Some(id), msg)
-        }
-    };
-    trace!("V1: Deserialized message ID {:?}", id);
-    Ok(Message {
-        header: id,
-        payload,
-    })
 }
 
 /// Extranonce 1 introduced as new type to provide shared conversions to/from string
@@ -358,89 +249,4 @@ impl Into<String> for HexU32Be {
 }
 
 #[cfg(test)]
-mod test {
-    use super::*;
-    use crate::test_utils::v1::*;
-    use bytes::BytesMut;
-
-    /// Test traits that will be used by serded for HexBytes when converting from/to string
-    #[test]
-    fn hex_bytes() {
-        let hex_bytes = HexBytes(vec![0xde, 0xad, 0xbe, 0xef, 0x11, 0x22, 0x33]);
-        let hex_bytes_str = "deadbeef112233";
-
-        let checked_hex_bytes_str: String = hex_bytes.clone().into();
-        assert_eq!(
-            hex_bytes_str, checked_hex_bytes_str,
-            "Mismatched hex bytes strings",
-        );
-
-        let checked_hex_bytes = HexBytes::try_from(hex_bytes_str).expect("");
-
-        assert_eq!(hex_bytes, checked_hex_bytes, "Mismatched hex bytes values",)
-    }
-
-    #[test]
-    fn hex_u32_from_string() {
-        let hex_bytes_str = "deadbeef";
-        let hex_bytes_str_0x = "0xdeadbeef";
-
-        let le_from_plain =
-            HexU32Le::try_from(hex_bytes_str).expect("BUG: parsing hex string failed");
-        let le_from_prefixed =
-            HexU32Le::try_from(hex_bytes_str_0x).expect("BUG: parsing hex string failed");
-        let ref_le = HexU32Le(0xefbeadde);
-        let be_from_plain =
-            HexU32Be::try_from(hex_bytes_str).expect("BUG: parsing hex string failed");
-        let be_from_prefixed =
-            HexU32Be::try_from(hex_bytes_str_0x).expect("BUG: parsing hex string failed");
-        let ref_be = HexU32Be(0xdeadbeef);
-        assert_eq!(le_from_plain, ref_le);
-        assert_eq!(le_from_prefixed, ref_le);
-        assert_eq!(be_from_plain, ref_be);
-        assert_eq!(be_from_prefixed, ref_be);
-    }
-
-    #[test]
-    fn extra_nonce1() {
-        let expected_enonce1 =
-            ExtraNonce1(HexBytes(vec![0xde, 0xad, 0xbe, 0xef, 0x11, 0x22, 0x33]));
-        let expected_enonce1_str = r#""deadbeef112233""#;
-
-        let checked_enonce1_str: String =
-            serde_json::to_string(&expected_enonce1).expect("Serialization failed");
-        assert_eq!(
-            expected_enonce1_str, checked_enonce1_str,
-            "Mismatched extranonce 1 strings",
-        );
-
-        let checked_enonce1 =
-            serde_json::from_str(expected_enonce1_str).expect("Deserialization failed");
-
-        assert_eq!(
-            expected_enonce1, checked_enonce1,
-            "Mismatched extranonce 1 values",
-        )
-    }
-
-    /// This test demonstrates an actual implementation of protocol handler for a set of
-    /// messsages
-    #[tokio::test]
-    async fn message_from_frame() {
-        for &req in V1_TEST_REQUESTS {
-            let msg = build_message_from_frame(Frame::from_serialized_payload(BytesMut::from(req)))
-                .expect("Deserialization failed");
-            msg.accept(&mut TestIdentityHandler).await;
-        }
-    }
-
-    #[tokio::test]
-    async fn deserialize_response_message() {
-        let _msg = build_message_from_frame(Frame::from_serialized_payload(BytesMut::from(
-            MINING_SUBSCRIBE_OK_RESULT_JSON,
-        )))
-        .expect("Deserialization failed");
-    }
-
-    // add also a separate stratum error test as per above response
-}
+mod test;
