@@ -30,6 +30,7 @@ use ii_stratum::v2::noise::auth::{Certificate, StaticSecretKeyFormat};
 use ii_wire::Address;
 
 use crate::error::{Error, Result};
+use crate::server::ProxyProtocolVersion;
 
 #[derive(Debug, StructOpt)]
 pub struct Args {
@@ -48,6 +49,10 @@ pub struct Config {
     pub insecure: bool,
     #[serde(flatten)]
     pub security_context: Option<SecurityContext>,
+    pub accepted_proxy_protocol_versions: ProxyProtocolVersion,
+
+    /// Pass PROXY protocol header to outgoing connection -
+    pub pass_proxy_protocol: Option<ProxyProtocolVersion>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +68,8 @@ impl Default for Config {
             upstream_address: Address("stratum.slushpool.com".to_owned(), 3333),
             insecure: true,
             security_context: None,
+            accepted_proxy_protocol_versions: ProxyProtocolVersion::Both,
+            pass_proxy_protocol: None,
         }
     }
 }

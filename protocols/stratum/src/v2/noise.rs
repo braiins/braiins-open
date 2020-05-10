@@ -305,19 +305,10 @@ impl<'a> Responder<'a> {
         Ok(transport_mode.into_framed(noise_framed_stream, build_codec))
     }
 
-    /// Executes noise protocol handshake on provided Framed connection
-    pub async fn accept_framed(
-        self,
-        framed: Framed<TcpStream, <Framing as ii_wire::Framing>::Codec>,
-    ) -> Result<v2::Framed> {
-        // Run the handshake and switch to transport mode
-
-        accept_framed(self, framed).await
-    }
-
     /// Executes noise protocol handshake on provided `FramedParts` - e.g. on stream and buffers returned
     /// from previous phase (PROXY protocol etc.)
-    /// `C` - ii_wire::proxy::ProxyProtocolCodecV1
+    /// `C` - arbitrary codec that will be dropped once `parts` is transformed into a noise TCP
+    /// stream
     /// `parts` - `FramedParts` that will be transformed into a `Framed` once the noise handshake
     /// is complete
     /// `build_codec` - custom codec builder that is passed the noise codec

@@ -354,8 +354,8 @@ async fn test_v2server_full_with_proxy() {
     exe_file.set_extension(std::env::consts::EXE_EXTENSION);
     assert!(exe_file.exists());
     let mut child = Command::new(exe_file)
-        .arg("--proxy-protocol-v1")
-        .arg("--pass-proxy-protocol-v1")
+        .arg("--accept-proxy-protocol")
+        .args(&["--pass-proxy-protocol", "v2"])
         .arg("--insecure")
         .arg("-l")
         .arg(addr_v2.to_string())

@@ -21,6 +21,7 @@
 // contact us at opensource@braiins.com.
 
 use bytes::Bytes;
+use std::convert::TryFrom;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -30,6 +31,7 @@ use futures::channel::mpsc;
 use futures::future::{self, Either};
 use futures::prelude::*;
 use futures::select;
+use serde::Deserialize;
 use tokio::net::TcpStream;
 use tokio_util::codec::FramedParts;
 
@@ -44,7 +46,6 @@ use ii_wire::{
 
 use crate::error::{Error, Result};
 use crate::translation::V2ToV1Translation;
-use std::convert::TryFrom;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
 pub struct ConnTranslation {
@@ -278,20 +279,46 @@ impl SecurityContext {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Deserialize)]
+pub enum ProxyProtocolVersion {
+    V1,
+    V2,
+    Both,
+}
+
+impl std::str::FromStr for ProxyProtocolVersion {
+    type Err = Error;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        use ProxyProtocolVersion::*;
+        Ok(match s {
+            "v1" => V1,
+            "v2" => V2,
+            "both" => Both,
+            _ => return Err(Error::General("Invalid PROXY protocol version".into())),
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ProxyConfig {
-    /// Expects PROXY protocol header on downstream connection
-    pub proxy_protocol_v1: bool,
+    /// Accepts PROXY protocol header on downstream connection
+    pub accept_proxy_protocol: bool,
+    /// PROXY protocol is optional on incoming connection, if not present incoming connection works like normal TCP connection
+    pub proxy_protocol_optional: bool,
+    /// Accepted versions of PROXY protocol on incoming connection - either only V1 or V2 or both
+    pub accepted_proxy_protocol_versions: ProxyProtocolVersion,
     /// If proxy protocol information is available from downstream connection,
     /// passes it to upstream connection
-    pub pass_proxy_protocol_v1: bool,
+    pub pass_proxy_protocol: Option<ProxyProtocolVersion>,
 }
 
 impl Default for ProxyConfig {
     fn default() -> Self {
         ProxyConfig {
-            proxy_protocol_v1: false,
-            pass_proxy_protocol_v1: false,
+            accept_proxy_protocol: false,
+            proxy_protocol_optional: false,
+            accepted_proxy_protocol_versions: ProxyProtocolVersion::Both,
+            pass_proxy_protocol: None,
         }
     }
 }
@@ -364,11 +391,21 @@ where
     ///  - pass PROXY protocol header (if configured)
     ///  - establish noise handshake (if configured)
     async fn do_handle(self, v2_peer_addr: SocketAddr) -> Result<()> {
-        let incoming = if self.proxy_config.proxy_protocol_v1 {
-            let acceptor = Acceptor::new();
+        let incoming = if self.proxy_config.accept_proxy_protocol {
+            use ProxyProtocolVersion::*;
+            let (support_v1, support_v2) = match self.proxy_config.accepted_proxy_protocol_versions
+            {
+                V1 => (true, false),
+                V2 => (false, true),
+                Both => (true, true),
+            };
+            let acceptor = Acceptor::new()
+                .support_v1(support_v1)
+                .support_v2(support_v2)
+                .require_proxy_header(!self.proxy_config.proxy_protocol_optional);
             let stream = acceptor.accept(self.v2_downstream_conn).await?;
             debug!("Received connection from downstream proxy - original source, {:?} original destination {:?}",
-        stream.original_peer_addr(), stream.original_destination_addr());
+                   stream.original_peer_addr(), stream.original_destination_addr());
             IncomingConnection::Proxy(stream)
         } else {
             IncomingConnection::Tcp(self.v2_downstream_conn)
@@ -381,12 +418,15 @@ where
         // peer address
         let mut v1_conn = v1_client.next().await?;
 
-        if self.proxy_config.pass_proxy_protocol_v1 {
+        if let Some(version) = self.proxy_config.pass_proxy_protocol {
             if let (src @ Some(_), dst @ Some(_)) = (
                 incoming.original_peer_addr(),
                 incoming.original_destination_addr(),
             ) {
-                Connector::new().connect_to(&mut v1_conn, src, dst).await?;
+                Connector::new()
+                    .use_v2(version == ProxyProtocolVersion::V2)
+                    .connect_to(&mut v1_conn, src, dst)
+                    .await?;
             } else {
                 warn!("Passing of proxy protocol is required, but incoming connection does not contain original addresses")
             }
@@ -398,38 +438,50 @@ where
             v1_peer_addr, v2_peer_addr
         );
 
-        let v2_framed_stream = match self.security_context {
-            // Establish noise responder and run the handshake
-            Some(security_context) => {
-                // TODO pass the signature message once the Responder API is adjusted
-                let responder = v2::noise::Responder::new(
-                    &security_context.static_key_pair,
-                    security_context.signature_noise_message.clone(),
-                    vec![
-                        v2::noise::negotiation::EncryptionAlgorithm::AESGCM,
-                        v2::noise::negotiation::EncryptionAlgorithm::ChaChaPoly,
-                    ],
-                );
-                let build_stratum_noise_codec =
-                    |noise_codec| <v2::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec));
-                match incoming {
-                    IncomingConnection::Proxy(proxy) => {
-responder
-.accept_parts_with_codec(proxy.into(), build_stratum_noise_codec)
-.await?
-                        responder.accept_framed(proxy.into()).await?
+        let v2_framed_stream =
+            match self.security_context {
+                // Establish noise responder and run the handshake
+                Some(security_context) => {
+                    // TODO pass the signature message once the Responder API is adjusted
+                    let responder = v2::noise::Responder::new(
+                        &security_context.static_key_pair,
+                        security_context.signature_noise_message.clone(),
+                        vec![
+                            v2::noise::negotiation::EncryptionAlgorithm::AESGCM,
+                            v2::noise::negotiation::EncryptionAlgorithm::ChaChaPoly,
+                        ],
+                    );
+                    let build_stratum_noise_codec = |noise_codec| {
+                        <v2::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec))
+                    };
+                    match incoming {
+                        IncomingConnection::Proxy(proxy) => {
+                            // TODO this needs refactoring there is no point of passing the codec
+                            // type, we should be able to run noise just with anything that
+                            // implements AsyncRead/AsyncWrite
+                            responder
+                            .accept_parts_with_codec(FramedParts::<TcpStream,
+                                ii_wire::proxy::codec::v1::V1Codec>::from(proxy),
+                                                     build_stratum_noise_codec)
+                            .await?
+                        }
+                        IncomingConnection::Tcp(stream) => {
+                            responder
+                                .accept_with_codec(stream, build_stratum_noise_codec)
+                                .await?
+                        }
                     }
-                    IncomingConnection::Tcp(stream) => responder.accept_with_codec(stream, build_stratum_noise_codec).await?,
                 }
-            }
-            // Insecure operation has been configured
-            None => match incoming {
-                IncomingConnection::Proxy(proxy) => proxy.into(),
-                IncomingConnection::Tcp(stream) => {
-                    Connection::<v2::Framing>::new(stream).into_inner()
-                }
-            },
-        };
+                // Insecure operation has been configured
+                None => match incoming {
+                    IncomingConnection::Proxy(proxy) => {
+                        Connection::<v2::Framing>::from(proxy).into_inner()
+                    }
+                    IncomingConnection::Tcp(stream) => {
+                        Connection::<v2::Framing>::new(stream).into_inner()
+                    }
+                },
+            };
 
         // Start processing of both ends
         // TODO adjust connection handler to return a Result
