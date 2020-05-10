@@ -38,7 +38,7 @@ use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_wire::{
-    proxy::{accept_v1_framed, Connector},
+    proxy::{Acceptor, Connector, ProxyStream, WithProxyInfo},
     Address, Client, Connection, Server,
 };
 
@@ -296,10 +296,28 @@ impl Default for ProxyConfig {
     }
 }
 
-/// Differentiate if we have TCPStream or FramedParts
-enum IncomingConnection<C> {
+/// Differentiate if we have TCPStream or ProxyStream
+enum IncomingConnection {
     Tcp(TcpStream),
-    Parts(FramedParts<TcpStream, C>),
+    Proxy(ProxyStream<TcpStream>),
+}
+
+impl WithProxyInfo for IncomingConnection {
+    fn original_peer_addr(&self) -> Option<SocketAddr> {
+        use IncomingConnection::*;
+        match self {
+            Tcp(ref s) => s.original_peer_addr(),
+            Proxy(ref p) => p.original_peer_addr(),
+        }
+    }
+
+    fn original_destination_addr(&self) -> Option<SocketAddr> {
+        use IncomingConnection::*;
+        match self {
+            Tcp(ref s) => s.original_destination_addr(),
+            Proxy(ref p) => p.original_destination_addr(),
+        }
+    }
 }
 
 struct ProxyConnection<FN, T> {
@@ -346,13 +364,14 @@ where
     ///  - pass PROXY protocol header (if configured)
     ///  - establish noise handshake (if configured)
     async fn do_handle(self, v2_peer_addr: SocketAddr) -> Result<()> {
-        let (proxy_info, incoming) = if self.proxy_config.proxy_protocol_v1 {
-            let (proxy_info, parts) = accept_v1_framed(self.v2_downstream_conn).await?;
+        let incoming = if self.proxy_config.proxy_protocol_v1 {
+            let acceptor = Acceptor::new();
+            let stream = acceptor.accept(self.v2_downstream_conn).await?;
             debug!("Received connection from downstream proxy - original source, {:?} original destination {:?}",
-                   proxy_info.original_source, proxy_info.original_destination);
-            (Some(proxy_info), IncomingConnection::Parts(parts))
+        stream.original_peer_addr(), stream.original_destination_addr());
+            IncomingConnection::Proxy(stream)
         } else {
-            (None, IncomingConnection::Tcp(self.v2_downstream_conn))
+            IncomingConnection::Tcp(self.v2_downstream_conn)
         };
         // Connect to upstream V1 server
         let mut v1_client = Client::new(self.v1_upstream_addr);
@@ -363,14 +382,13 @@ where
         let mut v1_conn = v1_client.next().await?;
 
         if self.proxy_config.pass_proxy_protocol_v1 {
-            if let Some(proxy_info) = proxy_info {
-                Connector::new()
-                    .connect_to(
-                        &mut v1_conn,
-                        proxy_info.original_source,
-                        proxy_info.original_destination,
-                    )
-                    .await?;
+            if let (src @ Some(_), dst @ Some(_)) = (
+                incoming.original_peer_addr(),
+                incoming.original_destination_addr(),
+            ) {
+                Connector::new().connect_to(&mut v1_conn, src, dst).await?;
+            } else {
+                warn!("Passing of proxy protocol is required, but incoming connection does not contain original addresses")
             }
         }
         let v1_peer_addr = v1_conn.peer_addr()?;
@@ -395,23 +413,18 @@ where
                 let build_stratum_noise_codec =
                     |noise_codec| <v2::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec));
                 match incoming {
-                    IncomingConnection::Parts(parts) => {
-                        responder
-                            .accept_parts_with_codec(parts, build_stratum_noise_codec)
-                            .await?
+                    IncomingConnection::Proxy(proxy) => {
+responder
+.accept_parts_with_codec(proxy.into(), build_stratum_noise_codec)
+.await?
+                        responder.accept_framed(proxy.into()).await?
                     }
-                    IncomingConnection::Tcp(stream) => {
-                        responder
-                            .accept_with_codec(stream, build_stratum_noise_codec)
-                            .await?
-                    }
+                    IncomingConnection::Tcp(stream) => responder.accept_with_codec(stream, build_stratum_noise_codec).await?,
                 }
             }
             // Insecure operation has been configured
             None => match incoming {
-                IncomingConnection::Parts(parts) => {
-                    Connection::<v2::Framing>::new_from_parts(parts).into_inner()
-                }
+                IncomingConnection::Proxy(proxy) => proxy.into(),
                 IncomingConnection::Tcp(stream) => {
                     Connection::<v2::Framing>::new(stream).into_inner()
                 }

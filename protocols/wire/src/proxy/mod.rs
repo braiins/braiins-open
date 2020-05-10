@@ -34,7 +34,7 @@ use std::task::{Context, Poll};
 use tokio::net::TcpStream;
 
 use tokio::prelude::*;
-use tokio_util::codec::{Decoder, Encoder};
+use tokio_util::codec::{Decoder, Encoder, Framed, FramedParts};
 
 use crate::connection::Connection;
 use crate::framing::Framing;
@@ -373,12 +373,32 @@ where
     F::Codec: Default,
 {
     fn from(stream: ProxyStream<TcpStream>) -> Self {
-        use tokio_util::codec::{Framed, FramedParts};
         let mut parts = FramedParts::new(stream.inner, F::Codec::default());
         parts.read_buf = stream.buf; // pass existing read buffer
         Connection {
             framed_stream: Framed::from_parts(parts),
         }
+    }
+}
+
+impl<C> From<ProxyStream<TcpStream>> for Framed<TcpStream, C>
+where
+    C: Encoder<ProxyInfo> + Decoder + Default,
+{
+    fn from(stream: ProxyStream<TcpStream>) -> Self {
+        let parts = FramedParts::from(stream);
+        Framed::from_parts(parts)
+    }
+}
+
+impl<C> From<ProxyStream<TcpStream>> for FramedParts<TcpStream, C>
+where
+    C: Encoder<ProxyInfo> + Decoder + Default,
+{
+    fn from(stream: ProxyStream<TcpStream>) -> Self {
+        let mut parts = FramedParts::new(stream.inner, C::default());
+        parts.read_buf = stream.buf;
+        parts
     }
 }
 
