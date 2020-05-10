@@ -235,7 +235,7 @@ impl Connector {
         if !self.use_v2 {
             V1Codec::new().encode(proxy_info, &mut data)?;
         } else {
-            unimplemented!("V2 Protocol is not implemented")
+            V2Codec::new().encode(proxy_info, &mut data)?
         }
         dest.write(&data).await?;
         Ok(())
