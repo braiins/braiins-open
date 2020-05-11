@@ -36,7 +36,7 @@ use ii_stratum_proxy::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    ii_async_compat::setup_panic_handling();
+    ii_async_utils::setup_panic_handling();
     let _log_guard =
         ii_logging::setup_for_app(ii_logging::LoggingConfig::ASYNC_LOGGER_DRAIN_CHANNEL_SIZE);
 

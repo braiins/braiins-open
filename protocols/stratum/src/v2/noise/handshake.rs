@@ -27,7 +27,7 @@ use snow::HandshakeState;
 use std::time;
 
 use futures::prelude::*;
-use ii_async_compat::FutureExt;
+use ii_async_utils::FutureExt;
 
 use crate::error::{ErrorKind, Result, ResultExt};
 

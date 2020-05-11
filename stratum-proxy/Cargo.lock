@@ -664,13 +664,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
 
 [[package]]
-name = "ii-async-compat"
+name = "ii-async-utils"
 version = "0.2.0"
 dependencies = [
- "bytes 0.5.2",
  "futures 0.3.5",
  "tokio",
- "tokio-util",
 ]
 
 [[package]]
@@ -710,7 +708,7 @@ dependencies = [
  "failure",
  "futures 0.3.5",
  "hex",
- "ii-async-compat",
+ "ii-async-utils",
  "ii-bitcoin",
  "ii-logging",
  "ii-wire",
@@ -739,7 +737,7 @@ dependencies = [
  "ctrlc",
  "failure",
  "futures 0.3.5",
- "ii-async-compat",
+ "ii-async-utils",
  "ii-logging",
  "ii-stratum",
  "ii-wire",

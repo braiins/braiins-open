@@ -33,7 +33,7 @@ tokio-util = { version = "0.2.0", features = ["codec"] }
 async-trait = "0.1.17"
 ii-bitcoin = { path = "../../coins/bitcoin" }
 ii-wire = { path = "../wire" }
-ii-async-compat = { path = "../../utils-rs/async-compat" }
+ii-async-utils = { path = "../../utils-rs/async-utils" }
 ii-logging = { path = "../../utils-rs/logging" }
 structopt = "0.3"
 rand = "0.7.3"

@@ -26,7 +26,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use futures::prelude::*;
-// use ii_async_compat::prelude::*;
 use pin_project::pin_project;
 use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio_util::codec::Framed;
