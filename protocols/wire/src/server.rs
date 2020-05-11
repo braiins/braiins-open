@@ -25,7 +25,7 @@ use std::net::ToSocketAddrs as StdToSocketAddrs;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use ii_async_compat::prelude::*;
+use futures::prelude::*;
 use pin_project::pin_project;
 use tokio::net::{TcpListener, TcpStream};
 

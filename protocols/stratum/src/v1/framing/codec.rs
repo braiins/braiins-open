@@ -23,8 +23,6 @@
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder, LinesCodec};
 
-use ii_async_compat::{bytes, tokio_util};
-
 use super::Frame;
 use crate::error::Error;
 

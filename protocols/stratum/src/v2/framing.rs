@@ -27,7 +27,6 @@ use bytes::{
     BytesMut,
 };
 
-use ii_async_compat::bytes;
 use ii_logging::macros::*;
 
 use super::Protocol;

@@ -37,11 +37,11 @@ use crate::error::Result;
 use crate::{AnyPayload, Message};
 
 use async_trait::async_trait;
+use futures::prelude::*;
 use packed_struct::prelude::*;
 use std::convert::TryFrom;
 use tokio::net::TcpStream;
 
-use ii_async_compat::prelude::*;
 use ii_logging::macros::*;
 use ii_wire;
 
@@ -340,7 +340,6 @@ pub mod test {
     use super::*;
     use crate::test_utils::v2::*;
 
-    use ii_async_compat::tokio;
     use std::convert::TryInto;
 
     /// This test demonstrates an actual implementation of protocol handler (aka visitor to a set of

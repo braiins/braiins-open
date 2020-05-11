@@ -27,8 +27,6 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::time::{Duration, SystemTime};
 
-use ii_async_compat::bytes;
-
 use crate::error::{Error, ErrorKind, Result, ResultExt};
 use crate::v2::{self, noise::StaticPublicKey};
 

@@ -24,8 +24,6 @@ use std::iter::repeat;
 
 use futures::stream::StreamExt;
 
-use ii_async_compat::tokio;
-
 use super::*;
 use ii_stratum::test_utils;
 use ii_stratum::v1;

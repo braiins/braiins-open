@@ -31,7 +31,7 @@ use std::convert::TryInto;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
-use ii_async_compat::prelude::*;
+use futures::prelude::*;
 
 use ii_stratum::error::Error;
 use ii_stratum::test_utils;

@@ -20,9 +20,9 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use ii_async_compat::futures::future::Future;
-use ii_async_compat::tokio::time;
+use futures::prelude::*;
 use std::time::Duration;
+use tokio::time;
 
 /// Run an async function/lambda repeatedly with backoff until it
 /// returns Ok(...) or until the number of inerations is reached.

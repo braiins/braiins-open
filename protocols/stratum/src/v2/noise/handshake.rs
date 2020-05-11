@@ -26,7 +26,8 @@ use bytes::BytesMut;
 use snow::HandshakeState;
 use std::time;
 
-use ii_async_compat::prelude::*;
+use futures::prelude::*;
+use ii_async_compat::FutureExt;
 
 use crate::error::{ErrorKind, Result, ResultExt};
 

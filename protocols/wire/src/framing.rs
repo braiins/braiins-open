@@ -22,9 +22,9 @@
 
 use std::fmt::Debug;
 
-use ii_async_compat::{tokio, tokio_util};
 use tokio::io::Error as IOError;
 use tokio_util::codec::{Decoder, Encoder};
+
 pub trait Framing: 'static {
     /// Send message type
     type Tx: Send + Sync;

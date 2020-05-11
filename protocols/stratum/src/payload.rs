@@ -25,8 +25,6 @@
 use bytes::{buf::BufMutExt, BytesMut};
 use std::fmt;
 
-use ii_async_compat::bytes;
-
 use crate::error::{Result, ResultExt};
 use crate::Protocol;
 

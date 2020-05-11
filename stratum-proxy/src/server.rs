@@ -27,10 +27,11 @@ use std::time;
 
 use futures::channel::mpsc;
 use futures::future::{self, Either};
+use futures::prelude::*;
+use futures::select;
 use tokio::net::TcpStream;
 
-use ii_async_compat::prelude::*;
-use ii_async_compat::{bytes, select};
+use ii_async_compat::FutureExt;
 use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;

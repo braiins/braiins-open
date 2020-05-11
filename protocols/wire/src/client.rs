@@ -30,7 +30,6 @@ use std::vec;
 use tokio::net::TcpStream;
 use tokio::time;
 
-use ii_async_compat::prelude::*;
 use thiserror::Error;
 
 #[derive(Error, PartialEq, Eq, Debug)]

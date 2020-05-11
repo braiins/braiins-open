@@ -27,11 +27,9 @@
 use bytes::{Bytes, BytesMut};
 use snow::{params::NoiseParams, Builder, HandshakeState, TransportState};
 use std::convert::TryFrom;
+
 use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, FramedParts};
-
-use ii_async_compat::prelude::*;
-use ii_wire;
 
 use crate::error::{Error, ErrorKind, Result, ResultExt};
 use crate::v2;
@@ -322,6 +320,7 @@ impl TransportMode {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
+    use futures::prelude::*;
     use handshake::Step as _;
 
     /// Helper that builds:

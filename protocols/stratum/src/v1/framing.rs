@@ -26,8 +26,6 @@ pub mod codec;
 
 use bytes::{buf::BufMutExt, BytesMut};
 
-use ii_async_compat::bytes;
-
 use super::Protocol;
 use crate::error::{Error, Result};
 use crate::payload::{Payload, SerializablePayload};

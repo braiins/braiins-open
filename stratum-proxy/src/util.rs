@@ -23,8 +23,6 @@
 use futures::channel::mpsc;
 use std::{convert::TryInto, fmt};
 
-use ii_async_compat::prelude::*;
-
 use crate::error::{Result, ResultExt};
 
 /// Converts the response message into a `Frame` and submits it into the

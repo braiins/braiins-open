@@ -288,7 +288,6 @@ mod test {
     use super::*;
     use crate::test_utils::v1::*;
     use bytes::BytesMut;
-    use ii_async_compat::bytes;
     use std::convert::TryInto;
 
     #[test]

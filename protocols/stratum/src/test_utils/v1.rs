@@ -27,7 +27,6 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 use std::str::FromStr;
 
-use ii_async_compat::bytes;
 use ii_logging::macros::*;
 
 use super::common::*;

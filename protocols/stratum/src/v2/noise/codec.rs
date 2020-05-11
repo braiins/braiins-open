@@ -26,8 +26,6 @@ use bytes::BytesMut;
 use tokio_util::codec::length_delimited::{self, LengthDelimitedCodec};
 use tokio_util::codec::{Decoder, Encoder};
 
-use ii_async_compat::{bytes, tokio_util};
-
 use crate::error::Error;
 
 use super::TransportMode;

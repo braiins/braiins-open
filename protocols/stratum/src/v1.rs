@@ -41,7 +41,6 @@ use std::convert::TryFrom;
 use std::mem::size_of;
 use tokio::net::TcpStream;
 
-use ii_async_compat::prelude::{tokio, tokio_util};
 use ii_logging::macros::*;
 
 //// Tcp stream that produces/consumes V2 frames
@@ -367,8 +366,6 @@ mod test {
     use super::*;
     use crate::test_utils::v1::*;
     use bytes::BytesMut;
-
-    use ii_async_compat::{bytes, tokio};
 
     /// Test traits that will be used by serded for HexBytes when converting from/to string
     #[test]

@@ -25,7 +25,6 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 use tokio::{fs::File, io::AsyncReadExt};
 
-use ii_async_compat::tokio;
 use ii_stratum::v2;
 use ii_wire::Address;
 

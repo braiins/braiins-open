@@ -27,8 +27,6 @@ use std::convert::TryInto;
 use std::fmt;
 use std::mem::size_of;
 
-use ii_async_compat::{bytes, futures};
-
 use async_trait::async_trait;
 use bytes::BytesMut;
 use futures::channel::mpsc;

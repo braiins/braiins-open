@@ -24,8 +24,6 @@ use bytes::BytesMut;
 use tokio_util::codec::length_delimited::{self, LengthDelimitedCodec};
 use tokio_util::codec::{Decoder, Encoder};
 
-use ii_async_compat::{bytes, tokio_util};
-
 use super::{Frame, Header};
 use crate::error::Error;
 use crate::v2::noise;
