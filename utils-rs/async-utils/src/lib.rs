@@ -154,11 +154,11 @@ impl StdError for HaltError {
 ///
 /// NB. This is really just a thin wrapper around `watch::Sender`.
 #[derive(Debug)]
-pub struct Trigger(watch::Sender<()>);
+pub struct Trigger(watch::Sender<bool>);
 
 impl Trigger {
     pub fn cancel(self) {
-        let _ = self.0.broadcast(());
+        let _ = self.0.broadcast(true);
     }
 }
 
@@ -168,11 +168,11 @@ impl Trigger {
 ///
 /// NB. This is really just a thin wrapper around `watch::Receiver`.
 #[derive(Clone, Debug)]
-pub struct Tripwire(watch::Receiver<()>);
+pub struct Tripwire(watch::Receiver<bool>);
 
 impl Tripwire {
     pub fn new() -> (Trigger, Self) {
-        let (trigger, tripwire) = watch::channel(());
+        let (trigger, tripwire) = watch::channel(false);
         (Trigger(trigger), Self(tripwire))
     }
 }
@@ -183,7 +183,14 @@ impl Future for Tripwire {
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<()> {
         let mut this = self.as_mut();
         let mut next = this.0.next();
-        Pin::new(&mut next).poll(ctx).map(|_| ())
+
+        // We need to discard a false value being yielded from
+        // the watch, because after being created, the watch Receiver
+        // is immediately ready with the initial value.
+        match Pin::new(&mut next).poll(ctx) {
+            Poll::Pending | Poll::Ready(Some(false)) => Poll::Pending,
+            _ => Poll::Ready(()),
+        }
     }
 }
 
@@ -372,7 +379,7 @@ impl HaltHandle {
 mod test {
     use super::*;
 
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
 
     use tokio::{stream, time};
@@ -413,6 +420,33 @@ mod test {
         handle.ready();
         handle.halt();
         handle.join(None).await.expect("BUG: join() failed");
+    }
+
+    // Test that Tripwire won't abort a task right away
+    // without halt() being called (this was a bug).
+    #[tokio::test]
+    async fn test_halthandle_nohalt() {
+        let handle = HaltHandle::new();
+
+        let task_done = Arc::new(AtomicBool::new(false));
+
+        // Spawn a couple of tasks on the handle
+        let task_done2 = task_done.clone();
+        handle.spawn(move |tripwire| {
+            async move {
+                forever_stream(tripwire).await;
+                task_done2.store(true, Ordering::SeqCst);
+            }
+        });
+
+        // Signal ready
+        handle.ready();
+
+        // Delay a bit so that the task has time to exit if it is to exit
+        time::delay_for(Duration::from_millis(500)).await;
+
+        // Verify task didn't exit
+        assert_eq!(task_done.load(Ordering::SeqCst), false);
     }
 
     // The same as basic test but with halting happening from within a task.
