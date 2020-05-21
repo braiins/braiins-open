@@ -93,13 +93,12 @@ impl Decoder for Codec {
     }
 }
 
-impl Encoder for Codec {
-    type Item = BytesMut;
+impl Encoder<BytesMut> for Codec {
     type Error = Error;
 
     fn encode(
         &mut self,
-        item: Self::Item,
+        item: BytesMut,
         dst: &mut BytesMut,
     ) -> std::result::Result<(), Self::Error> {
         let payload = match &mut self.state {

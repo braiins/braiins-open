@@ -96,15 +96,10 @@ impl Decoder for Codec {
     }
 }
 
-impl Encoder for Codec {
-    type Item = Frame;
+impl Encoder<Frame> for Codec {
     type Error = Error;
 
-    fn encode(
-        &mut self,
-        item: Self::Item,
-        dst: &mut BytesMut,
-    ) -> std::result::Result<(), Self::Error> {
+    fn encode(&mut self, item: Frame, dst: &mut BytesMut) -> std::result::Result<(), Self::Error> {
         let mut encoded_frame = BytesMut::new();
         item.serialize(&mut encoded_frame)?;
         match self.noise_codec {

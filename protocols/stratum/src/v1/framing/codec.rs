@@ -50,11 +50,10 @@ impl Decoder for Codec {
     }
 }
 
-impl Encoder for Codec {
-    type Item = Frame;
+impl Encoder<Frame> for Codec {
     type Error = Error;
 
-    fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
+    fn encode(&mut self, item: Frame, dst: &mut BytesMut) -> Result<(), Self::Error> {
         item.serialize(dst)?;
         dst.put_u8(b'\n');
         Ok(())
