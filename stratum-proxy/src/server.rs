@@ -227,11 +227,12 @@ impl ConnTranslation {
     }
 }
 
-pub async fn handle_connection(
+pub async fn handle_connection<T: Send + Sync>(
     v2_conn: v2::Framed,
     v2_peer_addr: SocketAddr,
     v1_conn: v1::Framed,
     v1_peer_addr: SocketAddr,
+    _generic_context: T,
 ) -> Result<()> {
     let translation = ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn, v1_peer_addr);
 
@@ -274,7 +275,7 @@ impl SecurityContext {
     }
 }
 
-struct ProxyConnection<FN> {
+struct ProxyConnection<FN, T> {
     /// Downstream connection that is to be handled
     v2_downstream_conn: TcpStream,
     /// Upstream server that we should try to connect to
@@ -283,24 +284,28 @@ struct ProxyConnection<FN> {
     get_connection_handler: Arc<FN>,
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
+    generic_context: T,
 }
 
-impl<FN, FT> ProxyConnection<FN>
+impl<FN, FT, T> ProxyConnection<FN, T>
 where
     FT: Future<Output = Result<()>>,
-    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr) -> FT,
+    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T) -> FT,
+    T: Send + Sync + Clone,
 {
     fn new(
         v2_downstream_conn: TcpStream,
         v1_upstream_addr: Address,
         security_context: Option<Arc<SecurityContext>>,
         get_connection_handler: Arc<FN>,
+        generic_context: T,
     ) -> Self {
         Self {
             v2_downstream_conn,
             v1_upstream_addr,
             get_connection_handler,
             security_context,
+            generic_context,
         }
     }
 
@@ -346,6 +351,7 @@ where
             v2_peer_addr,
             v1_framed_stream,
             v1_peer_addr,
+            self.generic_context.clone(),
         )
         .await
     }
@@ -371,7 +377,7 @@ where
 /// (a stream-like interface) or, as a higher-level interface,
 /// the `run()` method turns the `ProxyServer`
 /// into an asynchronous task (which internally calls `next()` in a loop).
-pub struct ProxyServer<FN> {
+pub struct ProxyServer<FN, T> {
     server: Server,
     listen_addr: Address,
     v1_upstream_addr: Address,
@@ -381,12 +387,14 @@ pub struct ProxyServer<FN> {
     get_connection_handler: Arc<FN>,
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
+    generic_context: T,
 }
 
-impl<FN, FT> ProxyServer<FN>
+impl<FN, FT, T> ProxyServer<FN, T>
 where
     FT: Future<Output = Result<()>> + Send + 'static,
-    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr) -> FT + Send + Sync + 'static,
+    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T) -> FT + Send + Sync + 'static,
+    T: Send + Sync + Clone + 'static,
 {
     /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
     /// specified `get_connection_handler` that builds the connection handler `Future` on demand
@@ -398,7 +406,8 @@ where
             v2::noise::auth::Certificate,
             v2::noise::auth::StaticSecretKeyFormat,
         )>,
-    ) -> Result<ProxyServer<FN>> {
+        generic_context: T,
+    ) -> Result<ProxyServer<FN, T>> {
         let server = Server::bind(&listen_addr)?;
 
         let (quit_tx, quit_rx) = mpsc::channel(1);
@@ -418,6 +427,7 @@ where
             quit_tx,
             get_connection_handler: Arc::new(get_connection_handler),
             security_context,
+            generic_context,
         })
     }
 
@@ -442,6 +452,7 @@ where
                     .as_ref()
                     .map(|context| context.clone()),
                 self.get_connection_handler.clone(),
+                self.generic_context.clone(),
             )
             .handle(),
         );

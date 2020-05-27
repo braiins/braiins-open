@@ -45,6 +45,7 @@ async fn main() -> Result<()> {
         args.upstream_address,
         server::handle_connection,
         certificate_secret_key_pair,
+        (),
     )
     .context("Cannot bind the server")?;
 
