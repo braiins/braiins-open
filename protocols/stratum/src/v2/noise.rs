@@ -186,7 +186,6 @@ pub struct Responder {
 }
 
 impl Responder {
-    /// TODO add static keypair signature and store it inside the instance
     pub fn new(static_keypair: &StaticKeypair, signature_noise_message: Bytes) -> Self {
         let params: NoiseParams = PARAMS.parse().expect("BUG: cannot parse noise parameters");
 
@@ -234,7 +233,6 @@ impl handshake::Step for Responder {
                 let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
                 self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
                 // Send the signature along this message
-                // TODO: use actual signature stored inside the responder instance
                 // -> e, ee, s, es [encrypted signature]
                 let len_written = self
                     .handshake_state
