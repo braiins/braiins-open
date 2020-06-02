@@ -108,16 +108,29 @@ impl Initiator {
     }
 
     pub async fn connect(self, connection: TcpStream) -> Result<v2::Framed> {
+        self.connect_with_codec(connection, |noise_codec| {
+            <v2::framing::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec))
+        })
+        .await
+    }
+
+    /// Connect and run noise handshake and produce a `Framed` that internally
+    /// runs a codec provided by `build_codec`
+    pub async fn connect_with_codec<I, F, U>(
+        self,
+        connection: TcpStream,
+        build_codec: F,
+    ) -> Result<Framed<TcpStream, U>>
+    where
+        F: FnOnce(Codec) -> U,
+        U: Encoder<I>,
+    {
         let mut noise_framed_stream = ii_wire::Connection::<Framing>::new(connection).into_inner();
 
         let handshake = handshake::Handshake::new(self);
         let transport_mode = handshake.run(&mut noise_framed_stream).await?;
 
-        Ok(
-            transport_mode.into_framed(noise_framed_stream, |noise_codec| {
-                <v2::framing::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec))
-            }),
-        )
+        Ok(transport_mode.into_framed(noise_framed_stream, build_codec))
     }
 
     /// Verify the signature of the remote static key
@@ -208,17 +221,30 @@ impl Responder {
     }
 
     pub async fn accept(self, connection: TcpStream) -> Result<v2::Framed> {
+        self.accept_with_codec(connection, |noise_codec| {
+            <v2::framing::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec))
+        })
+        .await
+    }
+
+    /// Accept new connection and run noise handshake and produce a `Framed` that internally runs
+    /// a codec provided by `build_codec`
+    pub async fn accept_with_codec<I, F, U>(
+        self,
+        connection: TcpStream,
+        build_codec: F,
+    ) -> Result<Framed<TcpStream, U>>
+    where
+        F: FnOnce(Codec) -> U,
+        U: Encoder<I>,
+    {
         // Run the handshake and switch to transport mode
         let mut noise_framed_stream = ii_wire::Connection::<Framing>::new(connection).into_inner();
 
         let handshake = handshake::Handshake::new(self);
         let transport_mode = handshake.run(&mut noise_framed_stream).await?;
 
-        Ok(
-            transport_mode.into_framed(noise_framed_stream, |noise_codec| {
-                <v2::framing::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec))
-            }),
-        )
+        Ok(transport_mode.into_framed(noise_framed_stream, build_codec))
     }
 }
 
