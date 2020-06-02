@@ -29,7 +29,7 @@ use snow::{params::NoiseParams, Builder, HandshakeState, TransportState};
 use std::convert::TryFrom;
 
 use tokio::net::TcpStream;
-use tokio_util::codec::{Framed, FramedParts};
+use tokio_util::codec::{Encoder, Framed, FramedParts};
 
 use crate::error::{Error, Result};
 use crate::v2;
@@ -113,7 +113,11 @@ impl Initiator {
         let handshake = handshake::Handshake::new(self);
         let transport_mode = handshake.run(&mut noise_framed_stream).await?;
 
-        Ok(transport_mode.into_stratum_framed_stream(noise_framed_stream))
+        Ok(
+            transport_mode.into_framed(noise_framed_stream, |noise_codec| {
+                <v2::framing::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec))
+            }),
+        )
     }
 
     /// Verify the signature of the remote static key
@@ -210,7 +214,11 @@ impl Responder {
         let handshake = handshake::Handshake::new(self);
         let transport_mode = handshake.run(&mut noise_framed_stream).await?;
 
-        Ok(transport_mode.into_stratum_framed_stream(noise_framed_stream))
+        Ok(
+            transport_mode.into_framed(noise_framed_stream, |noise_codec| {
+                <v2::framing::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec))
+            }),
+        )
     }
 }
 
@@ -262,30 +270,33 @@ impl TransportMode {
         Self { inner }
     }
 
-    /// Consumes the transport mode instance and converts it into a Framed stream that can
-    /// consume/produce v2 frames with noise encryption
-    pub fn into_stratum_framed_stream(
+    /// Consumes the noise transport mode instance and converts it into a Framed stream that can
+    /// consume/produce frames with encryption. The codec inside the Framed stream is provided by
+    /// `build_codec`.
+    pub fn into_framed<I, F, U>(
         self,
         noise_framed_stream: NoiseFramedTcpStream,
-    ) -> v2::Framed {
+        build_codec: F,
+    ) -> Framed<TcpStream, U>
+    where
+        F: FnOnce(Codec) -> U,
+        // TODO: replace TcpStream with
+        // T: AsyncRead+AsyncWrite,
+        U: Encoder<I>,
+    {
         // Take apart the noise framed stream and build a new Framed stream that  uses
         // stratum V2 framing codec composed with the noise codec (in transport mode)
         let mut noise_framed_parts = noise_framed_stream.into_parts();
 
         // Move the noise codec into transport mode
         noise_framed_parts.codec.set_transport_mode(self);
-        let v2_codec =
-            <v2::framing::Framing as ii_wire::Framing>::Codec::new(Some(noise_framed_parts.codec));
+        let codec = build_codec(noise_framed_parts.codec);
 
-        let mut v2_framed_parts = FramedParts::new(noise_framed_parts.io, v2_codec);
-        v2_framed_parts
-            .read_buf
-            .unsplit(noise_framed_parts.read_buf);
-        v2_framed_parts
-            .write_buf
-            .unsplit(noise_framed_parts.write_buf);
+        let mut framed_parts = FramedParts::new(noise_framed_parts.io, codec);
+        framed_parts.read_buf.unsplit(noise_framed_parts.read_buf);
+        framed_parts.write_buf.unsplit(noise_framed_parts.write_buf);
 
-        Framed::from_parts(v2_framed_parts)
+        Framed::from_parts(framed_parts)
     }
 
     /// Decrypt and verify message from `in_buf` and append the result to `decrypted_message`
