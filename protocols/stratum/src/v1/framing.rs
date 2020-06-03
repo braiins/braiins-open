@@ -29,6 +29,7 @@ use bytes::{buf::BufMutExt, BytesMut};
 use super::Protocol;
 use crate::error::{Error, Result};
 use crate::payload::{Payload, SerializablePayload};
+use crate::v2::noise;
 
 /// Protocol frame consists solely from the payload
 #[derive(Debug, PartialEq)]
@@ -121,5 +122,5 @@ impl ii_wire::Framing for Framing {
     type Tx = Frame;
     type Rx = Frame;
     type Error = Error;
-    type Codec = codec::Codec;
+    type Codec = noise::CompoundCodec<codec::Codec>;
 }
