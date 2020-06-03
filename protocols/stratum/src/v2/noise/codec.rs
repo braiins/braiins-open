@@ -241,7 +241,7 @@ mod test {
 
     /// Verify that we can encode/decode noise frames. Use dummy payload (non-noise)
     #[test]
-    fn test_noise_codec_in_handshake_state() {
+    fn noise_codec_in_handshake_state() {
         let mut codec = Codec::default();
         let mut expected_frame = BytesMut::new();
         expected_frame.extend_from_slice(&[1, 2, 3, 4]);
@@ -263,8 +263,10 @@ mod test {
         );
     }
 
+    /// Verify that the codec also properly drives the underlying initiator/responder in
+    /// transport mode. The testing payload will this be transparently encrypted
     #[test]
-    fn test_noise_codec_in_transport_state() {
+    fn noise_codec_in_transport_state() {
         let mut initiator_codec = Codec::default();
         let mut responder_codec = Codec::default();
 
