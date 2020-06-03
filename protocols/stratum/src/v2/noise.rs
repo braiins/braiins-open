@@ -35,7 +35,7 @@ use crate::error::{Error, Result};
 use crate::v2;
 
 pub mod codec;
-pub use codec::Codec;
+pub use codec::{Codec, CompoundCodec};
 
 pub mod auth;
 mod handshake;

@@ -29,7 +29,7 @@ use bytes::{
 
 use ii_logging::macros::*;
 
-use super::Protocol;
+use super::{noise, Protocol};
 use crate::error::{Error, Result};
 use crate::payload::{Payload, SerializablePayload};
 
@@ -223,13 +223,13 @@ impl ii_wire::Framing for Framing {
     type Tx = Frame;
     type Rx = Frame;
     type Error = Error;
-    type Codec = codec::Codec;
+    type Codec = noise::CompoundCodec<codec::Codec>;
 }
 
 pub const PAYLOAD_CHANNEL_OFFSET: usize = 4;
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use super::*;
     use async_trait::async_trait;
 
