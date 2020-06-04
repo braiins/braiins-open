@@ -365,7 +365,7 @@ mod test {
 
     /// Test traits that will be used by serded for HexBytes when converting from/to string
     #[test]
-    fn test_hex_bytes() {
+    fn hex_bytes() {
         let hex_bytes = HexBytes(vec![0xde, 0xad, 0xbe, 0xef, 0x11, 0x22, 0x33]);
         let hex_bytes_str = "deadbeef112233";
 
@@ -381,7 +381,7 @@ mod test {
     }
 
     #[test]
-    fn test_hex_u32_from_string() {
+    fn hex_u32_from_string() {
         let hex_bytes_str = "deadbeef";
         let hex_bytes_str_0x = "0xdeadbeef";
 
@@ -402,7 +402,7 @@ mod test {
     }
 
     #[test]
-    fn test_extra_nonce1() {
+    fn extra_nonce1() {
         let expected_enonce1 =
             ExtraNonce1(HexBytes(vec![0xde, 0xad, 0xbe, 0xef, 0x11, 0x22, 0x33]));
         let expected_enonce1_str = r#""deadbeef112233""#;
@@ -426,7 +426,7 @@ mod test {
     /// This test demonstrates an actual implementation of protocol handler for a set of
     /// messsages
     #[tokio::test]
-    async fn test_build_message_from_frame() {
+    async fn message_from_frame() {
         for &req in V1_TEST_REQUESTS {
             let msg = build_message_from_frame(Frame::from_serialized_payload(BytesMut::from(req)))
                 .expect("Deserialization failed");
@@ -435,7 +435,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_deserialize_response_message() {
+    async fn deserialize_response_message() {
         let _msg = build_message_from_frame(Frame::from_serialized_payload(BytesMut::from(
             MINING_SUBSCRIBE_OK_RESULT_JSON,
         )))
