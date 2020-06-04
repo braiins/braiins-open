@@ -76,8 +76,12 @@ impl ConnTranslation {
             mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
         let (v2_translation_tx, v2_translation_rx) =
             mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
-        let translation =
-            V2ToV1Translation::new(v1_translation_tx, v2_translation_tx, Default::default());
+        let translation = V2ToV1Translation::new(
+            v1_translation_tx,
+            v2_translation_tx,
+            Default::default(),
+            String::new(),
+        );
 
         Self {
             translation,

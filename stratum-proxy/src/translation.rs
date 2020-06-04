@@ -45,6 +45,7 @@ use ii_logging::macros::*;
 
 use crate::error::{Error, Result};
 use crate::util;
+use std::fmt::Formatter;
 
 #[cfg(test)]
 mod test;
@@ -66,6 +67,42 @@ impl SeqId {
     }
 }
 
+/// Helper structure that allows using password string inside closure that require Copy trait.
+/// Password is max 128 bytes long. If supplied string is longer, it is truncated.
+#[derive(Copy, Clone)]
+pub struct Password {
+    serialized: [u8; 128],
+    length: u16,
+}
+
+impl std::fmt::Debug for Password {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "{}", self.to_opt_string())
+    }
+}
+
+impl Password {
+    pub fn new(password: &str) -> Self {
+        let mut serialized = [0u8; 128];
+        let raw = password.as_bytes();
+        let raw = if raw.len() > 128 {
+            &raw[0..128]
+        } else {
+            &raw[..]
+        };
+        for (index, byte) in raw.iter().enumerate() {
+            serialized[index] = *byte;
+        }
+        Self {
+            serialized,
+            length: raw.len() as u16,
+        }
+    }
+    pub fn to_opt_string(&self) -> String {
+        String::from_utf8_lossy(&self.serialized[0..(self.length as usize)]).into_owned()
+    }
+}
+
 /// Compound struct for all translation options that can be tweaked in `V2ToV1Translation`
 #[derive(Copy, Clone, Debug)]
 pub struct V2ToV1TranslationOptions {
@@ -74,6 +111,8 @@ pub struct V2ToV1TranslationOptions {
     /// Reconnect received from the upstream is translated and propagated to the v2 downstream
     /// connection. This can be useful for V2 clients that run this translation component locally
     pub propagate_reconnect_downstream: bool,
+    // cannot use String here because of Copy trait requirement
+    pub password: Password,
 }
 
 impl Default for V2ToV1TranslationOptions {
@@ -81,6 +120,7 @@ impl Default for V2ToV1TranslationOptions {
         Self {
             try_enable_xnsub: false,
             propagate_reconnect_downstream: false,
+            password: Password::new(""),
         }
     }
 }
@@ -177,6 +217,7 @@ pub struct V2ToV1Translation {
     v2_to_v1_job_map: JobMap,
     /// Options for translation
     options: V2ToV1TranslationOptions,
+    v1_password: String,
 }
 
 impl V2ToV1Translation {
@@ -198,6 +239,7 @@ impl V2ToV1Translation {
         v1_tx: mpsc::Sender<v1::Frame>,
         v2_tx: mpsc::Sender<v2::Frame>,
         options: V2ToV1TranslationOptions,
+        v1_password: String,
     ) -> Self {
         Self {
             v2_conn_details: None,
@@ -218,6 +260,7 @@ impl V2ToV1Translation {
             v2_job_id: SeqId::new(),
             v2_to_v1_job_map: JobMap::default(),
             options,
+            v1_password,
         }
     }
 
@@ -1198,7 +1241,8 @@ impl v2::Handler for V2ToV1Translation {
                 }
             }
 
-            let authorize = v1::messages::Authorize(payload.user.to_string(), "".to_string());
+            let authorize =
+                v1::messages::Authorize(payload.user.to_string(), self.v1_password.clone());
             let v1_authorize_message = self.v1_method_into_message(
                 authorize,
                 Self::handle_authorize_result,
