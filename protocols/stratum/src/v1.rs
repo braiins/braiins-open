@@ -305,7 +305,7 @@ impl TryFrom<&str> for HexU32Le {
     type Error = crate::error::Error;
 
     fn try_from(value: &str) -> Result<Self> {
-        let parsed_bytes: [u8; 4] = FromHex::from_hex(value)?;
+        let parsed_bytes: [u8; 4] = FromHex::from_hex(value.trim_start_matches("0x"))?;
         Ok(HexU32Le(u32::from_le_bytes(parsed_bytes)))
     }
 }
@@ -336,7 +336,7 @@ impl TryFrom<&str> for HexU32Be {
     type Error = crate::error::Error;
 
     fn try_from(value: &str) -> Result<Self> {
-        let parsed_bytes: [u8; 4] = FromHex::from_hex(value)?;
+        let parsed_bytes: [u8; 4] = FromHex::from_hex(value.trim_start_matches("0x"))?;
         Ok(HexU32Be(u32::from_be_bytes(parsed_bytes)))
     }
 }
@@ -378,6 +378,27 @@ mod test {
         let checked_hex_bytes = HexBytes::try_from(hex_bytes_str).expect("");
 
         assert_eq!(hex_bytes, checked_hex_bytes, "Mismatched hex bytes values",)
+    }
+
+    #[test]
+    fn test_hex_u32_from_string() {
+        let hex_bytes_str = "deadbeef";
+        let hex_bytes_str_0x = "0xdeadbeef";
+
+        let le_from_plain =
+            HexU32Le::try_from(hex_bytes_str).expect("BUG: parsing hex string failed");
+        let le_from_prefixed =
+            HexU32Le::try_from(hex_bytes_str_0x).expect("BUG: parsing hex string failed");
+        let ref_le = HexU32Le(0xefbeadde);
+        let be_from_plain =
+            HexU32Be::try_from(hex_bytes_str).expect("BUG: parsing hex string failed");
+        let be_from_prefixed =
+            HexU32Be::try_from(hex_bytes_str_0x).expect("BUG: parsing hex string failed");
+        let ref_be = HexU32Be(0xdeadbeef);
+        assert_eq!(le_from_plain, ref_le);
+        assert_eq!(le_from_prefixed, ref_le);
+        assert_eq!(be_from_plain, ref_be);
+        assert_eq!(be_from_prefixed, ref_be);
     }
 
     #[test]
