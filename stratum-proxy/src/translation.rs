@@ -45,7 +45,6 @@ use ii_logging::macros::*;
 
 use crate::error::{Error, Result};
 use crate::util;
-use std::fmt::Formatter;
 
 #[cfg(test)]
 mod test;
@@ -67,42 +66,6 @@ impl SeqId {
     }
 }
 
-/// Helper structure that allows using password string inside closure that require Copy trait.
-/// Password is max 128 bytes long. If supplied string is longer, it is truncated.
-#[derive(Copy, Clone)]
-pub struct Password {
-    serialized: [u8; 128],
-    length: u16,
-}
-
-impl std::fmt::Debug for Password {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "{}", self.to_opt_string())
-    }
-}
-
-impl Password {
-    pub fn new(password: &str) -> Self {
-        let mut serialized = [0u8; 128];
-        let raw = password.as_bytes();
-        let raw = if raw.len() > 128 {
-            &raw[0..128]
-        } else {
-            &raw[..]
-        };
-        for (index, byte) in raw.iter().enumerate() {
-            serialized[index] = *byte;
-        }
-        Self {
-            serialized,
-            length: raw.len() as u16,
-        }
-    }
-    pub fn to_opt_string(&self) -> String {
-        String::from_utf8_lossy(&self.serialized[0..(self.length as usize)]).into_owned()
-    }
-}
-
 /// Compound struct for all translation options that can be tweaked in `V2ToV1Translation`
 #[derive(Copy, Clone, Debug)]
 pub struct V2ToV1TranslationOptions {
@@ -112,7 +75,25 @@ pub struct V2ToV1TranslationOptions {
     /// connection. This can be useful for V2 clients that run this translation component locally
     pub propagate_reconnect_downstream: bool,
     // cannot use String here because of Copy trait requirement
-    pub password: Password,
+    pub password: arrayvec::ArrayString<[u8; Self::MAX_V1_PASSWORD_SIZE]>,
+}
+
+impl V2ToV1TranslationOptions {
+    const MAX_V1_PASSWORD_SIZE: usize = 128;
+
+    pub fn new(
+        try_enable_xnsub: bool,
+        propagate_reconnect_downstream: bool,
+        v1_password: &str,
+    ) -> Self {
+        let mut password = arrayvec::ArrayString::<[u8; Self::MAX_V1_PASSWORD_SIZE]>::new();
+        password.push_str(v1_password);
+        Self {
+            try_enable_xnsub,
+            propagate_reconnect_downstream,
+            password,
+        }
+    }
 }
 
 impl Default for V2ToV1TranslationOptions {
@@ -120,7 +101,7 @@ impl Default for V2ToV1TranslationOptions {
         Self {
             try_enable_xnsub: false,
             propagate_reconnect_downstream: false,
-            password: Password::new(""),
+            password: arrayvec::ArrayString::new(),
         }
     }
 }
@@ -240,7 +221,7 @@ impl V2ToV1Translation {
         v2_tx: mpsc::Sender<v2::Frame>,
         options: V2ToV1TranslationOptions,
     ) -> Self {
-        let v1_password = options.password.to_opt_string();
+        let v1_password = options.password.to_string();
         Self {
             v2_conn_details: None,
             v2_channel_details: None,

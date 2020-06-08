@@ -714,6 +714,7 @@ name = "ii-stratum-proxy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arrayvec",
  "async-trait",
  "bitcoin_hashes",
  "bytes 0.5.4",
