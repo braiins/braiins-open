@@ -239,8 +239,8 @@ impl V2ToV1Translation {
         v1_tx: mpsc::Sender<v1::Frame>,
         v2_tx: mpsc::Sender<v2::Frame>,
         options: V2ToV1TranslationOptions,
-        v1_password: String,
     ) -> Self {
+        let v1_password = options.password.to_opt_string();
         Self {
             v2_conn_details: None,
             v2_channel_details: None,
