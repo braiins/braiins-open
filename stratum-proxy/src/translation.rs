@@ -918,7 +918,7 @@ impl V2ToV1Translation {
             .v2_conn_details
             .as_ref()
             .expect("BUG: V2 channel details present but connection details missing?");
-        info!(
+        debug!(
             "{} SESSION;{};{};{};{};{:x};{};{};{};{};{};{};",
             msg,
             v2_channel_details.user.to_string(),
