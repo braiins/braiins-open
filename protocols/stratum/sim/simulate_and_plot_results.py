@@ -175,7 +175,10 @@ def main():
         ' and V2-proxy-V1 configuration and stores result plots in 3 pdf files.',
     )
     parser.add_argument(
-        '--latency_min', help='Minimal latency, (default 0.001)', type=float, default=0.001
+        '--latency_min',
+        help='Minimal latency, (default 0.001)',
+        type=float,
+        default=0.001,
     )
     parser.add_argument(
         '--latency_max', help='Maximal latency (default 0.5)', type=float, default=0.5
@@ -186,7 +189,9 @@ def main():
         type=int,
         default=25,
     )
-    parser.add_argument('--limit', help='Length of simulation (default 3000)', type=int, default=3000)
+    parser.add_argument(
+        '--limit', help='Length of simulation (default 3000)', type=int, default=3000
+    )
     args = parser.parse_args()
 
     gen_plot(
