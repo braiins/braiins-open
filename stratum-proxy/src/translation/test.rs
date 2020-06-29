@@ -36,7 +36,9 @@ where
     M: TryInto<v2::Frame, Error = ii_stratum::error::Error>,
 {
     // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait)
-    let frame: v2::Frame = message.try_into().expect("Could not serialize message");
+    let frame: v2::Frame = message
+        .try_into()
+        .expect("BUG: Could not serialize message");
 
     translation
         .handle_v2(frame)
@@ -49,7 +51,7 @@ where
     M: TryInto<v1::Frame, Error = ii_stratum::error::Error>,
 {
     // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait) as if it arrived to translation
-    let frame: v1::Frame = message.try_into().expect("Deserialization failed");
+    let frame: v1::Frame = message.try_into().expect("BUG: Deserialization failed");
 
     let deserialized = v1::rpc::Rpc::try_from(frame).expect("BUG: Message deserialization failed");
 
@@ -61,7 +63,10 @@ where
 
 async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<v2::Frame>) {
     // Pickup the response and verify it
-    let v2_response_tx_frame = v2_rx.next().await.expect("At least 1 message was expected");
+    let v2_response_tx_frame = v2_rx
+        .next()
+        .await
+        .expect("BUG: At least 1 message was expected");
     // This is specific for the unit test only: Instead of sending the message via some
     // connection, the test case will deserialize it and inspect it using the identity
     // handler from test utils
@@ -73,7 +78,10 @@ async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<v2::Fra
 async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<v1::Frame>) {
     // Pickup the response and verify it
     // TODO add timeout
-    let frame = v1_rx.next().await.expect("At least 1 message was expected");
+    let frame = v1_rx
+        .next()
+        .await
+        .expect("BUG: At least 1 message was expected");
 
     let deserialized = v1::rpc::Rpc::try_from(frame).expect("BUG: Message deserialization failed");
     test_utils::v1::TestIdentityHandler
@@ -164,7 +172,7 @@ async fn test_setup_connection_translate() {
     let registered_submit_template = translation
         .v2_to_v1_job_map
         .get(&0)
-        .expect("No mining job with V2 ID 0");
+        .expect("BUG: No mining job with V2 ID 0");
     assert_eq!(
         submit_template,
         registered_submit_template.clone(),
@@ -214,7 +222,7 @@ fn test_parse_client_reconnect() {
     assert_eq!(
         (Str0_255::from_str(""), 0),
         V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![]))
-            .expect(r#"Could not parse reconnect message without arguments"#)
+            .expect(r#"BUG: Could not parse reconnect message without arguments"#)
     );
 
     // lower boundary case
@@ -225,7 +233,7 @@ fn test_parse_client_reconnect() {
             Value::String("0".into()),
             Value::String("1".into()),
         ]))
-        .expect(r#"Could not parse boundary_case with host="" and port="0"#)
+        .expect(r#"BUG: Could not parse boundary_case with host="" and port="0"#)
     );
 
     // lower boundary case
@@ -236,7 +244,7 @@ fn test_parse_client_reconnect() {
             Value::Number(0.into()),
             Value::Number(1.into()),
         ]))
-        .expect(r#"Could not parse boundary_case with host="" and integeral port=0"#)
+        .expect(r#"BUG: Could not parse boundary_case with host="" and integeral port=0"#)
     );
 
     // random case
@@ -246,7 +254,9 @@ fn test_parse_client_reconnect() {
             Value::String("some_host".into()),
             Value::Number(1000.into()),
         ]))
-        .expect(r#"Could not parse regular case with host="some_host" and integeral port=1000"#)
+        .expect(
+            r#"BUG: Could not parse regular case with host="some_host" and integeral port=1000"#
+        )
     );
 
     // upper boundary case
@@ -261,7 +271,7 @@ fn test_parse_client_reconnect() {
             Value::String("1".into()),
         ]))
         .expect(
-            r#"Could not parse boundary_case with longest valid host and string port="65535"."#
+            r#"BUG: Could not parse boundary_case with longest valid host and string port="65535"."#
         )
     );
 
@@ -277,7 +287,7 @@ fn test_parse_client_reconnect() {
             Value::Number(1.into()),
         ]))
         .expect(
-            r#"Could not parse boundary_case with longest valid host and integeral port=65535."#
+            r#"BUG: Could not parse boundary_case with longest valid host and integeral port=65535."#
         )
     );
 
@@ -288,7 +298,7 @@ fn test_parse_client_reconnect() {
             Value::String("😊".into()),
             Value::Number(1000.into()),
         ]))
-        .expect("Could not parse non-ascii utf-8 host-name string")
+        .expect("BUG: Could not parse non-ascii utf-8 host-name string")
     );
 }
 

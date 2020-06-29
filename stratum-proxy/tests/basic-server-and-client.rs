@@ -49,16 +49,24 @@ static PORT_V2_FULL: u16 = 9003;
 
 #[tokio::test]
 async fn test_v2server() {
-    // FIXME: unwraps
-
     let addr = Address(ADDR.into(), PORT_V2);
     let mut server = Server::bind(&addr).expect("BUG: cannot bind to address");
 
     // Spawn server task that reacts to any incoming message and responds
     // with SetupConnectionSuccess
     tokio::spawn(async move {
-        let mut conn = Connection::<v2::Framing>::new(server.next().await.unwrap().unwrap());
-        let frame = conn.next().await.unwrap().unwrap();
+        let mut conn = Connection::<v2::Framing>::new(
+            server
+                .next()
+                .await
+                .expect("BUG: Failed to listen for a connection")
+                .expect("BUG: Failed to listen for a connection"),
+        );
+        let frame = conn
+            .next()
+            .await
+            .expect("BUG: Failed to read frame from Connection")
+            .expect("BUG: Failed to read frame from Connection");
         // test handler verifies that the message
         test_utils::v2::TestIdentityHandler.handle_v2(frame).await;
 
@@ -87,7 +95,11 @@ async fn test_v2server() {
         .await
         .expect("BUG: Could not send message");
 
-    let response_frame = connection.next().await.unwrap().unwrap();
+    let response_frame = connection
+        .next()
+        .await
+        .expect("BUG: Failed to read frame from Connection")
+        .expect("BUG: Failed to read frame from Connection");
     test_utils::v2::TestIdentityHandler
         .handle_v2(response_frame)
         .await;
@@ -149,7 +161,7 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
             );
 
             while let Some(frame) = conn.next().await {
-                let frame = frame.expect("Receiving frame failed");
+                let frame = frame.expect("BUG: Receiving frame failed");
                 let deserialized =
                     v1::rpc::Rpc::try_from(frame).expect("BUG: Frame deserialization failed");
                 // test handler verifies that the message
@@ -172,7 +184,9 @@ fn v1server_task(addr: SocketAddr) -> impl Future<Output = ()> {
 #[tokio::test]
 #[ignore]
 async fn test_v1server() {
-    let addr = format!("{}:{}", ADDR, PORT_V1).parse().unwrap();
+    let addr = format!("{}:{}", ADDR, PORT_V1)
+        .parse()
+        .expect("BUG: Failed to parse Address");
 
     // Spawn server task that reacts to any incoming message and responds
     // with SetupConnectionSuccess
@@ -189,7 +203,11 @@ async fn test_v1server() {
         .await
         .expect("BUG: Could not send request");
 
-    let response_frame = connection.next().await.unwrap().unwrap();
+    let response_frame = connection
+        .next()
+        .await
+        .expect("BUG: Failed to read frame from Connection")
+        .expect("BUG: Failed to read frame from Connection");
 
     let deserialized =
         v1::rpc::Rpc::try_from(response_frame).expect("BUG: Frame deserialization failed");

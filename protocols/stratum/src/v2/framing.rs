@@ -75,8 +75,8 @@ impl Header {
     ) -> Self {
         assert!(
             msg_length.unwrap_or(0) <= Self::MAX_LEN,
-            "BUG: Message too large, request: {} bytes, max allowed {} bytes",
-            msg_length.unwrap(),
+            "BUG: Message too large, request: {:?} bytes, max allowed {} bytes",
+            msg_length,
             Self::MAX_LEN
         );
         Self {
@@ -128,7 +128,7 @@ pub struct Frame {
     /// Allow public access to the header for payload dispatching etc.
     pub header: Header,
     /// Keep payload
-    pub(crate) payload: Payload<Protocol>,
+    pub payload: Payload<Protocol>,
 }
 
 impl Frame {
@@ -289,7 +289,7 @@ pub(crate) mod test {
         expected_payload.extend_from_slice(&frame_bytes[frame_bytes.len() - 4..]);
         let expected_frame = Frame::from_serialized_payload(true, 0, 0x16, expected_payload);
 
-        let frame = Frame::deserialize(&mut frame_bytes_buf).expect("Building frame failed");
+        let frame = Frame::deserialize(&mut frame_bytes_buf).expect("BUG: Building frame failed");
 
         assert_eq!(expected_frame, frame, "Frames don't match");
     }
@@ -316,9 +316,10 @@ pub(crate) mod test {
             Frame::from_serialized_payload(true, 0, 0x16, BytesMut::from(&payload[..]));
         expected_frame
             .serialize(&mut frame_bytes_buf)
-            .expect("Expected frame serialization failed");
+            .expect("BUG: Expected frame serialization failed");
 
-        let frame = Frame::deserialize(&mut frame_bytes_buf).expect("Cannot deserialize frame");
+        let frame =
+            Frame::deserialize(&mut frame_bytes_buf).expect("BUG: Cannot deserialize frame");
 
         assert_eq!(expected_frame, frame, "Frames don't match");
     }

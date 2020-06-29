@@ -18,7 +18,8 @@ fn hex_bytes() {
         "Mismatched hex bytes strings",
     );
 
-    let checked_hex_bytes = HexBytes::try_from(hex_bytes_str).expect("");
+    let checked_hex_bytes =
+        HexBytes::try_from(hex_bytes_str).expect("BUG: Failed to decode hex bytes");
 
     assert_eq!(hex_bytes, checked_hex_bytes, "Mismatched hex bytes values",)
 }
@@ -48,14 +49,14 @@ fn extra_nonce1() {
     let expected_enonce1_str = r#""deadbeef112233""#;
 
     let checked_enonce1_str: String =
-        serde_json::to_string(&expected_enonce1).expect("Serialization failed");
+        serde_json::to_string(&expected_enonce1).expect("BUG: Serialization failed");
     assert_eq!(
         expected_enonce1_str, checked_enonce1_str,
         "Mismatched extranonce 1 strings",
     );
 
     let checked_enonce1 =
-        serde_json::from_str(expected_enonce1_str).expect("Deserialization failed");
+        serde_json::from_str(expected_enonce1_str).expect("BUG: Deserialization failed");
 
     assert_eq!(
         expected_enonce1, checked_enonce1,
@@ -80,11 +81,11 @@ async fn deserialize_response_message() {
     let fr = Frame::from_serialized_payload(BytesMut::from(MINING_SUBSCRIBE_OK_RESULT_JSON));
     let deserialized = Rpc::try_from(fr).expect("BUG: Deserialization failed");
 
-    unvariant!( try deserialized {
-        x: rpc::StratumResultWithId => {
-            x.expect("BUG: Something fishy inside unvariant");
+    unvariant!(try deserialized {
+        x: rpc::StratumResult => {
+            x.expect("BUG: Deserialization failed");
         },
-        _x:_ => panic!("BUG: Incorrect message unvariated"),
+        _x: _ => panic!("BUG: Incorrect message unvariated"),
     });
 }
 

@@ -34,18 +34,22 @@ use bitcoin_hashes::{sha256d, Hash, HashEngine};
 use serde_json;
 use serde_json::Value;
 
-use ii_stratum::v1;
+use ii_stratum::v1::{self, MessageId};
 use ii_stratum::v2::{
     self,
     types::{Bytes0_32, Str0_255, Uint256Bytes},
 };
 
-use ii_unvariant::{handler, GetId};
+use ii_unvariant::handler;
 
 use ii_logging::macros::*;
 
 use crate::error::{Error, Result};
 use crate::util;
+
+mod stratum {
+    pub use ii_stratum::error::{Error, Result};
+}
 
 #[cfg(test)]
 mod test;
@@ -286,7 +290,7 @@ impl V2ToV1Translation {
         trace!("finalize_open_channel()");
         let mut init_target: Uint256Bytes = Uint256Bytes([0; 32]);
         self.v2_target
-            .expect("Bug: initial target still not defined when attempting to finalize OpenStandardMiningChannel")
+            .expect("BUG: initial target still not defined when attempting to finalize OpenStandardMiningChannel")
             .to_little_endian(init_target.as_mut());
 
         // when V1 authorization has already taken place, report channel opening success
@@ -321,7 +325,7 @@ impl V2ToV1Translation {
     fn send_set_target(&mut self) -> Result<()> {
         trace!("send_set_target()");
         let max_target = Uint256Bytes::from(self.v2_target.expect(
-            "Bug: initial target still not defined when attempting to finalize \
+            "BUG: initial target still not defined when attempting to finalize \
              OpenStandardMiningChannel",
         ));
 
@@ -696,10 +700,7 @@ impl V2ToV1Translation {
             trace!("Merkle root calculated: {:x?}", merkle_root);
             Ok(merkle_root)
         } else {
-            Err(super::error::Error::General(
-                "Extra nonce 1 missing, cannot calculate merkle root".into(),
-            )
-            .into())
+            Err(Error::General("Extra nonce 1 missing, cannot calculate merkle root".into()).into())
         }
     }
 
@@ -842,27 +843,24 @@ impl V2ToV1Translation {
         &mut self,
         id: &'a v1::MessageId,
         payload: V1ResultOrError<'a>,
-    ) {
+    ) -> Result<()> {
         // Each response message should have an ID for pairing
-        id.ok_or(Error::from(ii_stratum::error::Error::from(
-            v1::error::Error::Rpc("Missing ID in ii_stratum result".to_string()),
-        )))
+        id.ok_or(Error::from(stratum::Error::from(v1::error::Error::Rpc(
+            "Missing ID in ii_stratum result".to_string(),
+        ))))
         // find the ID in the request map
         .and_then(|id| {
             self.v1_req_map
                 .remove(&id)
-                .ok_or(Error::from(ii_stratum::error::Error::from(
-                    v1::error::Error::Rpc(format!("Received invalid ID {}", id).into()),
-                )))
+                .ok_or(Error::from(stratum::Error::from(v1::error::Error::Rpc(
+                    format!("Received invalid ID {}", id).into(),
+                ))))
         })
         // run the result through the result handler
         .and_then(|handler| match payload {
             V1ResultOrError::Result(r) => handler.0(self, id, r),
             V1ResultOrError::Error(e) => handler.1(self, id, e),
         })
-        .map_err(|e| info!("visit_stratum_result failed: {}", e))
-        // Consume the error as there is no way to return anything from the visitor for now.
-        .ok();
     }
 
     /// Parse the stratum V1 reconnect message into new host/port pair, where host is
@@ -939,12 +937,11 @@ impl V2ToV1Translation {
 
 #[handler(async try v1::rpc::Rpc suffix _v1)]
 impl V2ToV1Translation {
-    async fn visit_stratum_result(
+    async fn handle_stratum_result(
         &mut self,
-        payload: ii_stratum::error::Result<v1::rpc::StratumResultWithId>,
+        payload: (MessageId, v1::rpc::StratumResult),
     ) -> Result<()> {
-        let stratum_result = payload.expect("BUG: StratumResult message parsing failed");
-        let v1::rpc::StratumResultWithId(id, msg) = stratum_result;
+        let (id, msg) = payload;
         trace!(
             "visit_stratum_result() id={:?} state={:?} payload:{:?}",
             id,
@@ -952,16 +949,14 @@ impl V2ToV1Translation {
             &msg,
         );
         self.visit_stratum_result_or_error(&id, V1ResultOrError::Result(&msg))
-            .await;
-        Ok(())
+            .await
     }
 
-    async fn visit_stratum_error(
+    async fn handle_stratum_error(
         &mut self,
-        payload: ii_stratum::error::Result<v1::rpc::StratumErrorWithId>,
+        payload: (MessageId, v1::rpc::StratumError),
     ) -> Result<()> {
-        let stratum_error = payload.expect("BUG: StratumError message parsing failed");
-        let v1::rpc::StratumErrorWithId(id, msg) = stratum_error;
+        let (id, msg) = payload;
         trace!(
             "visit_stratum_error() id={:?} state={:?} payload:{:?}",
             id,
@@ -969,16 +964,14 @@ impl V2ToV1Translation {
             msg,
         );
         self.visit_stratum_result_or_error(&id, V1ResultOrError::Error(&msg))
-            .await;
-        Ok(())
+            .await
     }
 
-    async fn visit_set_difficulty(
+    async fn handle_set_difficulty(
         &mut self,
-        payload: ii_stratum::error::Result<v1::messages::SetDifficultyWithId>,
+        payload: (MessageId, v1::messages::SetDifficulty),
     ) -> Result<()> {
-        let set_difficulty = payload.expect("BUG: SetDifficulty message parsing failed");
-        let v1::messages::SetDifficultyWithId(id, msg) = set_difficulty;
+        let (id, msg) = payload;
         trace!(
             "visit_set_difficulty() id={:?} state={:?} payload:{:?}",
             id,
@@ -1006,12 +999,11 @@ impl V2ToV1Translation {
         Ok(())
     }
 
-    async fn visit_set_extranonce(
+    async fn handle_set_extranonce(
         &mut self,
-        payload: ii_stratum::error::Result<v1::messages::SetExtranonceWithId>,
+        payload: (MessageId, v1::messages::SetExtranonce),
     ) -> Result<()> {
-        let set_xn = payload.expect("BUG: SetExtranonce message parsing failed");
-        let v1::messages::SetExtranonceWithId(id, msg) = set_xn;
+        let (id, msg) = payload;
         trace!(
             "visit_set_extranonce() id={:?} state={:?} payload:{:?}",
             id,
@@ -1022,19 +1014,15 @@ impl V2ToV1Translation {
         // Update extranonces.
         // Changes are reflected after new mining job as per:
         //   https://en.bitcoin.it/wiki/Stratum_mining_protocol#mining.set_extranonce
-        self.v1_extra_nonce1 = Some(msg.extra_nonce_1().clone());
-        self.v1_extra_nonce2_size = msg.extra_nonce_2_size().clone();
+        self.v1_extra_nonce1 = Some(msg.extra_nonce1);
+        self.v1_extra_nonce2_size = msg.extra_nonce2_size;
         Ok(())
     }
 
     /// Composes a new mining job and sends it downstream
     /// TODO: Only 1 channel is supported
-    async fn visit_notify(
-        &mut self,
-        payload: ii_stratum::error::Result<v1::messages::NotifyWithId>,
-    ) -> Result<()> {
-        let notify = payload.expect("BUG: Notify message parsing failed");
-        let v1::messages::NotifyWithId(id, msg) = notify;
+    async fn handle_notify(&mut self, payload: (MessageId, v1::messages::Notify)) -> Result<()> {
+        let (id, msg) = payload;
         trace!(
             "visit_notify() id={:?} state={:?} payload:{:?}",
             id,
@@ -1048,28 +1036,24 @@ impl V2ToV1Translation {
             debug!("Channel not yet operational, caching latest mining.notify from upstream");
             return Ok(());
         }
-        self.perform_notify(&msg)
-            .map_err(|e| {
-                info!(
-                    "visit_notify: Sending new mining job failed error={:?} id={:?} state={:?} \
-                     payload:{:?}",
-                    e, id, self.state, msg,
-                )
-            })
-            // Consume the error as there is no way this can be communicated further
-            .ok();
+        self.perform_notify(&msg).map_err(|e| {
+            Error::General(format!(
+                "visit_notify: Sending new mining job failed error={:?} id={:?} state={:?} \
+                 payload:{:?}",
+                e, id, self.state, msg,
+            ))
+        })?;
         Ok(())
     }
 
     /// TODO currently unimplemented, the proxy should refuse changing the version mask from the server
     /// Since this is a notification only, the only action that the translation can do is log +
     /// report an error
-    async fn visit_set_version_mask(
+    async fn handle_set_version_mask(
         &mut self,
-        payload: ii_stratum::error::Result<v1::messages::SetVersionMaskWithId>,
+        payload: (MessageId, v1::messages::SetVersionMask),
     ) -> Result<()> {
-        let set_vm = payload.expect("BUG: SetVersionMask message parsing failed");
-        let v1::messages::SetVersionMaskWithId(id, msg) = set_vm;
+        let (id, msg) = payload;
         trace!(
             "visit_set_version_mask() id={:?} state={:?} payload:{:?}",
             id,
@@ -1079,12 +1063,11 @@ impl V2ToV1Translation {
         Ok(())
     }
 
-    async fn visit_client_reconnect(
+    async fn handle_client_reconnect(
         &mut self,
-        payload: ii_stratum::error::Result<v1::messages::ClientReconnectWithId>,
+        payload: (MessageId, v1::messages::ClientReconnect),
     ) -> Result<()> {
-        let reconnect = payload.expect("BUG: Reconnect message parsing failed");
-        let v1::messages::ClientReconnectWithId(id, msg) = reconnect;
+        let (id, msg) = payload;
         trace!(
             "visit_client_reconnect() id={:?} state={:?} payload:{:?}",
             id,
@@ -1093,64 +1076,55 @@ impl V2ToV1Translation {
         );
         // Propagate the reconnect only if configured so
         if self.options.propagate_reconnect_downstream {
-            Self::parse_client_reconnect(&msg)
-                .map(|(new_host, new_port)| {
-                    let reconnect_msg = v2::messages::Reconnect { new_host, new_port };
+            let (new_host, new_port) = Self::parse_client_reconnect(&msg)
+                .map_err(|e| Error::General(format!("visit_client_reconnect failed: {}", e)))?;
 
-                    if let Err(submit_err) = util::submit_message(&mut self.v2_tx, reconnect_msg) {
-                        info!("Cannot send 'Reconnect': {:?}", submit_err);
-                    };
-                })
-                .map_err(|e| info!("visit_client_reconnect failed: {}", e))
-                // Consume the result, no way to return a status from the visitor
-                .ok();
+            let reconnect_msg = v2::messages::Reconnect { new_host, new_port };
+
+            util::submit_message(&mut self.v2_tx, reconnect_msg)
+                .map_err(|e| Error::General(format!("Cannot send 'Reconnect': {:?}", e)))?;
         }
         Ok(())
     }
 
     #[handle(_)]
-    async fn handle_unknown_v1(&mut self, _frame: v1::rpc::Rpc) -> Result<()> {
-        warn!("Unknown protocol Message received. Id: {}", _frame.get_id());
-        Ok(())
+    async fn handle_unknown_v1(&mut self, frame: Result<v1::rpc::Rpc>) -> Result<()> {
+        Err(Error::General(format!(
+            "Unrecognized v1 frame: {:?}",
+            frame?
+        )))
     }
 }
 
 #[handler(async try v2::framing::Frame suffix _v2)]
 impl V2ToV1Translation {
-    async fn handle_setup_connection(
-        &mut self,
-        msg: ii_stratum::error::Result<v2::messages::SetupConnection>,
-    ) -> Result<()> {
-        let setup_connection_message = msg.expect("BUG: SetupConnection message parsing failed");
-        trace!(
-            "handle_setup_connection() payload:{:?}",
-            setup_connection_message,
-        );
+    async fn handle_setup_connection(&mut self, msg: v2::messages::SetupConnection) -> Result<()> {
+        trace!("handle_setup_connection(): {:?}", msg);
+
         if self.state != V2ToV1TranslationState::Init {
-            trace!(
-                "Cannot setup connection again, received: {:?}",
-                setup_connection_message
-            );
+            trace!("Cannot setup connection again, received: {:?}", msg);
+
             let err_msg = v2::messages::SetupConnectionError {
                 code: "Connection can be setup only once"
                     .try_into()
                     .expect("BUG: incorrect error message"),
-                flags: setup_connection_message.flags, // TODO Flags indicating features causing an error
+                flags: msg.flags, // TODO Flags indicating features causing an error
             };
+
             if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg) {
                 info!("Cannot submit SetupConnectionError: {:?}", submit_err);
                 return Err(submit_err);
             }
         }
 
-        self.v2_conn_details = Some(setup_connection_message.clone());
+        self.v2_conn_details = Some(msg.clone());
         let mut configure = v1::messages::Configure::new();
         configure
             .add_feature(v1::messages::VersionRolling::new(
                 ii_stratum::BIP320_N_VERSION_MASK,
                 ii_stratum::BIP320_N_VERSION_MAX_BITS,
             ))
-            .expect("addfeature failed"); // FIXME: how to handle errors from configure.add_feature() ?
+            .expect("BUG: addfeature failed"); // FIXME: how to handle errors from configure.add_feature() ?
 
         let v1_configure_message = self.v1_method_into_message(
             configure,
@@ -1175,24 +1149,22 @@ impl V2ToV1Translation {
     /// - start sending Jobs downstream to V2 client
     async fn handle_open_standard_mining_channel(
         &mut self,
-        msg: ii_stratum::error::Result<v2::messages::OpenStandardMiningChannel>,
+        msg: v2::messages::OpenStandardMiningChannel,
     ) -> Result<()> {
-        let open_std_channel_message =
-            msg.expect("BUG: OpenStandardMiningChannel message parsing failed");
         trace!(
             "handle_open_standard_mining_channel() state={:?} payload:{:?}",
             self.state,
-            open_std_channel_message,
+            msg,
         );
         if self.state != V2ToV1TranslationState::ConnectionSetup
             && self.state != V2ToV1TranslationState::V1SubscribeOrAuthorizeFail
         {
             trace!(
                 "Out of sequence OpenStandardMiningChannel message, received: {:?}",
-                open_std_channel_message
+                msg
             );
             let err_msg = v2::messages::OpenStandardMiningChannelError {
-                req_id: open_std_channel_message.req_id,
+                req_id: msg.req_id,
                 code: "Out of sequence OpenStandardMiningChannel msg"
                     .try_into()
                     .expect("BUG: incorrect error message"),
@@ -1208,7 +1180,7 @@ impl V2ToV1Translation {
         }
         // Connection details are present by now
         if let Some(conn_details) = self.v2_conn_details.as_ref() {
-            self.v2_channel_details = Some(open_std_channel_message.clone());
+            self.v2_channel_details = Some(msg.clone());
             self.state = V2ToV1TranslationState::OpenStandardMiningChannelPending;
 
             let hostname: String = conn_details
@@ -1218,12 +1190,12 @@ impl V2ToV1Translation {
                 .expect("BUG: Cannot convert to string from connection details");
 
             let hostname_port = format!("{}:{}", hostname, conn_details.endpoint_port);
-            let subscribe = v1::messages::Subscribe(
-                Some(conn_details.device.fw_ver.to_string()),
-                None,
-                Some(hostname_port),
-                None,
-            );
+            let subscribe = v1::messages::Subscribe {
+                agent_signature: Some(conn_details.device.fw_ver.to_string()),
+                extra_nonce1: None,
+                url: Some(hostname_port),
+                port: None,
+            };
 
             let v1_subscribe_message = self.v1_method_into_message(
                 subscribe,
@@ -1237,7 +1209,7 @@ impl V2ToV1Translation {
             }
 
             if self.options.try_enable_xnsub {
-                let extranonce_subscribe = v1::messages::ExtranonceSubscribe();
+                let extranonce_subscribe = v1::messages::ExtranonceSubscribe;
                 let v1_extranonce_subscribe = self.v1_method_into_message(
                     extranonce_subscribe,
                     Self::handle_extranonce_subscribe_result,
@@ -1254,10 +1226,10 @@ impl V2ToV1Translation {
                 }
             }
 
-            let authorize = v1::messages::Authorize(
-                open_std_channel_message.user.to_string(),
-                self.v1_password.clone(),
-            );
+            let authorize = v1::messages::Authorize {
+                name: msg.user.to_string(),
+                password: self.v1_password.clone(),
+            };
             let v1_authorize_message = self.v1_method_into_message(
                 authorize,
                 Self::handle_authorize_result,
@@ -1280,23 +1252,19 @@ impl V2ToV1Translation {
     /// If any of the above points fail, reply with SubmitShareError + reasoning
     async fn handle_submit_shares_standard(
         &mut self,
-        msg: ii_stratum::error::Result<v2::messages::SubmitSharesStandard>,
+        msg: v2::messages::SubmitSharesStandard,
     ) -> Result<()> {
-        let submit_shares_msg = msg.expect("BUG: SubmitSharesStandard message parsing failed");
         trace!(
             "handle_submit_shares_standard() state={:?} payload:{:?}",
             self.state,
-            submit_shares_msg,
+            msg,
         );
         // Report invalid channel ID
-        if submit_shares_msg.channel_id != Self::CHANNEL_ID {
-            self.reject_shares(
-                &submit_shares_msg,
-                format!("Unrecognized channel ID {}", submit_shares_msg.channel_id),
-            );
+        if msg.channel_id != Self::CHANNEL_ID {
+            self.reject_shares(&msg, format!("Unrecognized channel ID {}", msg.channel_id));
             return Err(Error::Stratum(ii_stratum::error::Error::General(format!(
                 "Unrecognized channel ID {}",
-                submit_shares_msg.channel_id
+                msg.channel_id
             ))));
         }
 
@@ -1305,7 +1273,7 @@ impl V2ToV1Translation {
         let v2_channel_details = &self
             .v2_channel_details
             .clone()
-            .expect("Missing channel details");
+            .expect("BUG: Missing channel details");
         // TODO this is only here as we want to prevent locking up 'self' into multiple closures
         // and causing borrow checker complains
         let v1_extra_nonce2_size = self.v1_extra_nonce2_size;
@@ -1313,11 +1281,11 @@ impl V2ToV1Translation {
         // Check job ID validity
         let v1_submit_template = self
             .v2_to_v1_job_map
-            .get(&submit_shares_msg.job_id)
+            .get(&msg.job_id)
             // convert missing job ID (None) into an error
             .ok_or(crate::error::Error::General(format!(
                 "V2 Job ID not present {} in registry",
-                submit_shares_msg.job_id
+                msg.job_id
             )))
             .map(|tmpl| tmpl.clone());
         // TODO validate the job (recalculate the hash and compare the target)
@@ -1329,10 +1297,10 @@ impl V2ToV1Translation {
                     v1_submit_template.job_id.clone(),
                     Self::channel_to_extra_nonce2_bytes(Self::CHANNEL_ID, v1_extra_nonce2_size)
                         .as_ref(),
-                    submit_shares_msg.ntime,
-                    submit_shares_msg.nonce,
+                    msg.ntime,
+                    msg.nonce,
                     // ensure the version bits in the template follow BIP320
-                    submit_shares_msg.version & ii_stratum::BIP320_N_VERSION_MASK,
+                    msg.version & ii_stratum::BIP320_N_VERSION_MASK,
                 );
                 // Convert the method into a message + provide handling methods
                 let v1_submit_message = self.v1_method_into_message(
@@ -1347,17 +1315,16 @@ impl V2ToV1Translation {
                     );
                 }
             }
-            Err(e) => self.reject_shares(&submit_shares_msg, format!("{}", e)),
+            Err(e) => self.reject_shares(&msg, format!("{}", e)),
         }
         Ok(())
     }
 
     #[handle(_)]
-    async fn handle_unknown_v2(&mut self, _frame: v2::framing::Frame) -> Result<()> {
-        warn!(
-            "Unknown protocol Message received. Id: {}",
-            _frame.header.msg_type
-        );
-        Ok(())
+    async fn handle_unknown_v2(&mut self, frame: Result<v2::framing::Frame>) -> Result<()> {
+        Err(Error::General(format!(
+            "Unrecognized v2 frame: {:?}",
+            frame?
+        )))
     }
 }

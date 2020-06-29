@@ -25,27 +25,24 @@ pub mod framing;
 pub mod messages;
 pub mod rpc;
 
-use self::error::Error;
-pub use self::framing::codec::Codec;
-pub use self::framing::{Frame, Framing};
-use crate::error::Result;
+use std::convert::TryFrom;
+use std::mem::size_of;
 
 use bitcoin_hashes::hex::{FromHex, ToHex};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 use hex::FromHexError;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
-use std::mem::size_of;
 use tokio::net::TcpStream;
 
-const ERROR_ATTRIBUTE: &'static str = "error";
-const RESULT_ATTRIBUTE: &'static str = "result";
+use self::error::Error;
+pub use self::framing::codec::Codec;
+pub use self::framing::{Frame, Framing};
+use crate::error::Result;
 
-//// Tcp stream that produces/consumes V2 frames
+/// Tcp stream that produces/consumes V2 frames
 pub type Framed = tokio_util::codec::Framed<TcpStream, <Framing as ii_wire::Framing>::Codec>;
 
-// Message Id is used for pairing request/response messages
-/// TODO spread this type across the protocol and eliminate the `Option<u32>`
+/// Message Id is used for pairing request/response messages
 pub type MessageId = Option<u32>;
 
 pub struct Protocol;
@@ -154,7 +151,7 @@ impl TryFrom<&str> for PrevHash {
             let prev_hash_word = BigEndian::read_u32(chunk);
             prev_hash_cursor
                 .write_u32::<LittleEndian>(prev_hash_word)
-                .expect("Internal error: Could not write buffer");
+                .expect("BUG: Could not write buffer");
         }
 
         Ok(PrevHash(prev_hash_cursor.into_inner()))
@@ -181,7 +178,7 @@ impl Into<String> for PrevHash {
             let prev_hash_word = LittleEndian::read_u32(chunk);
             prev_hash_stratum_cursor
                 .write_u32::<BigEndian>(prev_hash_word)
-                .expect("Internal error: Could not write buffer");
+                .expect("BUG: Could not write buffer");
         }
         hex::encode(prev_hash_stratum_cursor.into_inner())
     }

@@ -22,53 +22,52 @@
 
 //! Definition of all Stratum V1 messages
 
-use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
+use std::result::Result as StdResult;
 
-use ii_unvariant::{id, Id};
+use serde::de::Deserializer;
+use serde::ser::Serializer;
+use serde::{Deserialize, Serialize};
 
-use super::{error::Error, RESULT_ATTRIBUTE};
+use ii_unvariant::Id;
 
+use super::error::Error;
+use super::rpc::{self, Method, Rpc};
+use super::{ExtraNonce1, HexBytes, HexU32Be, MessageId, PrevHash};
 use crate::error::Result;
-use crate::v1::{
-    rpc::{self, Method, Rpc},
-    ExtraNonce1, HexBytes, HexU32Be, MessageId, PrevHash, Protocol,
-};
-use std::ops::Deref;
 
 #[cfg(test)]
 pub mod test;
 
-/// Generates implementation of conversions for various protocol request messages
-macro_rules! impl_conversion_request {
-    ($request:tt, $method:path, $extended_request:tt) => {
-        // NOTE: $request and $handler_fn need to be tt because of https://github.com/dtolnay/async-trait/issues/46
+/// Implement Id and several to/from rpc types conversion traits
+macro_rules! impl_request {
+    ($request:tt, $method:path) => {
+        // Unvariant IDs
+        impl Id<Method> for $request {
+            const ID: Method = $method;
+        }
+        impl Id<Method> for (MessageId, $request) {
+            const ID: Method = $method;
+        }
 
-        #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-        pub struct $extended_request(pub MessageId, pub $request);
+        impl TryFrom<rpc::Rpc> for $request {
+            type Error = crate::error::Error;
 
-        impl TryFrom<rpc::Rpc> for $extended_request {
+            fn try_from(value: Rpc) -> Result<Self> {
+                let (_, this) = value.try_into()?;
+                Ok(this)
+            }
+        }
+
+        impl TryFrom<rpc::Rpc> for (MessageId, $request) {
             type Error = crate::error::Error;
 
             fn try_from(value: Rpc) -> Result<Self> {
                 if let Rpc::Request(request) = value {
-                    let id = request.id;
-                    $request::try_from(request).map(|a| $extended_request(id, a))
+                    Ok((request.id, $request::try_from(request)?))
                 } else {
                     Err(Error::Rpc(format!("BUG: response handled as request")).into())
                 }
-            }
-        }
-
-        impl Id<&str> for $extended_request {
-            const ID: &'static str = $request::ID;
-        }
-
-        impl Deref for $extended_request {
-            type Target = $request;
-
-            fn deref(&self) -> &Self::Target {
-                &self.1
             }
         }
 
@@ -85,20 +84,6 @@ macro_rules! impl_conversion_request {
             }
         }
 
-        impl TryFrom<rpc::Request> for Box<$request> {
-            type Error = crate::error::Error;
-
-            fn try_from(value: rpc::Request) -> Result<Self> {
-                $request::try_from(value)
-                    .map(|m| Box::new(m))
-                    .map_err(Into::into)
-            }
-        }
-
-        impl Id<&str> for Box<$request> {
-            const ID: &'static str = $request::ID;
-        }
-
         impl TryFrom<rpc::Request> for $request {
             type Error = crate::error::Error;
 
@@ -110,34 +95,66 @@ macro_rules! impl_conversion_request {
                 serde_json::from_value(req.payload.params).map_err(Into::into)
             }
         }
-
-        impl crate::AnyPayload<Protocol> for $request {
-            fn serialize_to_writer(&self, _writer: &mut dyn std::io::Write) -> Result<()> {
-                panic!(
-                    "BUG: serialization of partial request without Rpc not supported {:?}",
-                    self
-                );
-            }
-        }
     };
 }
 
-macro_rules! impl_conversion_response {
-    ($response:ty) => {
-        impl Id<&str> for $response {
-            const ID: &'static str = RESULT_ATTRIBUTE;
+/// Generates a declaration of a request message and De/Serialize impls
+/// which convert a struct with fields to/from a tuple de/serialization.
+/// This is done because in v1 the arguments are simply stored in an array,
+/// but in code regular structs with named fields are a lot more readable.
+/// impl_request!() is also called as part of this macro
+/// to generate the IDs and conversions.
+macro_rules! declare_request {
+    ($doc:expr, $method:path, struct $request:tt { $($field:ident : $ty:ty,)* }) => {
+        #[doc=$doc]
+        #[derive(PartialEq, Clone, Debug)]
+        pub struct $request {
+            $(pub $field : $ty),*
         }
 
+        // Serialize and Deserialize are implemented through
+        // conversion to tuple that omits the `id` field.
+
+        impl Serialize for $request {
+            fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                // Convert to a tuple and serialize:
+                let tuple = ($(&self.$field),*);
+                tuple.serialize(serializer)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $request {
+            fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                // Deserialize into a tuple:
+                type Tuple = ($($ty,)*);
+                let tuple = Tuple::deserialize(deserializer)?;
+
+                // Unpack the tuple into fields & construct Self out of them:
+                let ($($field,)*) = tuple;
+                Ok(Self {
+                    $($field),*
+                })
+            }
+        }
+
+        impl_request!($request, $method);
+    };
+}
+
+macro_rules! impl_response {
+    ($response:ty) => {
         impl TryFrom<$response> for rpc::ResponsePayload {
             type Error = crate::error::Error;
 
             fn try_from(resp: $response) -> Result<rpc::ResponsePayload> {
-                let result = rpc::StratumResult(serde_json::to_value(resp)?);
-
-                Ok(rpc::ResponsePayload {
-                    result: Some(result),
-                    error: None,
-                })
+                let result = rpc::StratumResult::new(resp)?;
+                Ok(Ok(result))
             }
         }
 
@@ -145,7 +162,7 @@ macro_rules! impl_conversion_response {
             type Error = crate::error::Error;
 
             fn try_from(resp: rpc::Response) -> Result<Self> {
-                let result = resp.payload.result.ok_or(Error::Json("No result".into()))?;
+                let result = resp.result.map_err(|_| Error::Json("No result".into()))?;
                 <$response>::try_from(&result)
             }
         }
@@ -198,17 +215,21 @@ impl TryInto<(String, serde_json::Value)> for VersionRolling {
     }
 }
 
-/// Mining configure
-#[id("mining.configure")]
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Configure(pub Vec<String>, pub serde_json::Value);
+declare_request!(
+    "Mining configure",
+    Method::Configure,
+    struct Configure {
+        features: Vec<String>,
+        configure_map: serde_json::Value,
+    }
+);
 
 impl Configure {
     /// Constructs an empty configuration
     pub fn new() -> Self {
         Self {
-            0: vec![],
-            1: serde_json::value::Value::Object(serde_json::map::Map::new()),
+            features: vec![],
+            configure_map: serde_json::Map::new().into(),
         }
     }
 
@@ -218,11 +239,11 @@ impl Configure {
         T: TryInto<(String, serde_json::Value), Error = crate::error::Error>,
     {
         let (feature_name, feature_map) = feature.try_into()?;
-        self.0.push(feature_name);
+        self.features.push(feature_name);
 
         // Merge the feature into the current configuration map
-        if let serde_json::Value::Object(ref mut configure_map) = self.1 {
-            if let serde_json::Value::Object(ref feature_map) = feature_map {
+        if let Some(configure_map) = self.configure_map.as_object_mut() {
+            if let Some(feature_map) = feature_map.as_object() {
                 for (k, v) in feature_map {
                     configure_map.insert(k.clone(), v.clone());
                 }
@@ -232,76 +253,55 @@ impl Configure {
         Ok(())
     }
 }
-impl_conversion_request!(Configure, Method::Configure, ConfigureWithId);
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct ConfigureResult(pub serde_json::Value);
 
-impl_conversion_response!(ConfigureResult);
+impl_response!(ConfigureResult);
 
 /// Extranonce subscriptionMessage
-#[id("mining.extranonce.subscribe")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct ExtranonceSubscribe();
+pub struct ExtranonceSubscribe;
 
-impl_conversion_request!(
-    ExtranonceSubscribe,
-    Method::ExtranonceSubscribe,
-    ExtranonceSubscribeWithId
+impl_request!(ExtranonceSubscribe, Method::ExtranonceSubscribe);
+
+declare_request!(
+    "SetExtranonce message (sent if we subscribed with `ExtranonceSubscribe`)",
+    Method::SetExtranonce,
+    struct SetExtranonce {
+        extra_nonce1: ExtraNonce1,
+        extra_nonce2_size: usize,
+    }
 );
 
-/// SetExtranonce message (sent if we subscribed with `ExtranonceSubscribe`)
-#[id("mining.set_extranonce")]
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct SetExtranonce(pub ExtraNonce1, pub usize);
-
-impl SetExtranonce {
-    pub fn extra_nonce_1(&self) -> &ExtraNonce1 {
-        &self.0
+declare_request!(
+    "Compounds all data required for mining subscription",
+    Method::Subscribe,
+    struct Subscribe {
+        agent_signature: Option<String>,
+        extra_nonce1: Option<ExtraNonce1>,
+        url: Option<String>,
+        port: Option<String>,
     }
-
-    pub fn extra_nonce_2_size(&self) -> usize {
-        self.1
-    }
-}
-
-impl_conversion_request!(SetExtranonce, Method::SetExtranonce, SetExtranonceWithId);
-
-/// Compounds all data required for mining subscription
-#[id("mining.subscribe")]
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Subscribe(
-    pub Option<String>,
-    pub Option<ExtraNonce1>,
-    pub Option<String>,
-    pub Option<String>,
 );
 
 impl Subscribe {
-    //    pub fn new(agent_signature: Option<String>, extra_nonce1: ExtraNonce1, url: String, port: String) -> Self {
-    //        Self(agent, extra_nonce1, url, port)
-    //    }
     pub fn agent_signature(&self) -> Option<&String> {
-        self.0.as_ref()
+        self.agent_signature.as_ref()
     }
+
     pub fn extra_nonce1(&self) -> Option<&ExtraNonce1> {
-        self.1.as_ref()
+        self.extra_nonce1.as_ref()
     }
+
     pub fn url(&self) -> Option<&String> {
-        self.2.as_ref()
+        self.url.as_ref()
     }
+
     pub fn port(&self) -> Option<&String> {
-        self.3.as_ref()
+        self.port.as_ref()
     }
 }
-
-// Subscribe::try_from()
-//  FIXME: verify signature, url, and port?
-//  let agent_signature =
-//      req.param_to_string(0, Error::Subscribe("Invalid signature".into()))?;
-//  let url = req.param_to_string(2, Error::Subscribe("Invalid pool URL".into()))?;
-//  let port = req.param_to_string(3, Error::Subscribe("Invalid TCP port".into()))?;
-impl_conversion_request!(Subscribe, Method::Subscribe, SubscribeWithId);
 
 /// Subscription response
 /// TODO: Do we need to track any subscription ID's or anyhow validate those fields?
@@ -324,39 +324,32 @@ impl SubscribeResult {
 }
 
 // TODO write a test case for parsing incorrect response
-impl_conversion_response!(SubscribeResult);
+impl_response!(SubscribeResult);
 
 /// A boolean result
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct BooleanResult(pub bool);
 
-impl_conversion_response!(BooleanResult);
+impl_response!(BooleanResult);
 
-/// Subscription response
-/// TODO: Do we need to track any subscription ID's or anyhow validate those fields?
-/// see StratumError for reasons why this structure doesn't have named fields
-#[id("mining.authorize")]
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Authorize(pub String, pub String);
-
-impl Authorize {
-    pub fn name(&self) -> &String {
-        &self.0
+declare_request!(
+    "Subscription response
+    TODO: Do we need to track any subscription ID's or anyhow validate those fields?
+    see StratumError for reasons why this structure doesn't have named fields",
+    Method::Authorize,
+    struct Authorize {
+        name: String,
+        password: String,
     }
-
-    pub fn password(&self) -> &String {
-        &self.1
-    }
-}
-
-impl_conversion_request!(Authorize, Method::Authorize, AuthorizeWithId);
+);
 
 /// Difficulty value set by the upstream stratum server
 /// Note, that we explicitly enforce 1 one element array so that serde doesn't flatten the
 /// 'params' JSON array to a single value, eliminating the array completely.
-#[id("mining.set_difficulty")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SetDifficulty(pub [f32; 1]);
+
+impl_request!(SetDifficulty, Method::SetDifficulty);
 
 impl SetDifficulty {
     pub fn value(&self) -> f32 {
@@ -364,11 +357,11 @@ impl SetDifficulty {
     }
 }
 
-impl_conversion_request!(SetDifficulty, Method::SetDifficulty, SetDifficultyWithId);
-//#[derive(Deserialize)]
-//struct Helper(#[serde(with = "DurationDef")] Duration);
-//
-//let dur = serde_json::from_str(j).map(|Helper(dur)| dur)?;
+impl From<f32> for SetDifficulty {
+    fn from(f: f32) -> Self {
+        Self([f])
+    }
+}
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct JobId(String);
@@ -403,77 +396,76 @@ pub struct Bits(HexU32Be);
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Time(HexU32Be);
 
-/// New mining job notification
-/// TODO generate the field accessors
-#[id("mining.notify")]
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Notify(
-    JobId,
-    PrevHash,
-    CoinBase1,
-    CoinBase2,
-    MerkleBranch,
-    Version,
-    Bits,
-    Time,
-    bool,
+declare_request!(
+    "New mining job notification",
+    Method::Notify,
+    struct Notify {
+        job_id: JobId,
+        prev_hash: PrevHash,
+        coin_base_1: CoinBase1,
+        coin_base_2: CoinBase2,
+        merkle_branch: MerkleBranch,
+        version: Version,
+        bits: Bits,
+        time: Time,
+        clean_jobs: bool,
+    }
 );
 
 // TODO consider making the attributes return new type references, it would be less prone to typos
 impl Notify {
     pub fn job_id(&self) -> &str {
-        &(self.0).0
+        &(self.job_id).0
     }
 
     pub fn prev_hash(&self) -> &[u8] {
-        self.1.as_ref()
+        self.prev_hash.as_ref()
     }
 
     pub fn coin_base_1(&self) -> &[u8] {
-        &((self.2).0).0
+        &((self.coin_base_1).0).0
     }
 
     pub fn coin_base_2(&self) -> &[u8] {
-        &((self.3).0).0
+        &((self.coin_base_2).0).0
     }
 
     pub fn merkle_branch(&self) -> &Vec<HexBytes> {
-        &(self.4).0
+        &(self.merkle_branch).0
     }
 
     pub fn version(&self) -> u32 {
-        ((self.5).0).0
+        ((self.version).0).0
     }
 
     pub fn bits(&self) -> u32 {
-        ((self.6).0).0
+        ((self.bits).0).0
     }
 
     pub fn time(&self) -> u32 {
-        ((self.7).0).0
+        ((self.time).0).0
     }
 
     pub fn clean_jobs(&self) -> bool {
-        self.8
+        self.clean_jobs
     }
 }
 
-impl_conversion_request!(Notify, Method::Notify, NotifyWithId);
-
-/// Server may arbitrarily adjust version mask
-/// Note, that we explicitly enforce 1 one element array so that serde doesn't flatten the
-/// 'params' JSON array to a single value, eliminating the array completely.
-#[id("mining.set_version_mask")]
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct SetVersionMask(pub [VersionMask; 1]);
+declare_request!(
+    "Server may arbitrarily adjust version mask
+    Note, that we explicitly enforce 1 one element array so that serde doesn't flatten the
+    'params' JSON array to a single value, eliminating the array completely.",
+    Method::SetVersionMask,
+    struct SetVersionMask {
+        mask: [VersionMask; 1],
+    }
+);
 
 impl SetVersionMask {
     pub fn value(&self) -> u32 {
-        ((self.0[0]).0).0
+        ((self.mask[0]).0).0
     }
 }
-
-impl_conversion_request!(SetVersionMask, Method::SetVersionMask, SetVersionMaskWithId);
 
 /// Combined username and worker
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
@@ -487,11 +479,19 @@ pub struct ExtraNonce2(HexBytes);
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Nonce(HexU32Be);
 
-/// New mining job notification
-/// TODO generate the field accessors
-#[id("mining.submit")]
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Submit(UserName, JobId, ExtraNonce2, Time, Nonce, Version);
+// TODO (jca) generate the field accessors
+declare_request!(
+    "New mining job notification",
+    Method::Submit,
+    struct Submit {
+        user_name: UserName,
+        job_id: JobId,
+        extra_nonce_2: ExtraNonce2,
+        time: Time,
+        nonce: Nonce,
+        version: Version,
+    }
+);
 
 impl Submit {
     pub fn new(
@@ -502,76 +502,58 @@ impl Submit {
         nonce: u32,
         version: u32,
     ) -> Self {
-        Self(
-            UserName(user_name),
-            job_id,
-            ExtraNonce2(HexBytes(extra_nonce2.into())),
-            Time(HexU32Be(time)),
-            Nonce(HexU32Be(nonce)),
-            Version(HexU32Be(version)),
-        )
+        Self {
+            user_name: UserName(user_name),
+            job_id: job_id,
+            extra_nonce_2: ExtraNonce2(HexBytes(extra_nonce2.into())),
+            time: Time(HexU32Be(time)),
+            nonce: Nonce(HexU32Be(nonce)),
+            version: Version(HexU32Be(version)),
+        }
     }
 
     pub fn user_name(&self) -> &String {
-        &(self.0).0
+        &(self.user_name).0
     }
 
     pub fn job_id(&self) -> &String {
-        &(self.1).0
+        &(self.job_id).0
     }
 
     pub fn extra_nonce_2(&self) -> &[u8] {
-        &((self.2).0).0
+        &((self.extra_nonce_2).0).0
     }
 
     pub fn time(&self) -> u32 {
-        ((self.3).0).0
+        ((self.time).0).0
     }
 
     pub fn nonce(&self) -> u32 {
-        ((self.4).0).0
+        ((self.nonce).0).0
     }
 
     pub fn version(&self) -> u32 {
-        ((self.5).0).0
+        ((self.version).0).0
     }
 }
-impl_conversion_request!(Submit, Method::Submit, SubmitWithId);
 
 /// Server initiated message requiring client to perform a reconnect, all fields are optional and
 /// we don't know which of them the server sends
-#[id("client.reconnect")]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct ClientReconnect(pub Vec<serde_json::Value>);
 
+impl_request!(ClientReconnect, Method::ClientReconnect);
+
 impl ClientReconnect {
     pub fn host(&self) -> Option<&serde_json::Value> {
-        if self.0.len() > 0 {
-            Some(&self.0[0])
-        } else {
-            None
-        }
+        self.0.get(0)
     }
 
     pub fn port(&self) -> Option<&serde_json::Value> {
-        if self.0.len() > 1 {
-            Some(&self.0[1])
-        } else {
-            None
-        }
+        self.0.get(1)
     }
 
     pub fn wait_time(&self) -> Option<&serde_json::Value> {
-        if self.0.len() > 2 {
-            Some(&self.0[2])
-        } else {
-            None
-        }
+        self.0.get(2)
     }
 }
-
-impl_conversion_request!(
-    ClientReconnect,
-    Method::ClientReconnect,
-    ClientReconnectWithId
-);

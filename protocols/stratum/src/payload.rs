@@ -22,19 +22,15 @@
 
 //! Common module that provides helper functionality to handle payload of protocol frames
 
-use bytes::{buf::BufMutExt, BytesMut};
+use std::convert::TryFrom;
 use std::fmt;
 
-use crate::error::Result;
+use bytes::{buf::BufMutExt, BytesMut};
+
+use crate::error::{Error, Result};
 use crate::Protocol;
 
 pub use crate::AnyPayload;
-
-///// This trait allows lazy serialization of a frame payload
-//pub trait NewAnyPayload: Send + Sync {
-//    /// The payload is serialized to a specified `writer`
-//    fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()>;
-//}
 
 /// Frame payload that either consists of a series of bytes or a dynamic payload that can be
 /// serialized on demand.
@@ -60,9 +56,9 @@ impl<P: Protocol> Payload<P> {
         Ok(writer.into_inner())
     }
 
-    /// Build the payload from `NewAnyPayload`. Note: we cannot use standard `From` trait
+    /// Build the payload from `AnyPayload`. Note: we cannot use standard `From` trait
     /// implementation for T due to conflicting blanket implementation in the std::convert module
-    /// TODO consider moving the 'static lifetime into `NewAnyPayload`
+    /// TODO consider moving the 'static lifetime into `AnyPayload`
     pub fn from_serializable<T>(payload: T) -> Self
     where
         T: 'static + AnyPayload<P>,
@@ -86,12 +82,31 @@ impl<P: Protocol> Payload<P> {
             Self::LazyBytes(payload) => Some(payload),
         }
     }
+
     /// Consumes the payload and transforms it into a `BytesMut`
     /// TODO: consider returning a read-only buffer
     pub fn into_bytes_mut(self) -> Result<BytesMut> {
         match self {
             Self::SerializedBytes(payload) => Ok(payload),
             Self::LazyBytes(payload) => Self::serializable_payload_to_bytes_mut(&payload),
+        }
+    }
+
+    /// Parse a type out of the bytes contained within this Payload.
+    /// This shouldn't be any more expensive than the parsing itself,
+    /// except when the Payload contains LazyBytes, in which case
+    /// LazyBytes are first serialized.
+    pub fn deserialize<T>(&mut self) -> Result<T>
+    where
+        T: for<'a> TryFrom<&'a [u8], Error = Error>,
+    {
+        match self {
+            Self::SerializedBytes(bytes) => T::try_from(&bytes[..]).map_err(Into::into),
+            Self::LazyBytes(payload) => {
+                let bytes = Self::serializable_payload_to_bytes_mut(&payload)?;
+                *self = Self::SerializedBytes(bytes);
+                self.deserialize()
+            }
         }
     }
 
@@ -146,7 +161,7 @@ impl<P: Protocol> From<BytesMut> for Payload<P> {
 ///  `impl<T> std::convert::From<T> for T;`
 //impl<P: Protocol, T> From<T> for Payload<P>
 //where
-//    T: NewAnyPayload<P>,
+//    T: AnyPayload<P>,
 //{
 //    fn from(payload: T) -> Self {
 //        Self::LazyBytes(Box::new(payload))

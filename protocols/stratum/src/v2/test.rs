@@ -32,61 +32,50 @@ struct TelemetryHandler;
 impl TelemetryHandler {
     async fn handle_open_telemetry_channel(
         &mut self,
-        msg: Result<telemetry::messages::OpenTelemetryChannel>,
+        _msg: telemetry::messages::OpenTelemetryChannel,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_open_telemetry_channel_success(
         &mut self,
-        msg: Result<telemetry::messages::OpenTelemetryChannelSuccess>,
+        _msg: telemetry::messages::OpenTelemetryChannelSuccess,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_open_telemetry_channel_error(
         &mut self,
-        msg: Result<telemetry::messages::OpenTelemetryChannelError>,
+        _msg: telemetry::messages::OpenTelemetryChannelError,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_submit_telemetry_data(
         &mut self,
-        msg: Result<telemetry::messages::SubmitTelemetryData>,
+        _msg: telemetry::messages::SubmitTelemetryData,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_submit_telemetry_data_success(
         &mut self,
-        msg: Result<telemetry::messages::SubmitTelemetryDataSuccess>,
+        _msg: telemetry::messages::SubmitTelemetryDataSuccess,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_submit_telemetry_data_error(
         &mut self,
-        msg: Result<telemetry::messages::SubmitTelemetryDataError>,
+        _msg: telemetry::messages::SubmitTelemetryDataError,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!(": {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
 
     #[handle(_)]
-    async fn handle_unknown(&mut self, frame: framing::Frame) -> Result<()> {
+    async fn handle_unknown(&mut self, frame: Result<framing::Frame>) -> Result<()> {
+        let frame = frame.unwrap_or_else(|e| panic!("BUG: Message parsing failed: {:?}", e));
+
         Err(crate::error::Error::V2(error::Error::UnknownMessage(
             format!("BUG: Unimplemented handler for message {}", frame.get_id()),
         )))
@@ -97,156 +86,115 @@ struct FullMiningHandler;
 
 #[handler(async try framing::Frame suffix _v2)]
 impl FullMiningHandler {
-    async fn handle_setup_connection(
-        &mut self,
-        msg: Result<messages::SetupConnection>,
-    ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+    async fn handle_setup_connection(&mut self, _msg: messages::SetupConnection) -> Result<()> {
+        Ok(())
     }
+
     async fn handle_setup_connection_success(
         &mut self,
-        msg: Result<messages::SetupConnectionSuccess>,
+        _msg: messages::SetupConnectionSuccess,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_setup_connection_error(
         &mut self,
-        msg: Result<messages::SetupConnectionError>,
+        _msg: messages::SetupConnectionError,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_channel_endpoint_changed(
         &mut self,
-        msg: Result<messages::ChannelEndpointChanged>,
+        _msg: messages::ChannelEndpointChanged,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_open_standard_mining_channel(
         &mut self,
-        msg: Result<messages::OpenStandardMiningChannel>,
+        _msg: messages::OpenStandardMiningChannel,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_open_standard_mining_channel_success(
         &mut self,
-        msg: Result<messages::OpenStandardMiningChannelSuccess>,
+        _msg: messages::OpenStandardMiningChannelSuccess,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_open_standard_mining_channel_error(
         &mut self,
-        msg: Result<messages::OpenStandardMiningChannelError>,
+        _msg: messages::OpenStandardMiningChannelError,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
-    async fn handle_update_channel(&mut self, msg: Result<messages::UpdateChannel>) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+
+    async fn handle_update_channel(&mut self, _msg: messages::UpdateChannel) -> Result<()> {
+        Ok(())
     }
+
     async fn handle_update_channel_error(
         &mut self,
-        msg: Result<messages::UpdateChannelError>,
+        _msg: messages::UpdateChannelError,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
-    async fn handle_close_channel(&mut self, msg: Result<messages::CloseChannel>) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+
+    async fn handle_close_channel(&mut self, _msg: messages::CloseChannel) -> Result<()> {
+        Ok(())
     }
+
     async fn handle_submit_shares_standard(
         &mut self,
-        msg: Result<messages::SubmitSharesStandard>,
+        _msg: messages::SubmitSharesStandard,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_submit_shares_success(
         &mut self,
-        msg: Result<messages::SubmitSharesSuccess>,
+        _msg: messages::SubmitSharesSuccess,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
+
     async fn handle_submit_shares_error(
         &mut self,
-        msg: Result<messages::SubmitSharesError>,
+        _msg: messages::SubmitSharesError,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
-    async fn handle_new_mining_job(&mut self, msg: Result<messages::NewMiningJob>) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+
+    async fn handle_new_mining_job(&mut self, _msg: messages::NewMiningJob) -> Result<()> {
+        Ok(())
     }
+
     async fn handle_new_extended_mining_job(
         &mut self,
-        msg: Result<messages::NewExtendedMiningJob>,
+        _msg: messages::NewExtendedMiningJob,
     ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+        Ok(())
     }
-    async fn handle_set_new_prev_hash(
-        &mut self,
-        msg: Result<messages::SetNewPrevHash>,
-    ) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+
+    async fn handle_set_new_prev_hash(&mut self, _msg: messages::SetNewPrevHash) -> Result<()> {
+        Ok(())
     }
-    async fn handle_set_target(&mut self, msg: Result<messages::SetTarget>) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+
+    async fn handle_set_target(&mut self, _msg: messages::SetTarget) -> Result<()> {
+        Ok(())
     }
-    async fn handle_reconnect(&mut self, msg: Result<messages::Reconnect>) -> Result<()> {
-        if let Err(e) = &msg {
-            panic!("BUG: Message parsing failed: {:?}", e);
-        }
-        msg.map(|_m| {})
+
+    async fn handle_reconnect(&mut self, _msg: messages::Reconnect) -> Result<()> {
+        Ok(())
     }
 
     #[handle(_)]
-    async fn handle_unknown(&mut self, frame: framing::Frame) -> Result<()> {
+    async fn handle_unknown(&mut self, frame: Result<framing::Frame>) -> Result<()> {
+        let frame = frame.unwrap_or_else(|e| panic!("BUG: Message parsing failed: {:?}", e));
+
         Err(crate::error::Error::V2(error::Error::UnknownMessage(
             format!(
                 "BUG: Handler unimplemented handler for message {}",
@@ -480,18 +428,14 @@ async fn test_partially_implemented_mining_handler() {
 
     #[handler(async try framing::Frame suffix _v2)]
     impl PartialMiningHandler {
-        async fn handle_setup_connection(
-            &mut self,
-            msg: Result<messages::SetupConnection>,
-        ) -> Result<()> {
-            if let Err(e) = &msg {
-                panic!("BUG: Message parsing failed: {:?}", e);
-            }
-            msg.map(|_m| {})
+        async fn handle_setup_connection(&mut self, _msg: messages::SetupConnection) -> Result<()> {
+            Ok(())
         }
 
         #[handle(_)]
-        async fn handle_non_implemented(&mut self, frame: framing::Frame) -> Result<()> {
+        async fn handle_non_implemented(&mut self, frame: Result<framing::Frame>) -> Result<()> {
+            let frame = frame.unwrap_or_else(|e| panic!("BUG: Message parsing failed: {:?}", e));
+
             Err(crate::error::Error::V2(error::Error::UnknownMessage(
                 format!(
                     "BUG: Handler unimplemented handler for message {}",

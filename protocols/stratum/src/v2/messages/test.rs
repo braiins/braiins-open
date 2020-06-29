@@ -28,8 +28,8 @@ use crate::AnyPayload;
 
 #[test]
 fn test_deserialize_setup_connection() {
-    let deserialized =
-        SetupConnection::try_from(SETUP_CONNECTION_SERIALIZED).expect("Deserialization failed");
+    let deserialized = SetupConnection::try_from(SETUP_CONNECTION_SERIALIZED)
+        .expect("BUG: Deserialization failed");
 
     assert_eq!(
         deserialized,
@@ -44,7 +44,7 @@ fn test_serialize_setup_connection() {
     let mut writer = bytes::BytesMut::new().writer();
     message
         .serialize_to_writer(&mut writer)
-        .expect("Cannot serialize message");
+        .expect("BUG: Cannot serialize message");
     let serialized_message = writer.into_inner();
 
     // The message has been serialized completely, let's skip the header for now

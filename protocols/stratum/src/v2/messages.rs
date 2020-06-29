@@ -37,7 +37,6 @@ use crate::AnyPayload;
 #[cfg(feature = "v2json")]
 use serde_json as serialization;
 
-// use ii_unvariant::{id, unvariant, GetId, Id};
 use ii_unvariant::{id, Id};
 
 #[cfg(test)]

@@ -96,8 +96,7 @@ impl ConnTranslation {
         frame: v1::framing::Frame,
     ) -> Result<()> {
         let deserialized = v1::rpc::Rpc::try_from(frame)?;
-        translation.handle_v1(deserialized).await?;
-        Ok(())
+        translation.handle_v1(deserialized).await
     }
 
     //    async fn handle_frame(&mut self, frame: v2::framing::Frame) -> Result<()> {

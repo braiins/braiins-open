@@ -40,13 +40,12 @@ pub struct TestIdentityHandler;
 
 impl TestIdentityHandler {
     #[inline]
-    fn check_payload<P, F>(&self, payload_result: Result<P>, build: F)
+    fn check_payload<P, F>(&self, payload: P, build: F)
     where
         P: Debug + PartialEq,
         F: FnOnce() -> P,
     {
         // Build expected payload for verifying correct deserialization
-        let payload = payload_result.expect("BUG: Message parsing failed");
         let expected_payload = build();
         trace!("V2 TestIdentityHandler: Message {:?}", payload);
         assert_eq!(expected_payload, payload, "Message payloads don't match");
@@ -55,51 +54,49 @@ impl TestIdentityHandler {
 
 #[handler(async try framing::Frame suffix _v2)]
 impl TestIdentityHandler {
-    async fn handle_setup_connection(&mut self, msg: Result<SetupConnection>) {
+    async fn handle_setup_connection(&mut self, msg: SetupConnection) {
         self.check_payload(msg, build_setup_connection);
     }
 
-    async fn handle_setup_connection_success(&mut self, msg: Result<SetupConnectionSuccess>) {
+    async fn handle_setup_connection_success(&mut self, msg: SetupConnectionSuccess) {
         self.check_payload(msg, build_setup_connection_success);
     }
 
-    async fn handle_open_standard_mining_channel(
-        &mut self,
-        msg: Result<OpenStandardMiningChannel>,
-    ) {
+    async fn handle_open_standard_mining_channel(&mut self, msg: OpenStandardMiningChannel) {
         self.check_payload(msg, build_open_channel);
     }
 
     async fn handle_open_standard_mining_channel_success(
         &mut self,
-        msg: Result<OpenStandardMiningChannelSuccess>,
+        msg: OpenStandardMiningChannelSuccess,
     ) {
         self.check_payload(msg, build_open_channel_success);
     }
 
-    async fn handle_new_mining_job(&mut self, msg: Result<NewMiningJob>) {
+    async fn handle_new_mining_job(&mut self, msg: NewMiningJob) {
         self.check_payload(msg, build_new_mining_job);
     }
 
-    async fn handle_set_new_prev_hash(&mut self, msg: Result<SetNewPrevHash>) {
+    async fn handle_set_new_prev_hash(&mut self, msg: SetNewPrevHash) {
         self.check_payload(msg, build_set_new_prev_hash);
     }
 
-    async fn handle_submit_shares_standard(&mut self, msg: Result<SubmitSharesStandard>) {
+    async fn handle_submit_shares_standard(&mut self, msg: SubmitSharesStandard) {
         self.check_payload(msg, build_submit_shares);
     }
 
-    async fn handle_submit_shares_success(&mut self, _msg: Result<SubmitSharesSuccess>) {
+    async fn handle_submit_shares_success(&mut self, _msg: SubmitSharesSuccess) {
         // self.check_payload(msg, build_submit_shares);
         // TODO
     }
 
-    async fn handle_reconnect(&mut self, msg: Result<Reconnect>) {
+    async fn handle_reconnect(&mut self, msg: Reconnect) {
         self.check_payload(msg, build_reconnect);
     }
 
     #[handle(_)]
-    async fn handle_everything(&mut self, frame: framing::Frame) {
+    async fn handle_everything(&mut self, frame: Result<framing::Frame>) {
+        let frame = frame.expect("BUG: Message parsing failed");
         panic!("BUG: No handler method for received frame: {:?}", frame);
     }
 }
@@ -120,10 +117,10 @@ pub fn build_setup_connection() -> SetupConnection {
         endpoint_host: Str0_255::from_str(POOL_URL),
         endpoint_port: POOL_PORT as u16,
         device: DeviceInfo {
-            vendor: "Braiins".try_into().unwrap(),
-            hw_rev: "1".try_into().unwrap(),
-            fw_ver: MINER_SW_SIGNATURE.try_into().unwrap(),
-            dev_id: "xyz".try_into().unwrap(),
+            vendor: Str0_255::from_str("Braiins"),
+            hw_rev: Str0_255::from_str("1"),
+            fw_ver: Str0_255::from_str(MINER_SW_SIGNATURE),
+            dev_id: Str0_255::from_str("xyz"),
         },
     }
 }
@@ -141,7 +138,7 @@ pub fn build_setup_connection_success() -> SetupConnectionSuccess {
 pub fn build_open_channel() -> OpenStandardMiningChannel {
     OpenStandardMiningChannel {
         req_id: 10,
-        user: USER_CREDENTIALS.try_into().unwrap(),
+        user: Str0_255::from_str(USER_CREDENTIALS),
         nominal_hashrate: 1e9,
         max_target: ii_bitcoin::Target::default().into(),
     }
@@ -171,7 +168,7 @@ pub fn build_open_channel_success() -> OpenStandardMiningChannelSuccess {
 /// We need a V1 mining job with verified merkle root that is to be copied
 pub fn build_new_mining_job() -> NewMiningJob {
     let expected_merkle_root =
-        sha256d::Hash::from_hex(v1::MINING_NOTIFY_MERKLE_ROOT).expect("from_hex");
+        sha256d::Hash::from_hex(v1::MINING_NOTIFY_MERKLE_ROOT).expect("BUG: from_hex");
     NewMiningJob {
         channel_id: 0,
         job_id: 0,
@@ -184,7 +181,8 @@ pub fn build_new_mining_job() -> NewMiningJob {
 pub fn build_set_new_prev_hash() -> SetNewPrevHash {
     // Extract the prevhash and other information from V1 message to prevent any duplication
     let v1_req = v1::build_mining_notify();
-    let prev_hash = sha256d::Hash::from_slice(v1_req.prev_hash()).expect("Cannot build Prev Hash");
+    let prev_hash =
+        sha256d::Hash::from_slice(v1_req.prev_hash()).expect("BUG: Cannot build Prev Hash");
 
     SetNewPrevHash {
         channel_id: 0,

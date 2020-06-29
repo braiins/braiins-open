@@ -27,20 +27,23 @@
 //! - stratum response (associated with a previously issued request by the ID)
 
 use serde;
-use serde::{de, Deserialize, Serialize};
+use serde::de::{Deserializer, Error as _};
+use serde::ser::Serializer;
+use serde::{Deserialize, Serialize};
 use serde_json;
 use serde_json::Value;
-use std::convert::TryFrom;
+
+use std::convert::{TryFrom, TryInto};
 use std::result::Result as StdResult;
 use std::str::FromStr;
 
-use super::{framing, Protocol};
+use super::error::Error as V1Error;
+use super::{framing, MessageId, Protocol};
 use crate::error::{Error, Result};
 use crate::AnyPayload;
-use ii_unvariant::{GetId, Id};
+use ii_unvariant::{id, GetId, Id};
 
-/// All recognized methods of the V1 protocol have the 'mining.' prefix in json.
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub enum Method {
     #[serde(rename = "mining.subscribe")]
     Subscribe,
@@ -62,41 +65,19 @@ pub enum Method {
     SetVersionMask,
     #[serde(rename = "client.reconnect")]
     ClientReconnect,
-    /// Catch all variant
-    Unknown(String),
-}
-
-impl<'de> de::Deserialize<'de> for Method {
-    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        use Method::*;
-
-        let method = String::deserialize(deserializer)?;
-        let method = match method.as_str() {
-            "mining.subscribe" => Subscribe,
-            "mining.extranonce.subscribe" => ExtranonceSubscribe,
-            "mining.authorize" => Authorize,
-            "mining.set_difficulty" => SetDifficulty,
-            "mining.set_extranonce" => SetExtranonce,
-            "mining.configure" => Configure,
-            "mining.submit" => Submit,
-            "mining.notify" => Notify,
-            "mining.set_version_mask" => SetVersionMask,
-            "client.reconnect" => ClientReconnect,
-            _ => Unknown(method),
-        };
-
-        Ok(method)
-    }
+    // Extensions so that Method can be used as an Id by Rpc's GetId
+    #[serde(skip)]
+    Result,
+    #[serde(skip)]
+    Error,
 }
 
 /// The motivation is to provide only the payload part of the message to ID
 /// handling
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RequestPayload {
-    /// Protocol method to be 'called'
+    /// Protocol method to be 'called'.
+    /// If not recognized, the method string is stored in `Err`.
     pub method: Method,
     /// Vector of method parameters
     pub params: Value,
@@ -106,7 +87,7 @@ pub struct RequestPayload {
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Request {
     /// Optional identifier for pairing with the response. Empty ID is a notification
-    pub id: Option<u32>,
+    pub id: MessageId,
 
     /// Request payload doesn't have special tag, we need to separate it to simplify
     /// serialization/deserialization
@@ -116,57 +97,43 @@ pub struct Request {
 
 /// New type that represents stratum result that can be further parsed based on the actual
 /// response type
+#[id(Method::Result type Method)]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct StratumResult(pub serde_json::Value);
 
 impl StratumResult {
-    pub fn new_from<T: Serialize>(value: T) -> Result<Self> {
+    pub fn new<T: Serialize>(value: T) -> Result<Self> {
         let value = serde_json::to_value(value)?;
         Ok(Self(value))
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct StratumResultWithId(pub super::MessageId, pub StratumResult);
+impl Id<Method> for (MessageId, StratumResult) {
+    const ID: Method = StratumResult::ID;
+}
 
-impl GetId for StratumResultWithId {
-    type Id = &'static str;
+impl TryFrom<Rpc> for StratumResult {
+    type Error = Error;
 
-    fn get_id(&self) -> Self::Id {
-        super::RESULT_ATTRIBUTE
+    fn try_from(value: Rpc) -> Result<Self> {
+        let (_, res) = value.try_into()?;
+        Ok(res)
     }
 }
 
-impl Id<&str> for StratumResultWithId {
-    const ID: &'static str = super::RESULT_ATTRIBUTE;
-}
-
-impl TryFrom<Rpc> for StratumResultWithId {
+impl TryFrom<Rpc> for (MessageId, StratumResult) {
     type Error = Error;
 
     fn try_from(value: Rpc) -> Result<Self> {
         if let Rpc::Response(r) = value {
-            let id = Some(r.id);
-            if let Some(e) = r.payload.result {
-                return Ok(Self(id, e));
+            if let Ok(res) = r.result {
+                return Ok((Some(r.id), res));
             }
         }
-        Err(Error::General("TODO: ".into()))
+
+        Err(V1Error::Rpc("This Rpc is not a valid StratumResult".into()).into())
     }
 }
-
-// Note: this doesn't work due to conflicting implementation from core (
-// ```impl<T, U> std::convert::TryFrom<U> for T
-//            where U: std::convert::Into<T>; ```
-//
-//impl<T: Serialize> TryFrom<T> for StratumResult {
-//    type Error = crate::error::Error;
-//
-//    fn try_from(value: T) -> std::result::Result<Self, Self::Error> {
-//        let value = serde_json::to_value(value)?;
-//        StratumResult(value)
-//    }
-//}
 
 impl AnyPayload<Protocol> for StratumResult {
     fn serialize_to_writer(&self, _writer: &mut dyn std::io::Write) -> Result<()> {
@@ -177,6 +144,7 @@ impl AnyPayload<Protocol> for StratumResult {
     }
 }
 
+#[id(Method::Error type Method)]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct StratumError(pub i32, pub String, pub Option<String>);
 // TODO this currently doesn't compile. Investigate serde_tuple issue.
@@ -187,6 +155,10 @@ pub struct StratumError(pub i32, pub String, pub Option<String>);
 //    pub trace_back: Option<String>,
 //}
 
+impl Id<Method> for (MessageId, StratumError) {
+    const ID: Method = StratumError::ID;
+}
+
 impl AnyPayload<Protocol> for StratumError {
     fn serialize_to_writer(&self, _writer: &mut dyn std::io::Write) -> Result<()> {
         panic!(
@@ -196,57 +168,86 @@ impl AnyPayload<Protocol> for StratumError {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct StratumErrorWithId(pub super::MessageId, pub StratumError);
+impl TryFrom<Rpc> for StratumError {
+    type Error = Error;
 
-impl GetId for StratumErrorWithId {
-    type Id = &'static str;
-
-    fn get_id(&self) -> Self::Id {
-        super::ERROR_ATTRIBUTE
+    fn try_from(value: Rpc) -> Result<Self> {
+        let (_, err) = value.try_into()?;
+        Ok(err)
     }
 }
 
-impl Id<&str> for StratumErrorWithId {
-    const ID: &'static str = super::ERROR_ATTRIBUTE;
-}
-
-impl TryFrom<Rpc> for StratumErrorWithId {
+impl TryFrom<Rpc> for (MessageId, StratumError) {
     type Error = Error;
 
     fn try_from(value: Rpc) -> Result<Self> {
         if let Rpc::Response(r) = value {
-            let id = Some(r.id);
-            if let Some(e) = r.payload.error {
-                return Ok(Self(id, e));
+            if let Err(err) = r.result {
+                return Ok((Some(r.id), err));
             }
         }
-        Err(Error::General("TODO: ".into()))
+
+        Err(V1Error::Rpc("This Rpc is not a valid StratumError".into()).into())
     }
 }
 
-/// The motivation is to provide only the payload part of the message to ID
-/// handling
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub struct ResponsePayload {
-    /// Successful responses/notification have a result
-    pub result: Option<StratumResult>,
-    /// Error responses provide details via this field
-    pub error: Option<StratumError>,
-}
+pub type ResponsePayload = StdResult<StratumResult, StratumError>;
 
 /// Generic stratum response
 ///
 /// The response maybe optionally paired via 'id' with original request. Empty ID
 /// represents a notification.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Response {
     /// Response pairing identifier
     pub id: u32,
-    /// Response payload doesn't have special tag, we need to separate it to simplify
-    /// serialization/deserialization
-    #[serde(flatten)]
-    pub payload: ResponsePayload,
+    /// A Result type is mapped to either `"result": value` or `"error": value`
+    pub result: ResponsePayload,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ResponseSeriaize {
+    id: u32,
+    result: Option<StratumResult>,
+    error: Option<StratumError>,
+}
+
+impl Serialize for Response {
+    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let id = self.id;
+        let (result, error) = match self.result.clone() {
+            Ok(ok) => (Some(ok), None),
+            Err(err) => (None, Some(err)),
+        };
+
+        ResponseSeriaize { id, result, error }.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Response {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let deserialize = ResponseSeriaize::deserialize(deserializer)?;
+        let result = match (deserialize.result, deserialize.error) {
+            (Some(ok), None) => Ok(ok),
+            (None, Some(err)) => Err(err),
+            _ => {
+                return Err(D::Error::custom(
+                    "V1 Response: Either `result` or `error` field must be set",
+                ))
+            }
+        };
+
+        Ok(Self {
+            id: deserialize.id,
+            result,
+        })
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -257,44 +258,18 @@ pub enum Rpc {
 }
 
 impl GetId for Rpc {
-    type Id = &'static str;
+    type Id = Method;
 
     fn get_id(&self) -> Self::Id {
         match self {
-            Rpc::Request(r) => r.get_id(),
-            Rpc::Response(r) => r.get_id(),
-        }
-    }
-}
-
-impl GetId for Request {
-    type Id = &'static str;
-
-    fn get_id(&self) -> Self::Id {
-        match &self.payload.method {
-            Method::Subscribe => "mining.subscribe",
-            Method::ExtranonceSubscribe => "mining.extranonce.subscribe",
-            Method::Authorize => "mining.authorize",
-            Method::SetDifficulty => "mining.set_difficulty",
-            Method::SetExtranonce => "mining.set_extranonce",
-            Method::Configure => "mining.configure",
-            Method::Submit => "mining.submit",
-            Method::Notify => "mining.notify",
-            Method::SetVersionMask => "mining.set_version_mask",
-            Method::ClientReconnect => "client.reconnect",
-            Method::Unknown(_unknown) => super::ERROR_ATTRIBUTE,
-        }
-    }
-}
-
-impl GetId for Response {
-    type Id = &'static str;
-
-    fn get_id(&self) -> Self::Id {
-        if let Some(_f) = &self.payload.result {
-            super::RESULT_ATTRIBUTE
-        } else {
-            super::ERROR_ATTRIBUTE
+            Rpc::Request(r) => r.payload.method,
+            Rpc::Response(r) => {
+                if r.result.is_ok() {
+                    Method::Result
+                } else {
+                    Method::Error
+                }
+            }
         }
     }
 }
@@ -315,8 +290,16 @@ impl TryFrom<&[u8]> for Rpc {
     type Error = Error;
 
     fn try_from(frame: &[u8]) -> Result<Self> {
-        let x = serde_json::from_slice(&frame)?;
-        Ok(x)
+        serde_json::from_slice(&frame).map_err(|e| {
+            let (frame, suffix) = if frame.len() > 256 {
+                (&frame[..256], "[snip]")
+            } else {
+                (&frame[..], "")
+            };
+            let frame = String::from_utf8_lossy(frame);
+
+            V1Error::Json(format!("Invalid V1 message: {}\n{}{}", e, frame, suffix)).into()
+        })
     }
 }
 
@@ -369,20 +352,22 @@ mod test {
     #[test]
     fn test_deserialize_serialize_request() {
         for &req in V1_TEST_REQUESTS {
-            let deserialized_request = Rpc::try_from(req.as_bytes()).unwrap();
+            let deserialized_request =
+                Rpc::try_from(req.as_bytes()).expect("BUG: Failed to deseriliaze request");
 
             let request_frame: framing::Frame = deserialized_request
                 .try_into()
-                .expect("Failed to serialize");
+                .expect("BUG: Failed to serialize");
             let mut serialized_request = BytesMut::new();
 
             request_frame
                 .serialize(&mut serialized_request)
-                .expect("Cannot serialize frame");
+                .expect("BUG: Cannot serialize frame");
 
             assert_eq!(
                 req,
-                std::str::from_utf8(&serialized_request[..]).expect("UTF-8 from serialized frame"),
+                std::str::from_utf8(&serialized_request[..])
+                    .expect("BUG: UTF-8 from serialized frame"),
                 "Rpc requests don't match"
             );
         }
@@ -390,21 +375,13 @@ mod test {
 
     #[test]
     fn test_deserialize_broken_request() {
-        let deserialized = Rpc::try_from(MINING_BROKEN_REQ_JSON.as_bytes()).unwrap();
-
-        match deserialized {
-            Rpc::Request(request) => assert_eq!(
-                Method::Unknown("mining.none_existing".into()),
-                request.payload.method,
-                "Unknown method not detected!"
-            ),
-            Rpc::Response(resp) => assert!(false, "Unexpected response: {:x?}", resp),
-        }
+        Rpc::try_from(MINING_BROKEN_REQ_JSON.as_bytes())
+            .expect_err("BUG: Deserializing a broken request should've failed");
     }
 
     fn test_deserialize_response(serialized_response: &str, expected_rpc: Rpc) {
-        let deserialized_response =
-            Rpc::try_from(serialized_response.as_bytes()).expect("Cannot deserialize JSON request");
+        let deserialized_response = Rpc::try_from(serialized_response.as_bytes())
+            .expect("BUG: Cannot deserialize JSON request");
 
         assert_eq!(
             expected_rpc, deserialized_response,
@@ -426,16 +403,17 @@ mod test {
 
     /// Helper function that runs the serialization test on arbitrary response
     fn test_serialize_response(response: Rpc, expected_serialized_response: &str) {
-        let response_frame: framing::Frame = response.try_into().expect("Failed to serialize");
+        let response_frame: framing::Frame = response.try_into().expect("BUG: Failed to serialize");
         let mut serialized_response = BytesMut::new();
 
         response_frame
             .serialize(&mut serialized_response)
-            .expect("Cannot serialize frame");
+            .expect("BUG: Cannot serialize frame");
 
         assert_eq!(
             expected_serialized_response,
-            std::str::from_utf8(&serialized_response[..]).expect("UTF-8 from serialized frame"),
+            std::str::from_utf8(&serialized_response[..])
+                .expect("BUG: UTF-8 from serialized frame"),
             "Serializing test request yields different results!"
         );
     }

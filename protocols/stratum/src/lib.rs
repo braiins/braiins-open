@@ -25,7 +25,7 @@ pub mod payload;
 pub mod v1;
 pub mod v2;
 
-use error::Result;
+pub use error::Result;
 
 /// Mask for allowed version bits that can be rolled based on BIP320
 pub const BIP320_N_VERSION_MASK: u32 = 0x1fffe000;

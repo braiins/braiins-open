@@ -52,7 +52,7 @@ pub fn build_configure() -> Configure {
     let mut configure = Configure::new();
     configure
         .add_feature(v)
-        .expect("Could not add Configure feature");
+        .expect("BUG: Could not add Configure feature");
 
     configure
 }
@@ -65,7 +65,7 @@ pub const MINING_CONFIGURE_OK_RESP_JSON: &str = concat!(
 pub fn build_configure_ok_response_message() -> Rpc {
     let cfg: ConfigureResult =
         serde_json::from_str(r#"{"version-rolling":true,"version-rolling.mask":"1fffe000"}"#)
-            .expect("configure_ok_response deserialization failed");
+            .expect("BUG: configure_ok_response deserialization failed");
     trace!("build_configure_ok_response_message() {:?}", cfg);
     build_result_response_message(0, cfg)
 }
@@ -81,12 +81,12 @@ const EXTRA_NONCE_2_SIZE: usize = 4;
 
 fn build_request_message<T>(id: MessageId, payload: T) -> Rpc
 where
-    T: TryInto<RequestPayload> + std::fmt::Debug,
+    T: TryInto<RequestPayload> + Debug,
     <T as std::convert::TryInto<RequestPayload>>::Error: std::fmt::Debug,
 {
     Rpc::from(Request {
         id,
-        payload: payload.try_into().expect("Cannot serialize request"),
+        payload: payload.try_into().expect("BUG: Cannot serialize request"),
     })
 }
 
@@ -95,13 +95,13 @@ pub fn build_subscribe_request_frame() -> Rpc {
 }
 
 pub fn build_subscribe() -> Subscribe {
-    let hostname_port: String = format!("{}:{}", String::from(POOL_URL), POOL_PORT);
-    Subscribe(
-        Some(MINER_SW_SIGNATURE.into()), // agent_signature
-        None,                            // extra_nonce1
-        Some(hostname_port),             // url
-        None,                            // port
-    )
+    let hostname_port = format!("{}:{}", String::from(POOL_URL), POOL_PORT);
+    Subscribe {
+        agent_signature: Some(MINER_SW_SIGNATURE.into()),
+        extra_nonce1: None,
+        url: Some(hostname_port),
+        port: None,
+    }
 }
 
 /// Random broken request
@@ -121,12 +121,7 @@ pub const MINING_SUBSCRIBE_OK_RESULT_JSON: &str = concat!(
 fn build_result_response_message<T: Serialize>(id: u32, result: T) -> Rpc {
     Rpc::from(Response {
         id,
-        payload: ResponsePayload {
-            result: Some(
-                StratumResult::new_from(result).expect("Cannot build test response message"),
-            ),
-            error: None,
-        },
+        result: Ok(StratumResult::new(result).expect("BUG: Cannot build test response message")),
     })
 }
 
@@ -150,7 +145,7 @@ pub fn build_mining_submit_ok_response_message() -> Rpc {
 pub fn build_subscribe_ok_result() -> SubscribeResult {
     SubscribeResult(
         vec![],
-        ExtraNonce1(HexBytes::try_from(EXTRA_NONCE_1).expect("Cannot parse extra nonce 1")),
+        ExtraNonce1(HexBytes::try_from(EXTRA_NONCE_1).expect("BUG: Cannot parse extra nonce 1")),
         EXTRA_NONCE_2_SIZE,
     )
 }
@@ -170,10 +165,7 @@ pub fn build_stratum_error() -> StratumError {
 pub fn build_stratum_err_response() -> Rpc {
     Rpc::from(Response {
         id: 1,
-        payload: ResponsePayload {
-            result: None,
-            error: Some(build_stratum_error()),
-        },
+        result: Err(build_stratum_error()),
     })
 }
 
@@ -185,7 +177,7 @@ pub fn build_set_difficulty_request_message() -> Rpc {
 }
 
 pub fn build_set_difficulty() -> SetDifficulty {
-    SetDifficulty([4f32])
+    SetDifficulty::from(4f32)
 }
 
 pub const MINING_NOTIFY_JOB_ID: &str = "ahoj";
@@ -210,10 +202,10 @@ pub fn build_mining_notify_request_message() -> Rpc {
 }
 
 pub fn build_mining_notify() -> Notify {
-    let deserialized = Rpc::from_str(MINING_NOTIFY_JSON).expect("Cannot parse mining job");
+    let deserialized = Rpc::from_str(MINING_NOTIFY_JSON).expect("BUG: Cannot parse mining job");
 
     let notify = if let Rpc::Request(req) = deserialized {
-        Notify::try_from(req).expect("Cannot build mining notify message")
+        Notify::try_from(req).expect("BUG: Cannot build mining notify message")
     } else {
         panic!("Wrong notification message");
     };
@@ -234,10 +226,10 @@ pub fn build_mining_submit_request_message() -> Rpc {
 }
 
 pub fn build_mining_submit() -> Submit {
-    let deserialized = Rpc::from_str(MINING_SUBMIT_JSON).expect("Cannot parse mining job");
+    let deserialized = Rpc::from_str(MINING_SUBMIT_JSON).expect("BUG: Cannot parse mining job");
 
     let submit = if let Rpc::Request(req) = deserialized {
-        Submit::try_from(req).expect("Cannot build mining submit message")
+        Submit::try_from(req).expect("BUG: Cannot build mining submit message")
     } else {
         panic!("Wrong notification message");
     };
@@ -253,7 +245,10 @@ pub fn build_authorize_request_message() -> Rpc {
 }
 
 pub fn build_authorize() -> Authorize {
-    Authorize(USER_CREDENTIALS.to_string(), "".to_string())
+    Authorize {
+        name: USER_CREDENTIALS.to_string(),
+        password: "".to_string(),
+    }
 }
 
 pub const MINING_AUTHORIZE_OK: &str = r#"{"id": 1,"error":null,"result":true}"#;
@@ -267,9 +262,9 @@ pub fn build_client_reconnect_request_message() -> Rpc {
 
 pub fn build_client_reconnect() -> ClientReconnect {
     let deserialized =
-        Rpc::from_str(CLIENT_RECONNECT_JSON).expect("Cannot parse reconnect message");
+        Rpc::from_str(CLIENT_RECONNECT_JSON).expect("BUG: Cannot parse reconnect message");
     let reconnect = if let Rpc::Request(req) = deserialized {
-        ClientReconnect::try_from(req).expect("Cannot build reconnect message")
+        ClientReconnect::try_from(req).expect("BUG: Cannot build reconnect message")
     } else {
         panic!("Wrong reconnect message");
     };
@@ -291,7 +286,7 @@ impl TestIdentityHandler {
     /// representation
     fn visit_and_check<P, F>(
         &mut self,
-        id: &MessageId,
+        id: MessageId,
         payload: &P,
         build_payload: F,
         full_message: Rpc,
@@ -323,7 +318,7 @@ impl TestIdentityHandler {
 
     fn visit_and_check_request<P, F>(
         &mut self,
-        id: &MessageId,
+        id: MessageId,
         payload: &P,
         build_payload: F,
         json_message: &str,
@@ -336,7 +331,7 @@ impl TestIdentityHandler {
             id,
             payload,
             build_payload,
-            build_request_message(*id, payload.clone()),
+            build_request_message(id, payload.clone()),
             json_message,
         );
     }
@@ -344,54 +339,53 @@ impl TestIdentityHandler {
 
 #[handler(async try Rpc suffix _v1)]
 impl TestIdentityHandler {
-    async fn handle_stratum_result(&mut self, msg: Result<StratumResultWithId>) {
-        let StratumResultWithId(id, msg) = msg.expect("BUG: message unvariation failed");
+    async fn handle_stratum_result(&mut self, res: (MessageId, StratumResult)) {
+        let (id, res) = res;
         self.visit_and_check(
-            &id,
-            &msg,
+            id,
+            &res,
             || {
-                StratumResult::new_from(build_subscribe_ok_result())
-                    .expect("Cannot convert to stratum result")
+                StratumResult::new(build_subscribe_ok_result())
+                    .expect("BUG: Cannot convert to stratum result")
             },
-            build_result_response_message(id.expect("Message ID missing"), &msg),
+            build_result_response_message(id.expect("BUG: Message ID missing"), &res),
             MINING_SUBSCRIBE_OK_RESULT_JSON,
         );
     }
 
-    async fn handle_notify(&mut self, msg: Result<NotifyWithId>) {
-        let NotifyWithId(id, msg) = msg.expect("BUG: message unvariation failed");
-
-        self.visit_and_check_request(&id, &msg, build_mining_notify, MINING_NOTIFY_JSON);
+    async fn handle_notify(&mut self, id_msg: (MessageId, Notify)) {
+        let (id, msg) = id_msg;
+        self.visit_and_check_request(id, &msg, build_mining_notify, MINING_NOTIFY_JSON);
     }
 
-    async fn handle_configure(&mut self, payload: Result<ConfigureWithId>) {
-        let ConfigureWithId(id, msg) = payload.expect("BUG: message unvariation failed");
-        self.visit_and_check_request(&id, &msg, build_configure, MINING_CONFIGURE_REQ_JSON);
+    async fn handle_configure(&mut self, id_msg: (MessageId, Configure)) {
+        let (id, msg) = id_msg;
+        self.visit_and_check_request(id, &msg, build_configure, MINING_CONFIGURE_REQ_JSON);
     }
 
-    async fn handle_subscribe(&mut self, payload: Result<SubscribeWithId>) {
-        let SubscribeWithId(id, msg) = payload.expect("BUG: message unvariation failed");
-        self.visit_and_check_request(&id, &msg, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
+    async fn handle_subscribe(&mut self, id_msg: (MessageId, Subscribe)) {
+        let (id, msg) = id_msg;
+        self.visit_and_check_request(id, &msg, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
     }
 
-    async fn handle_authorize(&mut self, payload: Result<AuthorizeWithId>) {
-        let AuthorizeWithId(id, msg) = payload.expect("BUG: message unvariation failed");
-        self.visit_and_check_request(&id, &msg, build_authorize, MINING_AUTHORIZE_JSON);
+    async fn handle_authorize(&mut self, id_msg: (MessageId, Authorize)) {
+        let (id, msg) = id_msg;
+        self.visit_and_check_request(id, &msg, build_authorize, MINING_AUTHORIZE_JSON);
     }
 
-    async fn handle_set_difficulty(&mut self, payload: Result<SetDifficultyWithId>) {
-        let SetDifficultyWithId(id, msg) = payload.expect("BUG: message unvariation failed");
-        self.visit_and_check_request(&id, &msg, build_set_difficulty, MINING_SET_DIFFICULTY_JSON);
+    async fn handle_set_difficulty(&mut self, id_msg: (MessageId, SetDifficulty)) {
+        let (id, msg) = id_msg;
+        self.visit_and_check_request(id, &msg, build_set_difficulty, MINING_SET_DIFFICULTY_JSON);
     }
 
-    async fn handle_submit(&mut self, payload: Result<SubmitWithId>) {
-        let SubmitWithId(id, msg) = payload.expect("BUG: message unvariation failed");
-        self.visit_and_check_request(&id, &msg, build_mining_submit, MINING_SUBMIT_JSON);
+    async fn handle_submit(&mut self, id_msg: (MessageId, Submit)) {
+        let (id, msg) = id_msg;
+        self.visit_and_check_request(id, &msg, build_mining_submit, MINING_SUBMIT_JSON);
     }
 
     #[handle(_)]
-    async fn handle_rest(&mut self, _rpc: Rpc) {
-        println!("unknown");
+    async fn handle_rest(&mut self, rpc: Result<Rpc>) {
+        panic!("Unexpected v1 message: {:?}", rpc);
     }
 }
 
