@@ -436,11 +436,9 @@ mod test {
 
         // Spawn a couple of tasks on the handle
         let task_done2 = task_done.clone();
-        handle.spawn(move |tripwire| {
-            async move {
-                forever_stream(tripwire).await;
-                task_done2.store(true, Ordering::SeqCst);
-            }
+        handle.spawn(move |tripwire| async move {
+            forever_stream(tripwire).await;
+            task_done2.store(true, Ordering::SeqCst);
         });
 
         // Signal ready
@@ -466,10 +464,8 @@ mod test {
 
         // Spawn a task that will halt()
         let handle2 = handle.clone();
-        handle.spawn(|_| {
-            async move {
-                handle2.halt();
-            }
+        handle.spawn(|_| async move {
+            handle2.halt();
         });
 
         // Join tasks
@@ -501,11 +497,9 @@ mod test {
                 // Spawn a couple of tasks on the handle
                 for _ in 0..NUM_TASKS {
                     let num_cancelled = num_cancelled.clone();
-                    handle.spawn(|tripwire| {
-                        async move {
-                            forever_stream(tripwire).await;
-                            num_cancelled.fetch_add(1, Ordering::SeqCst);
-                        }
+                    handle.spawn(|tripwire| async move {
+                        forever_stream(tripwire).await;
+                        num_cancelled.fetch_add(1, Ordering::SeqCst);
                     });
                 }
 
@@ -554,10 +548,8 @@ mod test {
     async fn test_halthandle_panic() {
         let handle = HaltHandle::new();
 
-        handle.spawn(|_| {
-            async {
-                panic!("Things aren't going well");
-            }
+        handle.spawn(|_| async {
+            panic!("Things aren't going well");
         });
 
         handle.ready();
