@@ -21,8 +21,8 @@ ii-wire = { path = "../protocols/wire" }
 ii-async-utils = { path = "../utils-rs/async-utils" }
 ii-logging = { path = "../utils-rs/logging" }
 structopt = "0.3"
-thiserror = "1.0"
-anyhow = "1.0"
+thiserror = "1.0.20"
+anyhow = "1.0.31"
 
 [features]
 v2json = ["ii-stratum/v2json"]
