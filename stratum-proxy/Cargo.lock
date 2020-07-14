@@ -722,10 +722,12 @@ dependencies = [
  "ii-stratum",
  "ii-unvariant",
  "ii-wire",
+ "serde",
  "serde_json",
  "structopt",
  "thiserror",
  "tokio",
+ "toml",
  "uint",
 ]
 
@@ -1636,6 +1638,15 @@ dependencies = [
  "log 0.4.8",
  "pin-project-lite",
  "tokio",
+]
+
+[[package]]
+name = "toml"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffc92d160b1eef40665be3a05630d003936a3bc7da7421277846c2613e92c71a"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

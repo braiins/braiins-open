@@ -11,6 +11,7 @@ clap = "2.33.0"
 bitcoin_hashes = "0.3.2"
 uint = "0.5.0"
 ctrlc = "3.1.0"
+serde = "1.0.114"
 serde_json = "1.0.39"
 futures = { version = "0.3.1", features = ["compat"] }
 bytes = "0.5"
@@ -22,6 +23,7 @@ ii-logging = { path = "../utils-rs/logging" }
 ii-unvariant = { path = "../utils-rs/unvariant/unvariant" }
 structopt = "0.3"
 thiserror = "1.0.20"
+toml = "0.5.6"
 anyhow = "1.0.31"
 
 [features]

@@ -28,7 +28,8 @@ use ctrlc;
 use std::cell::RefCell;
 use structopt::StructOpt;
 
-use ii_stratum_proxy::{frontend::Args, server};
+use ii_stratum_proxy::frontend::{Args, Config};
+use ii_stratum_proxy::server;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -38,11 +39,19 @@ async fn main() -> Result<()> {
 
     let args = Args::from_args();
 
-    let certificate_secret_key_pair = args.read_certificate_secret_key_pair().await?;
+    let config_file_string = tokio::fs::read_to_string(args.config_file)
+        .await
+        .context("Proxy configuration file couldn't be read.")?;
+    let config = toml::from_str::<Config>(config_file_string.as_str())?;
+
+    let certificate_secret_key_pair = config
+        .read_certificate_secret_key_pair()
+        .await
+        .context("Certificate and secret key couldn't be read.")?;
 
     let server = server::ProxyServer::listen(
-        args.listen_address,
-        args.upstream_address,
+        config.listen_address,
+        config.upstream_address,
         server::handle_connection,
         certificate_secret_key_pair,
         (),
