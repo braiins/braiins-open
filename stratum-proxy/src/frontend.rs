@@ -20,7 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -30,8 +30,6 @@ use ii_stratum::v2;
 use ii_wire::Address;
 
 use crate::error::{Error, Result};
-use serde::de::Error as _;
-use std::str::FromStr;
 
 #[derive(Debug, StructOpt)]
 pub struct Args {
@@ -41,29 +39,11 @@ pub struct Args {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
-    #[serde(serialize_with = "addr_ser", deserialize_with = "addr_des")]
     pub listen_address: Address,
-    #[serde(serialize_with = "addr_ser", deserialize_with = "addr_des")]
     pub upstream_address: Address,
     pub insecure: bool,
     pub certificate_file: Option<PathBuf>,
     pub secret_key_file: Option<PathBuf>,
-}
-
-fn addr_des<'de, D>(deserializer: D) -> std::result::Result<Address, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let j = String::deserialize(deserializer)?;
-    Address::from_str(j.as_str()).map_err(D::Error::custom)
-}
-
-fn addr_ser<S>(a: &Address, serializer: S) -> std::result::Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let str_addr = a.to_string();
-    serializer.serialize_str(str_addr.as_str())
 }
 
 impl Default for Config {

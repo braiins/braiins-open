@@ -17,7 +17,7 @@ futures = { version = "0.3.1", features = ["compat"] }
 bytes = "0.5"
 tokio = { version = "0.2.10", features = ["full"] }
 ii-stratum = { path = "../protocols/stratum" }
-ii-wire = { path = "../protocols/wire" }
+ii-wire = { path = "../protocols/wire", features = ["serde"]}
 ii-async-utils = { path = "../utils-rs/async-utils" }
 ii-logging = { path = "../utils-rs/logging" }
 ii-unvariant = { path = "../utils-rs/unvariant/unvariant" }
