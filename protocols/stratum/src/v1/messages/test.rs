@@ -25,6 +25,28 @@ use std::str::FromStr;
 use super::*;
 use crate::test_utils::v1::*;
 use crate::v1::rpc::Rpc;
+use serde_json;
+use serde_json::Value;
+
+#[test]
+fn set_version_mask_serialize() {
+    let msg = SetVersionMask {
+        mask: [VersionMask(HexU32Be(0xdeadbeef))],
+    };
+    let payload = msg.try_into()
+        .expect("BUG: failed to build RPC payload");
+    let lhs = rpc::Request {
+        id: Some(1),
+        payload,
+    };
+    let lhs = serde_json::to_value(lhs)
+        .expect("BUG: failed to serialize RPC payload");
+
+    let rhs = r#"{"id": 1, "method": "mining.set_version_mask", "params": ["deadbeef"]}"#;
+    let rhs: Value = serde_json::from_str(&rhs)
+        .expect("BUG: failed to deserialize static JSON string");
+    assert_eq!(lhs, rhs);
+}
 
 #[test]
 fn test_build_subscribe_from_rpc_request() {
