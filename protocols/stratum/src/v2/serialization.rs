@@ -597,27 +597,21 @@ impl<'de> Deserializer<'de> {
     #[inline]
     fn read_u16(&mut self) -> Result<u16> {
         let bytes = self.read_bytes(2)?;
-        let bytes: [u8; 2] = bytes
-            .try_into()
-            .expect("Internal error: Invalid slice size");
+        let bytes: [u8; 2] = bytes.try_into().expect("BUG: Invalid slice size");
         Ok(u16::from_le_bytes(bytes))
     }
 
     #[inline]
     fn read_u32(&mut self) -> Result<u32> {
         let bytes = self.read_bytes(4)?;
-        let bytes: [u8; 4] = bytes
-            .try_into()
-            .expect("Internal error: Invalid slice size");
+        let bytes: [u8; 4] = bytes.try_into().expect("BUG: Invalid slice size");
         Ok(u32::from_le_bytes(bytes))
     }
 
     #[inline]
     fn read_u64(&mut self) -> Result<u64> {
         let bytes = self.read_bytes(8)?;
-        let bytes: [u8; 8] = bytes
-            .try_into()
-            .expect("Internal error: Invalid slice size");
+        let bytes: [u8; 8] = bytes.try_into().expect("BUG: Invalid slice size");
         Ok(u64::from_le_bytes(bytes))
     }
 
@@ -1120,43 +1114,43 @@ mod test {
 
     #[test]
     fn v2_serialize_numerals() {
-        let bytes = to_vec(&123u32).unwrap();
+        let bytes = to_vec(&123u32).expect("BUG: serialization failed");
         assert_eq!(&bytes, &[123, 0, 0, 0]);
 
-        let bytes = to_vec(&1.0f32).unwrap();
+        let bytes = to_vec(&1.0f32).expect("BUG: serialization failed");
         assert_eq!(&bytes, &[0, 0, 0x80, 0x3f]);
     }
 
     #[test]
     fn v2_serialize_string() {
         let s = String::from("abc");
-        let bytes = to_vec(&s).expect("Serialization failure");
+        let bytes = to_vec(&s).expect("BUG: Serialization failure");
         assert_eq!(&bytes, &[3, 0, 0x61, 0x62, 0x63]);
 
-        let s: Str1_32 = "abc".try_into().expect("Str1_32 constructor failure");
-        let bytes = to_vec(&s).expect("Serialization failure");
+        let s: Str1_32 = "abc".try_into().expect("BUG: Str1_32 constructor failure");
+        let bytes = to_vec(&s).expect("BUG: Serialization failure");
         assert_eq!(&bytes, &[3, 0x61, 0x62, 0x63]);
 
-        let s: Str1_255 = "abc".try_into().expect("Str1_255 constructor failure");
-        let bytes = to_vec(&s).expect("Serialization failure");
+        let s: Str1_255 = "abc".try_into().expect("BUG: Str1_255 constructor failure");
+        let bytes = to_vec(&s).expect("BUG: Serialization failure");
         assert_eq!(&bytes, &[3, 0x61, 0x62, 0x63]);
 
         // Zero-sized string
         let s = Str0_32::new();
-        let bytes = to_vec(&s).expect("Serialization failure");
+        let bytes = to_vec(&s).expect("BUG: Serialization failure");
         assert_eq!(&bytes, &[0]);
 
         // Overlong strings
         let s_long: String = iter::repeat('_').take(256).collect();
-        Str1_32::try_from(&s_long[..32]).expect("Str1_32 constructor failure");
+        Str1_32::try_from(&s_long[..32]).expect("BUG: Str1_32 constructor failure");
         Str1_32::try_from(&s_long[..33])
             .err()
-            .expect("Str1_32 constructor didn't fail but should have");
+            .expect("BUG: Str1_32 constructor didn't fail but should have");
 
-        Str1_255::try_from(&s_long[..255]).expect("Str1_255 constructor failure");
+        Str1_255::try_from(&s_long[..255]).expect("BUG: Str1_255 constructor failure");
         Str1_255::try_from(s_long)
             .err()
-            .expect("Str1_255 constructor didn't fail but should have");
+            .expect("BUG: Str1_255 constructor didn't fail but should have");
 
         let s_long: String = iter::repeat('_').take(1 << 16).collect();
         match to_vec(&s_long) {
@@ -1172,23 +1166,23 @@ mod test {
     #[test]
     fn v2_deserialize_string() {
         let bytes = [3, 0, 0x61, 0x62, 0x63];
-        let s: &str = from_slice(&bytes).expect("Deserialization failure");
+        let s: &str = from_slice(&bytes).expect("BUG: Deserialization failure");
         assert_eq!(s, "abc");
 
         let bytes = [3, 0, 0x61, 0x62, 0x63];
-        let s: String = from_slice(&bytes).expect("Deserialization failure");
+        let s: String = from_slice(&bytes).expect("BUG: Deserialization failure");
         assert_eq!(s, "abc");
 
         let bytes = [3, 0x61, 0x62, 0x63];
-        let s: Str1_32 = from_slice(&bytes).expect("Deserialization failure");
+        let s: Str1_32 = from_slice(&bytes).expect("BUG: Deserialization failure");
         assert_eq!(s.as_str(), "abc");
 
-        let s: Str1_255 = from_slice(&bytes).expect("Deserialization failure");
+        let s: Str1_255 = from_slice(&bytes).expect("BUG: Deserialization failure");
         assert_eq!(s.as_str(), "abc");
 
         // Zero-sized string
         let bytes = [0];
-        let s: Str0_255 = from_slice(&bytes).expect("Deserialization failure");
+        let s: Str0_255 = from_slice(&bytes).expect("BUG: Deserialization failure");
         assert_eq!(s.as_str(), "");
 
         // Overlong string
@@ -1217,61 +1211,63 @@ mod test {
     #[test]
     fn v2_serialize_bytes() {
         let bytes = vec![1u8, 2, 3];
-        let bytes = to_vec(&bytes).expect("Serialization failure");
+        let bytes = to_vec(&bytes).expect("BUG: Serialization failure");
         assert_eq!(&bytes, &[3, 0, 1, 2, 3]);
 
         let bytes: Bytes0_32 = vec![1, 2, 3]
             .try_into()
-            .expect("Bytes0_32 constructor failure");
-        let bytes = to_vec(&bytes).expect("Serialization failure");
+            .expect("BUG: Bytes0_32 constructor failure");
+        let bytes = to_vec(&bytes).expect("BUG: Serialization failure");
         assert_eq!(&bytes, &[3, 1, 2, 3]);
 
         let bytes: Bytes1_64k = vec![1, 2, 3]
             .try_into()
-            .expect("Bytes1_64k constructor failure");
-        let bytes = to_vec(&bytes).expect("Serialization failure");
+            .expect("BUG: Bytes1_64k constructor failure");
+        let bytes = to_vec(&bytes).expect("BUG: Serialization failure");
         assert_eq!(&bytes, &[3, 0, 1, 2, 3]);
 
         // Zero-sized byte buffer
         let bytes = Bytes0_255::new();
-        let bytes = to_vec(&bytes).expect("Serialization failure");
+        let bytes = to_vec(&bytes).expect("BUG: Serialization failure");
         assert_eq!(&bytes, &[0]);
 
         // Overlong buffer
         let bytes: Vec<u8> = iter::repeat(1).take(256).collect();
-        Bytes1_32::try_from(&bytes[..32]).expect("Bytes1_32 constructor failure");
+        Bytes1_32::try_from(&bytes[..32]).expect("BUG: Bytes1_32 constructor failure");
         Bytes1_32::try_from(&bytes[..33])
             .err()
-            .expect("Bytes1_32 constructor didn't fail but should have");
+            .expect("BUG: Bytes1_32 constructor didn't fail but should have");
 
         // Large buffer
         let bytes: Vec<u8> = iter::repeat(1).take(64 * 1024 - 1).collect();
-        let bytes: Bytes0_64k = bytes.try_into().expect("Bytes1_64k constructor failure");
-        let bytes = to_vec(&bytes).expect("Serialization failure");
+        let bytes: Bytes0_64k = bytes
+            .try_into()
+            .expect("BUG: Bytes1_64k constructor failure");
+        let bytes = to_vec(&bytes).expect("BUG: Serialization failure");
         assert_eq!(&bytes[..2], &[0xff, 0xff]);
     }
 
     #[test]
     fn v2_deserialize_bytes() {
         let bytes = [3, 0, 1, 2, 3];
-        let bytes: &[u8] = from_slice(&bytes).expect("Deserialization failure");
+        let bytes: &[u8] = from_slice(&bytes).expect("BUG: Deserialization failure");
         assert_eq!(bytes, &[1, 2, 3]);
 
         let bytes = [3, 0, 1, 2, 3];
-        let bytes: Vec<u8> = from_slice(&bytes).expect("Deserialization failure");
+        let bytes: Vec<u8> = from_slice(&bytes).expect("BUG: Deserialization failure");
         assert_eq!(bytes, &[1, 2, 3]);
 
         let bytes = [3, 1, 2, 3];
-        let bytes: Bytes0_32 = from_slice(&bytes).expect("Deserialization failure");
+        let bytes: Bytes0_32 = from_slice(&bytes).expect("BUG: Deserialization failure");
         assert_eq!(&*bytes, &[1, 2, 3]);
 
         let bytes = [3, 0, 1, 2, 3];
-        let bytes: Bytes1_64k = from_slice(&bytes).expect("Deserialization failure");
+        let bytes: Bytes1_64k = from_slice(&bytes).expect("BUG: Deserialization failure");
         assert_eq!(&*bytes, &[1, 2, 3]);
 
         // Zero-sized buffer
         let bytes = [0];
-        let s: Bytes0_255 = from_slice(&bytes).expect("Deserialization failure");
+        let s: Bytes0_255 = from_slice(&bytes).expect("BUG: Deserialization failure");
         assert_eq!(s.len(), 0);
 
         // Overlong buffer
@@ -1328,26 +1324,26 @@ mod test {
     fn v2_serialize_seq() {
         let seq: Seq0_255<SeqItem> = SeqItem::make_seq()
             .try_into()
-            .expect("Seq0_255 constructor failure");
-        let bytes = to_vec(&seq).expect("Serialization failure");
+            .expect("BUG: Seq0_255 constructor failure");
+        let bytes = to_vec(&seq).expect("BUG: Serialization failure");
         assert_eq!(&bytes, &SEQ_BIN_255);
 
         let seq: Seq0_64k<SeqItem> = SeqItem::make_seq()
             .try_into()
-            .expect("Seq0_64k constructor failure");
-        let bytes = to_vec(&seq).expect("Serialization failure");
+            .expect("BUG: Seq0_64k constructor failure");
+        let bytes = to_vec(&seq).expect("BUG: Serialization failure");
         assert_eq!(&bytes, &SEQ_BIN_64K);
 
         // Overlong seq
         let seq: Vec<SeqItem> = iter::repeat(SeqItem::default()).take(256).collect();
         Seq0_255::try_from(seq.as_slice())
             .err()
-            .expect("Seq0_255 constructor didn't fail but should have");
+            .expect("BUG: Seq0_255 constructor didn't fail but should have");
 
         let seq: Vec<SeqItem> = iter::repeat(SeqItem::default()).take(1 << 16).collect();
         Seq0_64k::try_from(seq.as_slice())
             .err()
-            .expect("Seq0_64k constructor didn't fail but should have");
+            .expect("BUG: Seq0_64k constructor didn't fail but should have");
     }
 
     #[test]
@@ -1364,16 +1360,18 @@ mod test {
 
     #[test]
     fn v2_deserialize_seq() {
-        let seq: Seq0_255<SeqItem> = from_slice(&SEQ_BIN_255).expect("Deserialization failure");
+        let seq: Seq0_255<SeqItem> =
+            from_slice(&SEQ_BIN_255).expect("BUG: Deserialization failure");
         let expected: Seq0_255<SeqItem> = SeqItem::make_seq()
             .try_into()
-            .expect("Seq0_255 constructor failure");
+            .expect("BUG: Seq0_255 constructor failure");
         assert_eq!(&seq, &expected);
 
-        let seq: Seq0_64k<SeqItem> = from_slice(&SEQ_BIN_64K).expect("Deserialization failure");
+        let seq: Seq0_64k<SeqItem> =
+            from_slice(&SEQ_BIN_64K).expect("BUG: Deserialization failure");
         let expected: Seq0_64k<SeqItem> = SeqItem::make_seq()
             .try_into()
-            .expect("Seq0_64k constructor failure");
+            .expect("BUG: Seq0_64k constructor failure");
         assert_eq!(&seq, &expected);
 
         // EOF
@@ -1431,20 +1429,24 @@ mod test {
             num_i32: -3,
             num_u64: 4,
             num_i64: -4,
-            s_32: Str1_32::try_from("Hello, World!").expect("Str1_32 c-tor failed"),
-            s_255: Str1_255::try_from("Hello, World!").expect("Str1_255 c-tor failed"),
+            s_32: Str1_32::try_from("Hello, World!").expect("BUG: Str1_32 c-tor failed"),
+            s_255: Str1_255::try_from("Hello, World!").expect("BUG: Str1_255 c-tor failed"),
             e_unit: MyEnum::Unit,
             e_tuple: MyEnum::Tuple(3.14),
             e_struct: MyEnum::Struct { data: 1.618 },
             vec: bytes.clone(),
-            seq_255: SeqItem::make_seq().try_into().unwrap(),
-            seq_64k: SeqItem::make_seq().try_into().unwrap(),
+            seq_255: SeqItem::make_seq()
+                .try_into()
+                .expect("BUG: cannot build SEQ0_255"),
+            seq_64k: SeqItem::make_seq()
+                .try_into()
+                .expect("BUG: cannot build SEQ0_64k"),
             slice: bytes.as_slice(),
         };
 
-        let bytes = to_vec(&my_data).expect("Serialization failed");
+        let bytes = to_vec(&my_data).expect("BUG: Serialization failed");
 
-        let my_data_2: MyData = from_slice(&bytes).expect("Deserialization failed");
+        let my_data_2: MyData = from_slice(&bytes).expect("BUG: Deserialization failed");
         assert_eq!(my_data, my_data_2);
     }
 }
