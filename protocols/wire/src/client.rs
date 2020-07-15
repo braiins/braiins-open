@@ -20,6 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs as StdToSocketAddrs};
@@ -29,6 +30,9 @@ use std::vec;
 
 use tokio::net::TcpStream;
 use tokio::time;
+
+#[cfg(feature = "serde")]
+use serde::{de, ser};
 
 use thiserror::Error;
 
@@ -110,9 +114,44 @@ impl FromStr for Address {
     }
 }
 
+impl<'a> TryFrom<&'a str> for Address {
+    type Error = AddressParseError;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        Address::from_str(value)
+    }
+}
+
+impl<'a> From<&'a Address> for String {
+    fn from(addr: &'a Address) -> Self {
+        format!("{}", addr)
+    }
+}
+
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.0, self.1)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl ser::Serialize for Address {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> de::Deserialize<'de> for Address {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        let s: &str = de::Deserialize::deserialize(deserializer)?;
+        Self::try_from(s).map_err(de::Error::custom)
     }
 }
 
@@ -320,5 +359,17 @@ mod tests {
         assert_eq!(Address::from_str("localhost:"), Err(AddressParseError));
         assert_eq!(Address::from_str(":"), Err(AddressParseError));
         assert_eq!(Address::from_str(":123"), Err(AddressParseError));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn wire_address_serde() {
+        let addr = Address("localhost".to_string(), 9001);
+        let serialized = serde_json::to_string(&addr).expect("BUG: Failed to serialize Address");
+        assert_eq!(serialized, "\"localhost:9001\"");
+
+        let deserialized: Address =
+            serde_json::from_str(&serialized).expect("BUG: Failed to deserialize Address");
+        assert_eq!(deserialized, addr);
     }
 }
