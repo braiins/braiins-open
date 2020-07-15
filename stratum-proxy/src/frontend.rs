@@ -94,14 +94,11 @@ impl Config {
         let certificate_key_pair = match self.insecure {
             true => None,
             false => {
-                let certificate = read_from_file::<v2::noise::auth::Certificate>(
-                    self.certificate_file.as_ref(),
-                    "Certificate",
-                )
-                .await?;
+                let certificate =
+                    read_from_file::<v2::noise::auth::Certificate>(self.certificate_file.as_ref())
+                        .await?;
                 let secret_key = read_from_file::<v2::noise::auth::StaticSecretKeyFormat>(
                     self.secret_key_file.as_ref(),
-                    "Secret key",
                 )
                 .await?;
                 Some((certificate, secret_key))
@@ -112,16 +109,13 @@ impl Config {
     }
 }
 
-pub async fn read_from_file<T>(
-    file_path_buf: Option<&PathBuf>,
-    error_context_descr: &str,
-) -> Result<T>
+pub async fn read_from_file<T>(file_path_buf: Option<&PathBuf>) -> Result<T>
 where
     T: TryFrom<String>,
     <T as TryFrom<String>>::Error: std::error::Error + Send + Sync + 'static,
 {
-    let file_path_buf = file_path_buf
-        .ok_or_else(|| Error::InvalidFile(format!("Missing path {}", error_context_descr)))?;
+    let file_path_buf =
+        file_path_buf.ok_or_else(|| Error::InvalidFile("Missing path".to_owned()))?;
 
     let mut file = File::open(file_path_buf).await?;
     let mut file_content = String::new();
