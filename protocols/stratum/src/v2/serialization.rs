@@ -1315,6 +1315,15 @@ mod test {
         0, 0, 128, 62
     ];
 
+    #[rustfmt::skip]
+    static SEQ_BIN_64K_BYTES_64K: &'static [u8] = &[
+        2u8, 0,
+        3u8, 0,
+        1, 2, 3,
+        3u8, 0,
+        4, 5, 6,
+    ];
+
     #[test]
     fn v2_serialize_seq() {
         let seq: Seq0_255<SeqItem> = SeqItem::make_seq()
@@ -1339,6 +1348,18 @@ mod test {
         Seq0_64k::try_from(seq.as_slice())
             .err()
             .expect("Seq0_64k constructor didn't fail but should have");
+    }
+
+    #[test]
+    fn v2_serialize_nested_bytes_in_seq() {
+        let seq: Seq0_64k<Bytes0_64k> = vec![
+            vec![1, 2, 3].try_into().expect("BUG: cannot convert"),
+            vec![4, 5, 6].try_into().expect("BUG: cannot convert"),
+        ]
+        .try_into()
+        .expect("BUG: cannot convert vec to Seq");
+        let bytes = to_vec(&seq).expect("BUG: serialization failure");
+        assert_eq!(&bytes, &SEQ_BIN_64K_BYTES_64K);
     }
 
     #[test]
