@@ -121,7 +121,7 @@ macro_rules! declare_request {
                 S: Serializer,
             {
                 // Convert to a tuple and serialize:
-                let tuple = ($(&self.$field),*);
+                let tuple = ($(&self.$field,)*);
                 tuple.serialize(serializer)
             }
         }
@@ -452,18 +452,16 @@ impl Notify {
 }
 
 declare_request!(
-    "Server may arbitrarily adjust version mask
-    Note, that we explicitly enforce 1 one element array so that serde doesn't flatten the
-    'params' JSON array to a single value, eliminating the array completely.",
+    "Server may arbitrarily adjust version mask",
     Method::SetVersionMask,
     struct SetVersionMask {
-        mask: [VersionMask; 1],
+        mask: VersionMask,
     }
 );
 
 impl SetVersionMask {
     pub fn value(&self) -> u32 {
-        ((self.mask[0]).0).0
+        ((self.mask).0).0
     }
 }
 

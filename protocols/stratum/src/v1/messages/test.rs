@@ -31,20 +31,25 @@ use serde_json::Value;
 #[test]
 fn set_version_mask_serialize() {
     let msg = SetVersionMask {
-        mask: [VersionMask(HexU32Be(0xdeadbeef))],
+        mask: VersionMask(HexU32Be(0xdeadbeef)),
     };
-    let payload = msg.try_into()
-        .expect("BUG: failed to build RPC payload");
+
+    let msg_json = serde_json::to_string(&msg).expect("BUG: Failed to serialize SetVersionMask");
+    assert_eq!(msg_json, "[\"deadbeef\"]");
+    let msg_des: SetVersionMask =
+        serde_json::from_str(&msg_json).expect("BUG: Failed to deserialize SetVersionMask");
+    assert_eq!(msg_des, msg);
+
+    let payload = msg.try_into().expect("BUG: failed to build RPC payload");
     let lhs = rpc::Request {
         id: Some(1),
         payload,
     };
-    let lhs = serde_json::to_value(lhs)
-        .expect("BUG: failed to serialize RPC payload");
+    let lhs = serde_json::to_value(lhs).expect("BUG: failed to serialize RPC payload");
 
     let rhs = r#"{"id": 1, "method": "mining.set_version_mask", "params": ["deadbeef"]}"#;
-    let rhs: Value = serde_json::from_str(&rhs)
-        .expect("BUG: failed to deserialize static JSON string");
+    let rhs: Value =
+        serde_json::from_str(&rhs).expect("BUG: failed to deserialize static JSON string");
     assert_eq!(lhs, rhs);
 }
 
