@@ -120,7 +120,8 @@ where
     T: TryFrom<String>,
     <T as TryFrom<String>>::Error: std::error::Error + Send + Sync + 'static,
 {
-    let file_path_buf = file_path_buf.expect(&format!("BUG: missing path {}", error_context_descr));
+    let file_path_buf = file_path_buf
+        .ok_or_else(|| Error::InvalidFile(format!("Missing path {}", error_context_descr)))?;
 
     let mut file = File::open(file_path_buf).await?;
     let mut file_content = String::new();
