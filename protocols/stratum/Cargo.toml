@@ -36,7 +36,8 @@ ii-logging = { path = "../../utils-rs/logging" }
 ii-unvariant = { path = "../../utils-rs/unvariant/unvariant"}
 structopt = "0.3"
 rand = "0.7.3"
-ed25519-dalek = { version = "1.0.0-pre.3", features = ["serde"] }
+# TODO: Update ed25519-dalek when stable 1.0.0 is out
+ed25519-dalek = { version = "=1.0.0-pre.3", features = ["serde"] }
 bs58 = { version ="0.3.0", features = ["check"] }
 anyhow = "1.0"
 
