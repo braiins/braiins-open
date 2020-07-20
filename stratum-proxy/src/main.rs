@@ -44,16 +44,11 @@ async fn main() -> Result<()> {
         .context("Proxy configuration file couldn't be read.")?;
     let config = toml::from_str::<Config>(config_file_string.as_str())?;
 
-    let certificate_secret_key_pair = config
-        .read_certificate_secret_key_pair()
-        .await
-        .context("Certificate and secret key couldn't be read.")?;
-
     let server = server::ProxyServer::listen(
-        config.listen_address,
-        config.upstream_address,
+        config.listen_address.clone(),
+        config.upstream_address.clone(),
         server::handle_connection,
-        certificate_secret_key_pair,
+        config.read_certificate_secret_key_pair().await?,
         (),
     )
     .context("Cannot bind the server")?;
