@@ -75,21 +75,16 @@ impl Config {
     pub async fn read_certificate_secret_key_pair(
         &self,
     ) -> Result<Option<(Certificate, StaticSecretKeyFormat)>> {
-        let cert_key_pair = if let Some(ctx) = self.security_context.as_ref() {
-            Some(ctx.read_from_file().await?)
-        } else {
-            if self.insecure {
-                None
-            } else {
-                return Err(Error::InvalidFile(
-                    "Certificate and key files are missing".to_owned(),
-                ));
-            }
-        };
         if self.insecure {
             Ok(None)
         } else {
-            Ok(cert_key_pair)
+            if let Some(ctx) = self.security_context.as_ref() {
+                Ok(Some(ctx.read_from_file().await?))
+            } else {
+                Err(Error::InvalidFile(
+                    "Certificate and key files are missing".to_owned(),
+                ))
+            }
         }
     }
 }
