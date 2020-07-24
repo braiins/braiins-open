@@ -264,9 +264,15 @@ impl HaltHandle {
         FT: Future<Output = ()> + Send + 'static,
         FN: FnOnce(Tripwire) -> FT,
     {
-        let ft = f(self.tripwire.clone());
-        let task = tokio::spawn(ft);
+        let ft = f(self.tripwire());
+        self.add_task(tokio::spawn(ft));
+    }
 
+    pub fn tripwire(&self) -> Tripwire {
+        self.tripwire.clone()
+    }
+
+    pub fn add_task(&self, task: JoinHandle<()>) {
         // Add the task join handle to tasks_tx (used by join()).
         // Errors are ignored here - send() on an unbounded channel
         // only fails if the receiver is dropped, and in that case
