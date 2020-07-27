@@ -106,7 +106,7 @@ pub struct OpenStandardMiningChannelSuccess {
 
 #[id(0x12u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct OpenStandardMiningChannelError {
+pub struct OpenMiningChannelError {
     pub req_id: u32,
     pub code: Str0_32,
 }
@@ -236,9 +236,9 @@ impl_base_message_conversion!(
     visit_open_standard_mining_channel_success
 );
 impl_base_message_conversion!(
-    OpenStandardMiningChannelError,
+    OpenMiningChannelError,
     false,
-    visit_open_standard_mining_channel_error
+    visit_open_mining_channel_error
 );
 
 impl_base_message_conversion!(UpdateChannel, true, visit_update_channel);

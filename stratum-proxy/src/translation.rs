@@ -123,7 +123,7 @@ enum V2ToV1TranslationState {
     /// Channel now needs finalization of subscribe+authorize+set difficulty target with the
     /// upstream V1 server
     OpenStandardMiningChannelPending,
-    /// Upstream subscribe/authorize failed state ensures sending OpenStandardMiningChannelError only once
+    /// Upstream subscribe/authorize failed state ensures sending OpenMiningChannelError only once
     V1SubscribeOrAuthorizeFail,
     /// Channel is operational
     Operational,
@@ -353,7 +353,7 @@ impl V2ToV1Translation {
         self.v1_extra_nonce2_size = 0;
 
         if let Some(v2_channel_details) = self.v2_channel_details.as_ref() {
-            let msg = v2::messages::OpenStandardMiningChannelError {
+            let msg = v2::messages::OpenMiningChannelError {
                 req_id: v2_channel_details.req_id,
                 code: err_msg.try_into().expect("BUG: incorrect error message"),
             };
@@ -559,7 +559,7 @@ impl V2ToV1Translation {
             self.state,
             payload,
         );
-        // Only the first of authorize or subscribe error issues the OpenStandardMiningChannelError message
+        // Only the first of authorize or subscribe error issues the OpenMiningChannelError message
         if self.state != V2ToV1TranslationState::V1SubscribeOrAuthorizeFail {
             trace!(
                 "Upstream connection init failed, dropping channel: {:?}",
@@ -1163,16 +1163,16 @@ impl V2ToV1Translation {
                 "Out of sequence OpenStandardMiningChannel message, received: {:?}",
                 msg
             );
-            let err_msg = v2::messages::OpenStandardMiningChannelError {
+            let err_msg = v2::messages::OpenMiningChannelError {
                 req_id: msg.req_id,
-                code: "Out of sequence OpenStandardMiningChannel msg"
+                code: "out-of-sequence-message"
                     .try_into()
                     .expect("BUG: incorrect error message"),
             };
 
             if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg) {
                 info!(
-                    "Cannot send OpenStandardMiningChannelError message: {:?}",
+                    "Cannot send OpenMiningChannelError message: {:?}",
                     submit_err
                 );
                 return Err(submit_err);

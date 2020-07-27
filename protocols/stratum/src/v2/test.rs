@@ -125,9 +125,9 @@ impl FullMiningHandler {
         Ok(())
     }
 
-    async fn handle_open_standard_mining_channel_error(
+    async fn handle_open_mining_channel_error(
         &mut self,
-        _msg: messages::OpenStandardMiningChannelError,
+        _msg: messages::OpenMiningChannelError,
     ) -> Result<()> {
         Ok(())
     }
@@ -276,7 +276,7 @@ async fn test_full_mining_handler() {
     let msg5: framing::Frame = build_open_channel_success()
         .try_into()
         .expect("BUG: Cannot create test frame");
-    let msg6: framing::Frame = messages::OpenStandardMiningChannelError {
+    let msg6: framing::Frame = messages::OpenMiningChannelError {
         req_id: 0,
         code: Default::default(),
     }
