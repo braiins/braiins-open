@@ -160,6 +160,9 @@ type JobMap = HashMap<u32, V1SubmitTemplate>;
 
 //type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &ii_stratum::Message<Protocol>, &v1::rpc::StratumResult)>;
 
+/// Maps V1 Message Id to V2 sequence number
+type SeqNumMap = HashMap<u32, u32>;
+
 /// Object capable of translating stratm V2 header-only mining protocol that uses standard mining
 /// channels into stratum V1 including extranonce 1 subscription
 pub struct V2ToV1Translation {
@@ -201,6 +204,8 @@ pub struct V2ToV1Translation {
     v2_job_id: SeqId,
     /// Translates V2 job ID to V1 job ID
     v2_to_v1_job_map: JobMap,
+    /// Maps V1 message id to V2 sequence number
+    v2_seq_num: SeqNumMap,
     /// Options for translation
     options: V2ToV1TranslationOptions,
     v1_password: String,
@@ -245,6 +250,7 @@ impl V2ToV1Translation {
             v2_req_id: SeqId::new(),
             v2_job_id: SeqId::new(),
             v2_to_v1_job_map: JobMap::default(),
+            v2_seq_num: SeqNumMap::default(),
             options,
             v1_password,
         }
@@ -592,6 +598,8 @@ impl V2ToV1Translation {
             .map_err(Into::into)
             // Handle the actual submission result
             .and_then(|bool_result| {
+                let seq_num = id.and_then(|n| self.v2_seq_num.remove(&n)).unwrap_or(0);
+
                 let v2_channel_details = self
                     .v2_channel_details
                     .as_ref()
@@ -601,12 +609,11 @@ impl V2ToV1Translation {
                     bool_result,
                     v2_channel_details
                 );
+
                 if bool_result.0 {
-                    // TODO this is currently incomplete, we have to track all pending mining
-                    // results so that we can correlate the success message and ack
                     let success_msg = v2::messages::SubmitSharesSuccess {
                         channel_id: Self::CHANNEL_ID,
-                        last_seq_num: 0,
+                        last_seq_num: seq_num,
                         new_submits_accepted_count: 1,
                         new_shares_sum: 1, // TODO is this really 1?
                     };
@@ -616,9 +623,7 @@ impl V2ToV1Translation {
                     // TODO use reject_shares() method once we can track the original payload message
                     let err_msg = v2::messages::SubmitSharesError {
                         channel_id: Self::CHANNEL_ID,
-                        // TODO the sequence number needs to be determined from the failed submit, currently,
-                        // there is no infrastructure to get this
-                        seq_num: 0,
+                        seq_num,
                         code: format!("ShareRjct:{:?}", payload)[..32]
                             .try_into()
                             .expect("BUG: incorrect error message"),
@@ -1335,6 +1340,12 @@ impl V2ToV1Translation {
                     Self::handle_submit_result,
                     Self::handle_submit_error,
                 );
+
+                if let v1::rpc::Rpc::Request(r) = &v1_submit_message {
+                    self.v2_seq_num
+                        .insert(r.id.expect("BUG: missing v1 request ID"), msg.seq_num);
+                };
+
                 if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_submit_message) {
                     info!(
                         "SubmitSharesStandard: cannot send translated V1 message: {:?}",
