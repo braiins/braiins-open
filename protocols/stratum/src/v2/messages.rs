@@ -44,8 +44,8 @@ mod test;
 
 /// Generates conversion for base protocol messages (extension 0)
 macro_rules! impl_base_message_conversion {
-    ($message:tt, $is_channel_msg:expr, $handler_fn:tt) => {
-        impl_message_conversion!(extensions::BASE, $message, $is_channel_msg, $handler_fn);
+    ($message:tt, $is_channel_msg:expr) => {
+        impl_message_conversion!(extensions::BASE, $message, $is_channel_msg);
     };
 }
 
@@ -213,42 +213,22 @@ pub struct Reconnect {
 
 pub struct SetGroupChannel;
 
-impl_base_message_conversion!(SetupConnection, false, visit_setup_connection);
-impl_base_message_conversion!(
-    SetupConnectionSuccess,
-    false,
-    visit_setup_connection_success
-);
-impl_base_message_conversion!(SetupConnectionError, false, visit_setup_connection_error);
-impl_base_message_conversion!(
-    ChannelEndpointChanged,
-    false,
-    visit_channel_endpoint_changed
-);
-impl_base_message_conversion!(
-    OpenStandardMiningChannel,
-    false,
-    visit_open_standard_mining_channel
-);
-impl_base_message_conversion!(
-    OpenStandardMiningChannelSuccess,
-    false,
-    visit_open_standard_mining_channel_success
-);
-impl_base_message_conversion!(
-    OpenMiningChannelError,
-    false,
-    visit_open_mining_channel_error
-);
+impl_base_message_conversion!(SetupConnection, false);
+impl_base_message_conversion!(SetupConnectionSuccess, false);
+impl_base_message_conversion!(SetupConnectionError, false);
+impl_base_message_conversion!(ChannelEndpointChanged, false);
+impl_base_message_conversion!(OpenStandardMiningChannel, false);
+impl_base_message_conversion!(OpenStandardMiningChannelSuccess, false);
+impl_base_message_conversion!(OpenMiningChannelError, false);
 
-impl_base_message_conversion!(UpdateChannel, true, visit_update_channel);
-impl_base_message_conversion!(UpdateChannelError, true, visit_update_channel_error);
-impl_base_message_conversion!(CloseChannel, true, visit_close_channel);
-impl_base_message_conversion!(SubmitSharesStandard, true, visit_submit_shares_standard);
-impl_base_message_conversion!(SubmitSharesSuccess, true, visit_submit_shares_success);
-impl_base_message_conversion!(SubmitSharesError, true, visit_submit_shares_error);
-impl_base_message_conversion!(NewMiningJob, true, visit_new_mining_job);
-impl_base_message_conversion!(NewExtendedMiningJob, true, visit_new_extended_mining_job);
-impl_base_message_conversion!(SetNewPrevHash, true, visit_set_new_prev_hash);
-impl_base_message_conversion!(Reconnect, false, visit_reconnect);
-impl_base_message_conversion!(SetTarget, true, visit_set_target);
+impl_base_message_conversion!(UpdateChannel, true);
+impl_base_message_conversion!(UpdateChannelError, true);
+impl_base_message_conversion!(CloseChannel, true);
+impl_base_message_conversion!(SubmitSharesStandard, true);
+impl_base_message_conversion!(SubmitSharesSuccess, true);
+impl_base_message_conversion!(SubmitSharesError, true);
+impl_base_message_conversion!(NewMiningJob, true);
+impl_base_message_conversion!(NewExtendedMiningJob, true);
+impl_base_message_conversion!(SetNewPrevHash, true);
+impl_base_message_conversion!(Reconnect, false);
+impl_base_message_conversion!(SetTarget, true);

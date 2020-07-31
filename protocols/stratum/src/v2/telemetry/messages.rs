@@ -35,13 +35,8 @@ use ii_unvariant::{id, Id};
 
 /// Generates conversion for telemetry protocol messages (extension 1)
 macro_rules! impl_telemetry_message_conversion {
-    ($message:tt, $is_channel_msg:expr, $handler_fn:tt) => {
-        impl_message_conversion!(
-            extensions::TELEMETRY,
-            $message,
-            $is_channel_msg,
-            $handler_fn
-        );
+    ($message:tt, $is_channel_msg:expr) => {
+        impl_message_conversion!(extensions::TELEMETRY, $message, $is_channel_msg);
     };
 }
 
@@ -92,25 +87,9 @@ pub struct SubmitTelemetryDataError {
     pub code: Str0_32,
 }
 
-impl_telemetry_message_conversion!(OpenTelemetryChannel, false, visit_open_telemetry_channel);
-impl_telemetry_message_conversion!(
-    OpenTelemetryChannelSuccess,
-    false,
-    visit_open_telemetry_channel_success
-);
-impl_telemetry_message_conversion!(
-    OpenTelemetryChannelError,
-    false,
-    visit_open_telemetry_channel_error
-);
-impl_telemetry_message_conversion!(SubmitTelemetryData, false, visit_submit_telemetry_data);
-impl_telemetry_message_conversion!(
-    SubmitTelemetryDataSuccess,
-    false,
-    visit_submit_telemetry_data_success
-);
-impl_telemetry_message_conversion!(
-    SubmitTelemetryDataError,
-    false,
-    visit_submit_telemetry_data_error
-);
+impl_telemetry_message_conversion!(OpenTelemetryChannel, false);
+impl_telemetry_message_conversion!(OpenTelemetryChannelSuccess, false);
+impl_telemetry_message_conversion!(OpenTelemetryChannelError, false);
+impl_telemetry_message_conversion!(SubmitTelemetryData, false);
+impl_telemetry_message_conversion!(SubmitTelemetryDataSuccess, false);
+impl_telemetry_message_conversion!(SubmitTelemetryDataError, false);

@@ -26,11 +26,10 @@
 /// `extension_id` - Identifies the protocol extension
 /// `message` - Message identifier (token)
 /// `is_channel_msg` - expected boolean value whether the message is a channel message
-/// `handler_fn` - handler method that is to be called after accept
 
 #[macro_export]
 macro_rules! impl_message_conversion {
-    ($extension_id:expr, $message:tt, $is_channel_msg:expr, $handler_fn:tt) => {
+    ($extension_id:expr, $message:tt, $is_channel_msg:expr) => {
         // NOTE: $message and $handler_fn need to be tt because of https://github.com/dtolnay/async-trait/issues/46
 
         impl TryFrom<$message> for framing::Frame {
