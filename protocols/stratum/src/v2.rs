@@ -110,8 +110,5 @@ impl crate::Protocol for Protocol {
     type Header = framing::Header;
 }
 
-/// Specifies all messages to be visited
-/// TODO document why anything implementing the Handler must be static
-
 #[cfg(test)]
 mod test;

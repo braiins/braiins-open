@@ -39,7 +39,7 @@ pub use self::framing::codec::Codec;
 pub use self::framing::{Frame, Framing};
 use crate::error::Result;
 
-/// Tcp stream that produces/consumes V2 frames
+/// Tcp stream that produces/consumes V1 frames
 pub type Framed = tokio_util::codec::Framed<TcpStream, <Framing as ii_wire::Framing>::Codec>;
 
 /// Message Id is used for pairing request/response messages
