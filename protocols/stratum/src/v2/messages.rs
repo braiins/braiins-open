@@ -150,7 +150,7 @@ pub struct SubmitSharesSuccess {
     pub channel_id: u32,
     pub last_seq_num: u32,
     pub new_submits_accepted_count: u32,
-    pub new_shares_sum: u32,
+    pub new_shares_sum: u64,
 }
 
 #[id(0x1du8)]

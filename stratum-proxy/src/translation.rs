@@ -615,7 +615,7 @@ impl V2ToV1Translation {
                         channel_id: Self::CHANNEL_ID,
                         last_seq_num: seq_num,
                         new_submits_accepted_count: 1,
-                        new_shares_sum: 1, // TODO is this really 1?
+                        new_shares_sum: self.v2_target.expect("BUG: difficulty missing").low_u64(), // TODO what if v2_target > 2**64 - 1?
                     };
                     self.log_session_details("Share accepted");
                     util::submit_message(&mut self.v2_tx, success_msg)
