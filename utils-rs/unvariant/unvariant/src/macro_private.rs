@@ -93,14 +93,11 @@ where
         }
 
         // At this point there must be a future in self.state
-        let res = this
-            .state
+        this.state
             .as_mut()
             .as_pin_mut()
             .expect("BUG: unvariant: HandlerFilter: No Future in state")
-            .poll(cx);
-
-        res
+            .poll(cx)
     }
 }
 

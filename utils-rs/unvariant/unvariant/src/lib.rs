@@ -139,6 +139,17 @@ pub trait Id<T: Copy> {
     const ID: T;
 }
 
+/// Shorthand implementation of `Id` for a type or multiple types
+/// for when you can't use the `#[id(...)]` macro.
+#[macro_export]
+macro_rules! id_for {
+    ($id_ty:ty, $($for_ty:ty => $id:expr),+ $(,)*) => {
+        $(impl ::ii_unvariant::Id<$id_ty> for $for_ty {
+            const ID: $id_ty = $id;
+        })+
+    };
+}
+
 /// Trait that must be implemented for frames being handled by unvariant handler.
 pub trait GetId {
     type Id;

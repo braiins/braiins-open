@@ -20,7 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use ii_unvariant::{id, Id};
+use ii_unvariant::{id, id_for, Id};
 
 #[test]
 fn id_macro() {
@@ -58,4 +58,24 @@ fn id_macro() {
     struct IdComplex;
     let id: (u8, &str) = IdComplex::ID;
     assert_eq!(id, (3, "ii"));
+
+    struct IdFor;
+    id_for!(u8, IdFor => 0x11);
+    let id: u8 = IdFor::ID;
+    assert_eq!(id, 0x11);
+
+    struct IdForMulti1;
+    struct IdForMulti2;
+    struct IdForMulti3;
+    id_for!(u8,
+        IdForMulti1 => 0x11,
+        IdForMulti2 => 0x12,
+        IdForMulti3 => 0x13,
+    );
+    let id: u8 = IdForMulti1::ID;
+    assert_eq!(id, 0x11);
+    let id: u8 = IdForMulti2::ID;
+    assert_eq!(id, 0x12);
+    let id: u8 = IdForMulti3::ID;
+    assert_eq!(id, 0x13);
 }
