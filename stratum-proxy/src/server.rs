@@ -312,9 +312,7 @@ where
     ///  - establish upstream V1 connection
     ///  - establish noise handshake (if configured)
     ///  - run the custom connection handler that
-    async fn do_handle(self) -> Result<()> {
-        let v2_peer_addr = self.v2_downstream_conn.peer_addr()?;
-
+    async fn do_handle(self, v2_peer_addr: SocketAddr) -> Result<()> {
         // Connect to upstream V1 server
         let mut v1_client = Client::new(self.v1_upstream_addr);
         // TODO Attempt only once to connect -> consider using the backoff for a few rounds before
@@ -358,13 +356,17 @@ where
     /// Handle connection by delegating it to a method that is able to handle a Result so that we
     /// have info/error reporting in a single place
     async fn handle(self) {
-        let v2_peer_addr = self
-            .v2_downstream_conn
-            .peer_addr()
-            .expect("BUG: cannot read V2 peer address");
-        match self.do_handle().await {
-            Ok(()) => info!("Closing connection from {} ...", v2_peer_addr),
-            Err(err) => error!("Connection error: {}, peer: {}", err, v2_peer_addr),
+        let v2_peer_addr = match self.v2_downstream_conn.peer_addr() {
+            Ok(a) => a,
+            Err(err) => {
+                debug!("Connection error: {}, can't retrieve peer address", err);
+                return;
+            }
+        };
+
+        match self.do_handle(v2_peer_addr).await {
+            Ok(()) => info!("Closing connection from {:?} ...", v2_peer_addr),
+            Err(err) => error!("Connection error: {}, peer: {:?}", err, v2_peer_addr),
         }
     }
 }
