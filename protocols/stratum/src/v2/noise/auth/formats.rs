@@ -67,6 +67,14 @@ macro_rules! impl_basic_type {
                     inner: $encoded_struct_type::new(inner),
                 }
             }
+
+            pub fn from_reader<T>(reader: T) -> Result<Self>
+            where
+                T: std::io::Read,
+            {
+                serde_json::from_reader(reader).map_err(Into::into)
+            }
+
             pub fn into_inner(self) -> $inner_encoded_struct_type {
                 self.inner.into_inner()
             }
