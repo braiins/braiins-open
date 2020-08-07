@@ -20,4 +20,84 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-pub mod version;
+#[macro_export]
+macro_rules! full {
+    ($($tt:tt)+) => {
+        format!("{} {}-{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), git_version::git_version!($($tt)+))
+    };
+    () => {
+        format!("{} {}-{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), git_version::git_version!(fallback = "unknown"))
+    }
+}
+
+#[macro_export]
+macro_rules! semantic {
+    () => {
+        env!("CARGO_PKG_VERSION")
+    };
+}
+
+#[macro_export]
+macro_rules! git {
+    ($($tt:tt)+) => {
+        git_version::git_version!($($tt)+)
+    };
+    () => {
+        git_version::git_version!(fallback = "unknown")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use git_version::git_version;
+
+    #[test]
+    fn test_full() {
+        assert_eq!(
+            full!(),
+            format!("ii-scm {}-{}", env!("CARGO_PKG_VERSION"), git_version!())
+        );
+    }
+
+    #[test]
+    fn test_full_args() {
+        assert_eq!(
+            full!(args = ["--abbrev=40", "--always"]),
+            format!(
+                "ii-scm {}-{}",
+                env!("CARGO_PKG_VERSION"),
+                git_version!(args = ["--abbrev=40", "--always"])
+            )
+        );
+        assert_eq!(
+            full!(prefix = "git:", cargo_prefix = "cargo:"),
+            format!(
+                "ii-scm {}-{}",
+                env!("CARGO_PKG_VERSION"),
+                git_version!(prefix = "git:", cargo_prefix = "cargo:")
+            )
+        );
+    }
+
+    #[test]
+    fn test_semantic() {
+        assert_eq!(semantic!(), env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn test_git() {
+        assert_eq!(git!(), git_version!(fallback = "unknown"));
+    }
+
+    #[test]
+    fn test_git_args() {
+        assert_eq!(
+            git!(args = ["--abbrev=40", "--always"]),
+            git_version!(args = ["--abbrev=40", "--always"])
+        );
+        assert_eq!(
+            git!(prefix = "git:", cargo_prefix = "cargo:"),
+            git_version!(prefix = "git:", cargo_prefix = "cargo:")
+        );
+    }
+}

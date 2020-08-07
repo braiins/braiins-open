@@ -9,4 +9,5 @@ description = "Utility for handling Software Configuration Management (SCM)"
 
 [dependencies]
 git-version = "0.3.3"
-once_cell = "1.2"
+proc-macro-hack = "0.5.16"
+proc-macro-nested = "0.1.6"
