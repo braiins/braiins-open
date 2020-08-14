@@ -420,11 +420,14 @@ impl Shares {
         self.0
     }
 
-    pub fn into_hashrate(self, interval: time::Duration) -> HashesUnit {
-        let secs = interval.as_secs() as u128;
-        let hashes = self.into_hashes().into_u128();
-        let hashrate = if secs == 0 { hashes } else { hashes / secs };
-        hashrate.into()
+    pub fn into_hashrate(self, interval: time::Duration) -> Result<HashesUnit, ()> {
+        let secs = interval.as_secs_f64();
+        if secs == 0.0 {
+            return Err(());
+        }
+        let hashes = self.into_hashes().into_f64();
+        let hashrate = hashes / secs;
+        Ok((hashrate as u128).into())
     }
 
     #[inline]
@@ -835,5 +838,31 @@ pub mod test {
         assert_eq!(Shares::default(), Shares::default());
         assert!(Shares::default() < shares);
         assert!(shares > Shares::default());
+    }
+
+    #[test]
+    fn test_hashrate_computation() {
+        let eps = 0.001;
+        let h = Shares::from(233);
+
+        assert!(h.into_hashrate(time::Duration::from_secs(0)).is_err());
+        assert!(
+            (h.into_hashrate(time::Duration::from_secs(1))
+                .expect("BUG: bad conversion")
+                .into_tera_hashes()
+                .into_f64()
+                - 1.0)
+                .abs()
+                < eps
+        );
+        assert!(
+            (h.into_hashrate(time::Duration::from_millis(1900))
+                .expect("BUG: bad conversion")
+                .into_tera_hashes()
+                .into_f64()
+                - 0.526)
+                .abs()
+                < eps
+        );
     }
 }
