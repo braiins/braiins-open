@@ -166,7 +166,7 @@ macro_rules! from_midstate_word_impl (
     ($imp:ident) => (
         impl FromMidstateWord<$imp> for $imp {
             fn from_le_bytes(bytes: &[u8]) -> $imp {
-                $imp::from_le_bytes(bytes.try_into().expect("slice with incorrect length"))
+                $imp::from_le_bytes(bytes.try_into().expect("BUG: slice with incorrect length"))
             }
         }
     )
@@ -741,12 +741,15 @@ pub mod test {
         assert_eq!(difficulty_1_target, Target::from_pool_difficulty(1));
 
         // check conversion from hexadecimal string
-        assert_eq!(difficulty_1_target, Target::from_hex(TARGET_1_STR).unwrap());
+        assert_eq!(
+            difficulty_1_target,
+            Target::from_hex(TARGET_1_STR).expect("BUG: cannot create Target from hex")
+        );
 
         // check conversion from compact representation of target with difficulty 1
         assert_eq!(
             difficulty_1_target,
-            Target::from_compact(TARGET_1_BITS).unwrap()
+            Target::from_compact(TARGET_1_BITS).expect("BUG: cannot create Target from compact")
         );
         // and conversion back to compact representation
         assert_eq!(difficulty_1_target.into_compact(), TARGET_1_BITS);
@@ -764,7 +767,12 @@ pub mod test {
             let bits = block.bits;
 
             // check conversion from compact representation of target to full one and back
-            assert_eq!(bits, Target::from_compact(bits).unwrap().into_compact());
+            assert_eq!(
+                bits,
+                Target::from_compact(bits)
+                    .expect("BUG: cannot create Target from compact")
+                    .into_compact()
+            );
         }
     }
 
@@ -778,7 +786,8 @@ pub mod test {
     fn test_meets_target() {
         for block in TEST_BLOCKS.iter() {
             // convert network difficulty to target
-            let target = Target::from_compact(block.bits).unwrap();
+            let target =
+                Target::from_compact(block.bits).expect("BUG: cannot create Target from compact");
 
             // check if test block meets the target
             assert!(block.hash.meets(&target));
