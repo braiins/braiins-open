@@ -1341,12 +1341,17 @@ impl V2ToV1Translation {
                     Self::handle_submit_error,
                 );
 
-                if let v1::rpc::Rpc::Request(r) = &v1_submit_message {
-                    self.v2_seq_num
-                        .insert(r.id.expect("BUG: missing v1 request ID"), msg.seq_num);
+                let v1_seq_num = if let v1::rpc::Rpc::Request(r) = &v1_submit_message {
+                    let v1_seq_num = r.id.expect("BUG: missing v1 request ID");
+                    self.v2_seq_num.insert(v1_seq_num, msg.seq_num);
+                    v1_seq_num
+                } else {
+                    panic!("BUG: expected v1 share request");
                 };
 
                 if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_submit_message) {
+                    // Immediately remove sequence number when share cannot be sent
+                    self.v2_seq_num.remove(&v1_seq_num);
                     info!(
                         "SubmitSharesStandard: cannot send translated V1 message: {:?}",
                         submit_err
