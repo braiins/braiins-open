@@ -581,6 +581,21 @@ impl V2ToV1Translation {
         }
     }
 
+    fn get_v2_seq_num(&mut self, id: &v1::MessageId) -> u32 {
+        // TODO: Return 0 or other value when id cannot be determined?
+        if let Some(v1_seq_num) = id {
+            let v2_seq_num = self.v2_seq_num.remove(&v1_seq_num);
+            if v2_seq_num.is_none() {
+                trace!("Cannot map V1 message id {} to V2 id", v1_seq_num);
+            };
+            v2_seq_num
+        } else {
+            trace!("Cannot map missing V1 message id to V2 id");
+            None
+        }
+        .unwrap_or(0)
+    }
+
     fn handle_submit_result(
         &mut self,
         id: &v1::MessageId,
@@ -598,7 +613,7 @@ impl V2ToV1Translation {
             .map_err(Into::into)
             // Handle the actual submission result
             .and_then(|bool_result| {
-                let seq_num = id.and_then(|n| self.v2_seq_num.remove(&n)).unwrap_or(0);
+                let seq_num = self.get_v2_seq_num(id);
 
                 let v2_channel_details = self
                     .v2_channel_details
@@ -620,16 +635,12 @@ impl V2ToV1Translation {
                     self.log_session_details("Share accepted");
                     util::submit_message(&mut self.v2_tx, success_msg)
                 } else {
-                    // TODO use reject_shares() method once we can track the original payload message
-                    let err_msg = v2::messages::SubmitSharesError {
-                        channel_id: Self::CHANNEL_ID,
-                        seq_num,
-                        code: format!("ShareRjct:{:?}", payload)[..32]
-                            .try_into()
-                            .expect("BUG: incorrect error message"),
-                    };
                     info!("Share rejected for {}", v2_channel_details.user.to_string());
-                    util::submit_message(&mut self.v2_tx, err_msg)
+                    self.reject_shares(
+                        Self::CHANNEL_ID,
+                        seq_num,
+                        format!("ShareRjct:{:?}", payload),
+                    )
                 }
             })
             // TODO what should be the behavior when the result is incorrectly passed, shall we
@@ -648,18 +659,12 @@ impl V2ToV1Translation {
             self.state,
             payload,
         );
-        // TODO use reject_shares() method once we can track the original payload message
-        let err_msg = v2::messages::SubmitSharesError {
-            channel_id: Self::CHANNEL_ID,
-            // TODO the sequence number needs to be determined from the failed submit, currently,
-            // there is no infrastructure to get this
-            seq_num: 0,
-            code: format!("ShareRjct:{:?}", payload)[..32]
-                .try_into()
-                .expect("BUG: wrong error code string"),
-        };
-
-        util::submit_message(&mut self.v2_tx, err_msg)
+        let seq_num = self.get_v2_seq_num(id);
+        self.reject_shares(
+            Self::CHANNEL_ID,
+            seq_num,
+            format!("ShareRjct:{:?}", payload),
+        )
     }
 
     /// Iterates the merkle branches and calculates block merkle root using the extra nonce 1.
@@ -766,11 +771,11 @@ impl V2ToV1Translation {
     }
 
     /// Generates log trace entry and reject shares error reply to the client
-    fn reject_shares(&mut self, payload: &v2::messages::SubmitSharesStandard, err_msg: String) {
-        trace!("Unrecognized channel ID: {}", payload.channel_id);
+    fn reject_shares(&mut self, channel_id: u32, seq_num: u32, err_msg: String) -> Result<()> {
+        trace!("{}", err_msg);
         let submit_shares_error_msg = v2::messages::SubmitSharesError {
-            channel_id: payload.channel_id,
-            seq_num: payload.seq_num,
+            channel_id,
+            seq_num,
             code: err_msg[..32].try_into().expect(
                 format!(
                     "BUG: cannot convert error message to V2 format: {}",
@@ -780,9 +785,11 @@ impl V2ToV1Translation {
             ),
         };
 
-        if let Err(submit_err) = util::submit_message(&mut self.v2_tx, submit_shares_error_msg) {
+        let result = util::submit_message(&mut self.v2_tx, submit_shares_error_msg);
+        if let Err(submit_err) = &result {
             info!("Cannot send 'SubmitSharesError': {:?}", submit_err);
         }
+        result
     }
 
     fn perform_notify(&mut self, payload: &v1::messages::Notify) -> Result<()> {
@@ -1293,7 +1300,11 @@ impl V2ToV1Translation {
         );
         // Report invalid channel ID
         if msg.channel_id != Self::CHANNEL_ID {
-            self.reject_shares(&msg, format!("Unrecognized channel ID {}", msg.channel_id));
+            let _ = self.reject_shares(
+                msg.channel_id,
+                msg.seq_num,
+                format!("Unrecognized channel ID {}", msg.channel_id),
+            );
             return Err(Error::Stratum(ii_stratum::error::Error::General(format!(
                 "Unrecognized channel ID {}",
                 msg.channel_id
@@ -1358,7 +1369,9 @@ impl V2ToV1Translation {
                     );
                 }
             }
-            Err(e) => self.reject_shares(&msg, format!("{}", e)),
+            Err(e) => {
+                let _ = self.reject_shares(msg.channel_id, msg.seq_num, format!("{}", e));
+            }
         }
         Ok(())
     }
