@@ -49,6 +49,8 @@ impl Message {
 pub(super) enum StepResult {
     /// The object should receive a noise message and pass it for processing in the next step
     ReceiveMessage,
+    /// Go immediately to the next step with this message
+    NextStep(Message),
     /// The relevant party should send the provided message in this
     /// variant and expect a reply
     ExpectReply(Message),
@@ -126,6 +128,9 @@ where
                 StepResult::ReceiveMessage => {
                     let handshake_message = self.receive_message(handshake_stream).await?;
                     (&mut in_msg).replace(handshake_message);
+                }
+                StepResult::NextStep(message) => {
+                    (&mut in_msg).replace(message);
                 }
                 // Send out specified messages and wait for response
                 StepResult::ExpectReply(out_msg) => {

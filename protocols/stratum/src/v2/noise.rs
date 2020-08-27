@@ -25,7 +25,7 @@
 //! TransportState of the noise, that will be used for running the AEAD communnication.
 
 use bytes::{Bytes, BytesMut};
-use snow::{params::NoiseParams, Builder, HandshakeState, TransportState};
+use snow::{HandshakeState, TransportState};
 use std::convert::TryFrom;
 
 use tokio::net::TcpStream;
@@ -40,6 +40,12 @@ pub use codec::{Codec, CompoundCodec};
 pub mod auth;
 mod handshake;
 
+#[macro_use]
+pub mod negotiation;
+use negotiation::{
+    EncryptionAlgorithm, EncryptionNegotiation, NegotiationMessage, NoiseParamsBuilder, Prologue,
+};
+
 /// Static keypair (aka 's' and 'rs') from the noise handshake patterns. This has to be used by
 /// users of this noise when Building the responder
 pub use snow::Keypair as StaticKeypair;
@@ -51,7 +57,6 @@ pub type StaticSecretKey = Vec<u8>;
 /// verifying certificate signature
 pub use ed25519_dalek::PublicKey as AuthorityPublicKey;
 
-const PARAMS: &'static str = "Noise_NX_25519_ChaChaPoly_BLAKE2s";
 // TODO: the following constants are public in snow but the constants module itself is private.
 //  Submit patch to snow fixing it.
 pub const MAX_MESSAGE_SIZE: usize = 65535;
@@ -75,15 +80,15 @@ type NoiseFramedTcpStream = Framed<TcpStream, <Framing as ii_wire::Framing>::Cod
 
 /// Generates noise specific static keypair specific for the current params
 pub fn generate_keypair() -> Result<StaticKeypair> {
-    let params: NoiseParams = PARAMS.parse().expect("BUG: cannot parse noise parameters");
-    let builder: Builder<'_> = Builder::new(params);
+    // The EncryptionAlgorithm here doesn't really matter, using AesGcm
+    let builder = NoiseParamsBuilder::new(EncryptionAlgorithm::AESGCM).get_builder();
     builder.generate_keypair().map_err(Into::into)
 }
-
 #[derive(Debug)]
 pub struct Initiator {
     stage: usize,
-    handshake_state: HandshakeState,
+    handshake_state: Option<HandshakeState>,
+    algorithms: Vec<EncryptionAlgorithm>,
     /// Public key that the Initiatior will use to construct a 'Certificate' on the fly from
     /// the SignatureNoiseMessage and of the static public key of the `Responder` and will verify
     /// the authenticity of the static public key of the Responder
@@ -91,18 +96,14 @@ pub struct Initiator {
 }
 
 impl Initiator {
-    pub fn new(authority_public_key: ed25519_dalek::PublicKey) -> Self {
-        let params: NoiseParams = PARAMS.parse().expect("BUG: cannot parse noise parameters");
-
-        // Initialize our initiator using a builder.
-        let builder: Builder<'_> = Builder::new(params);
-        let handshake_state = builder
-            .build_initiator()
-            .expect("BUG: cannot build initiator");
-
+    pub fn new(
+        authority_public_key: ed25519_dalek::PublicKey,
+        algorithms: Vec<EncryptionAlgorithm>,
+    ) -> Self {
         Self {
             stage: 0,
-            handshake_state,
+            handshake_state: None,
+            algorithms,
             authority_public_key,
         }
     }
@@ -143,6 +144,10 @@ impl Initiator {
     ) -> Result<()> {
         let remote_static_key = self
             .handshake_state
+            .as_ref()
+            .ok_or(Error::Noise(
+                "Handshake state shouldn't be None".to_string(),
+            ))?
             .get_remote_static()
             .expect("BUG: remote static has not been provided yet");
         let remote_static_key = StaticPublicKey::from(remote_static_key);
@@ -158,11 +163,25 @@ impl Initiator {
 
         Ok(())
     }
+
+    fn build_handshake_state(&mut self, negotiation: EncryptionNegotiation) -> Result<()> {
+        let builder = NoiseParamsBuilder::new(negotiation.chosen_algorithm).get_builder();
+        let prologue = v2::serialization::to_vec(&negotiation.prologue)?;
+
+        self.handshake_state = Some(
+            builder
+                .prologue(&prologue)
+                .build_initiator()
+                .expect("BUG: cannot build initiator"),
+        );
+        Ok(())
+    }
 }
 
 impl handshake::Step for Initiator {
     fn into_handshake_state(self) -> HandshakeState {
         self.handshake_state
+            .expect("BUG: into_handshake_state shouldn't be called before negotiation")
     }
 
     fn step(
@@ -171,17 +190,56 @@ impl handshake::Step for Initiator {
         mut noise_bytes: BytesMut,
     ) -> Result<handshake::StepResult> {
         let mut buf = vec![0u8; MAX_MESSAGE_SIZE];
+        let mut prologue = Prologue::new();
+
         let result = match self.stage {
             0 => {
-                // -> e
-                let len_written = self.handshake_state.write_message(&[], &mut buf)?;
-                noise_bytes.extend_from_slice(&buf[..len_written]);
+                // -> list supported algorithms
+                let msg = NegotiationMessage::new(self.algorithms.clone());
+                noise_bytes.extend_from_slice(&v2::serialization::to_vec(&msg)?[..]);
+                prologue.initiator_msg = Some(msg);
                 handshake::StepResult::ExpectReply(handshake::Message::new(noise_bytes))
             }
             1 => {
+                // <- chosen algorithm
+                // -> e
+                let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
+                let negotiation_message: NegotiationMessage =
+                    v2::serialization::from_slice(&in_msg.inner)?;
+                if negotiation_message.encryption_algos.len() != 1 {
+                    Err(Error::Noise(
+                        "Wrong number of algorithms arrived (expected 1)".to_string(),
+                    ))?;
+                }
+                let chosen_algorithm = negotiation_message
+                    .encryption_algos
+                    .first()
+                    .ok_or(Error::Noise("No algorithms arrived".to_string()))?
+                    .to_owned();
+                prologue.responder_msg = Some(negotiation_message);
+                let negotiation = EncryptionNegotiation::new(prologue, chosen_algorithm);
+                self.build_handshake_state(negotiation)?;
+
+                let len_written = self
+                    .handshake_state
+                    .as_mut()
+                    .ok_or(Error::Noise(
+                        "Handshake state shouldn't be None".to_string(),
+                    ))?
+                    .write_message(&[], &mut buf)?;
+                noise_bytes.extend_from_slice(&buf[..len_written]);
+                handshake::StepResult::ExpectReply(handshake::Message::new(noise_bytes))
+            }
+            2 => {
                 // <- e, ee, s, es
                 let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
-                let signature_len = self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
+                let signature_len = self
+                    .handshake_state
+                    .as_mut()
+                    .ok_or(Error::Noise(
+                        "Handshake state shouldn't be None".to_string(),
+                    ))?
+                    .read_message(&in_msg.inner, &mut buf)?;
                 self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
                 handshake::StepResult::Done
             }
@@ -194,28 +252,27 @@ impl handshake::Step for Initiator {
     }
 }
 
-pub struct Responder {
+pub struct Responder<'a> {
     stage: usize,
-    handshake_state: HandshakeState,
+    static_keypair: &'a StaticKeypair,
+    algorithms: Vec<EncryptionAlgorithm>,
+    handshake_state: Option<HandshakeState>,
     /// Serialized signature noise message that can be directly provided as part of the
     /// handshake - see `step()`
     signature_noise_message: Bytes,
 }
 
-impl Responder {
-    pub fn new(static_keypair: &StaticKeypair, signature_noise_message: Bytes) -> Self {
-        let params: NoiseParams = PARAMS.parse().expect("BUG: cannot parse noise parameters");
-
-        // Initialize our initiator using a builder.
-        let builder: Builder<'_> = Builder::new(params);
-        let handshake_state = builder
-            .local_private_key(&static_keypair.private)
-            .build_responder()
-            .expect("BUG: cannot build responder");
-
+impl<'a> Responder<'a> {
+    pub fn new(
+        static_keypair: &'a StaticKeypair,
+        signature_noise_message: Bytes,
+        algorithms: Vec<EncryptionAlgorithm>,
+    ) -> Self {
         Self {
             stage: 0,
-            handshake_state,
+            static_keypair,
+            algorithms,
+            handshake_state: None,
             signature_noise_message,
         }
     }
@@ -246,11 +303,34 @@ impl Responder {
 
         Ok(transport_mode.into_framed(noise_framed_stream, build_codec))
     }
+
+    fn build_handshake_state(&mut self, negotiation: EncryptionNegotiation) -> Result<()> {
+        let builder = NoiseParamsBuilder::new(negotiation.chosen_algorithm).get_builder();
+
+        let prologue = match negotiation.prologue {
+            // Legacy negotiation has no prologue
+            Prologue {
+                initiator_msg: None,
+                responder_msg: None,
+            } => vec![],
+            _ => v2::serialization::to_vec(&negotiation.prologue)?,
+        };
+
+        self.handshake_state = Some(
+            builder
+                .local_private_key(&self.static_keypair.private)
+                .prologue(&prologue)
+                .build_responder()
+                .expect("BUG: cannot build responder"),
+        );
+        Ok(())
+    }
 }
 
-impl handshake::Step for Responder {
+impl<'a> handshake::Step for Responder<'a> {
     fn into_handshake_state(self) -> HandshakeState {
         self.handshake_state
+            .expect("BUG: into_handshake_state shouldn't be called before negotiation")
     }
 
     fn step(
@@ -259,24 +339,67 @@ impl handshake::Step for Responder {
         mut noise_bytes: BytesMut,
     ) -> Result<handshake::StepResult> {
         let mut buf = vec![0u8; MAX_MESSAGE_SIZE];
+        let mut prologue = Prologue::new();
 
         let result = match self.stage {
             0 => handshake::StepResult::ReceiveMessage,
             1 => {
+                let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
+                if let Ok(m) = v2::serialization::from_slice::<NegotiationMessage>(&in_msg.inner) {
+                    // If list of algorithms is provided, go on with negotiation
+                    let algs: Vec<EncryptionAlgorithm> = m.encryption_algos.into();
+
+                    // If AES is present choose AES, otherwise choose the first supported one
+                    let chosen_algorithm = if algs.contains(&EncryptionAlgorithm::AESGCM) {
+                        EncryptionAlgorithm::AESGCM
+                    } else {
+                        algs.into_iter()
+                            .filter(|x| self.algorithms.contains(x))
+                            .next()
+                            .ok_or(Error::Noise("No algorithms provided".to_string()))?
+                    };
+
+                    let negotiation_message =
+                        NegotiationMessage::new(vec![chosen_algorithm.clone()]);
+
+                    noise_bytes
+                        .extend_from_slice(&v2::serialization::to_vec(&negotiation_message)?[..]);
+                    prologue.responder_msg = Some(negotiation_message);
+                    let negotiation = EncryptionNegotiation::new(prologue, chosen_algorithm);
+                    self.build_handshake_state(negotiation)?;
+                    handshake::StepResult::ExpectReply(handshake::Message::new(noise_bytes))
+                } else {
+                    // Otherwise, create the handshake with default params and pass e to the next step
+                    let negotiation =
+                        EncryptionNegotiation::new(prologue, EncryptionAlgorithm::ChaChaPoly);
+                    self.build_handshake_state(negotiation)?;
+                    handshake::StepResult::NextStep(in_msg)
+                }
+            }
+            2 => {
                 // <- e
                 let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
-                self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
+                self.handshake_state
+                    .as_mut()
+                    .ok_or(Error::Noise(
+                        "Handshake state shouldn't be None".to_string(),
+                    ))?
+                    .read_message(&in_msg.inner, &mut buf)?;
                 // Send the signature along this message
                 // -> e, ee, s, es [encrypted signature]
                 let len_written = self
                     .handshake_state
+                    .as_mut()
+                    .ok_or(Error::Noise(
+                        "Handshake state shouldn't be None".to_string(),
+                    ))?
                     .write_message(&self.signature_noise_message, &mut buf)?;
                 noise_bytes.extend_from_slice(&buf[..len_written]);
                 handshake::StepResult::NoMoreReply(handshake::Message::new(noise_bytes))
             }
-            2 => handshake::StepResult::Done,
+            3 => handshake::StepResult::Done,
             _ => {
-                panic!("BUG: No more steps that can be done by the Initiator in Noise handshake");
+                panic!("BUG: No more steps that can be done by the Responder in Noise handshake");
             }
         };
         self.stage += 1;
@@ -377,9 +500,16 @@ pub(crate) mod test {
         let (signature_noise_message, authority_keypair, static_keypair) =
             build_serialized_signature_noise_message_and_keypairs();
 
-        let mut initiator = Initiator::new(authority_keypair.public);
+        let mut initiator = Initiator::new(
+            authority_keypair.public,
+            vec![EncryptionAlgorithm::ChaChaPoly, EncryptionAlgorithm::AESGCM],
+        );
 
-        let mut responder = Responder::new(&static_keypair, signature_noise_message);
+        let mut responder = Responder::new(
+            &static_keypair,
+            signature_noise_message,
+            vec![EncryptionAlgorithm::ChaChaPoly, EncryptionAlgorithm::AESGCM],
+        );
         let mut initiator_in_msg: Option<handshake::Message> = None;
 
         // Verify that responder expects to receive the first message
@@ -401,6 +531,9 @@ pub(crate) mod test {
                 handshake::StepResult::ReceiveMessage => {
                     panic!("BUG: Initiator must not request the first message!");
                 }
+                handshake::StepResult::NextStep(_) => {
+                    panic!("BUG: Initiator shouldn't pass messages to the next step");
+                }
                 handshake::StepResult::ExpectReply(initiator_out_msg) => {
                     match responder
                         .step(Some(initiator_out_msg), responder_buf)
@@ -409,6 +542,9 @@ pub(crate) mod test {
                         handshake::StepResult::ExpectReply(responder_out_msg)
                         | handshake::StepResult::NoMoreReply(responder_out_msg) => {
                             (&mut initiator_in_msg).replace(responder_out_msg);
+                        }
+                        handshake::StepResult::NextStep(_) => {
+                            panic!("BUG: no next step should happen in non-legacy handshake")
                         }
                         handshake::StepResult::Done | handshake::StepResult::ReceiveMessage => {
                             panic!("BUG: Responder didn't yield any response!");
@@ -421,6 +557,7 @@ pub(crate) mod test {
                         .expect("BUG: responder failed")
                     {
                         handshake::StepResult::ExpectReply(responder_out_msg)
+                        | handshake::StepResult::NextStep(responder_out_msg)
                         | handshake::StepResult::NoMoreReply(responder_out_msg) => panic!(
                             "BUG: Responder provided an unexpected response {:?}",
                             responder_out_msg
@@ -448,10 +585,209 @@ pub(crate) mod test {
 
         (initiator_transport_mode, responder_transport_mode)
     }
+
     /// Verifies that initiator and responder can successfully perform a handshake
     #[test]
     fn test_handshake() {
         let (mut initiator_transport_mode, mut responder_transport_mode) = perform_handshake();
+
+        // Verify we can send/receive messages between initiator and responder
+        let message = b"test message";
+        let mut encrypted_msg = BytesMut::new();
+        let mut decrypted_msg = BytesMut::new();
+
+        initiator_transport_mode
+            .write(BytesMut::from(&message[..]), &mut encrypted_msg)
+            .expect("BUG: initiator failed to write message");
+
+        responder_transport_mode
+            .read(encrypted_msg, &mut decrypted_msg)
+            .expect("BUG: responder failed to read transport message");
+        assert_eq!(&message[..], &decrypted_msg, "Messages don't match");
+    }
+
+    /// Legacy version of the initiator. Useful for testing that handshake still works even with
+    /// legacy clients.
+    #[derive(Debug)]
+    pub struct LegacyInitiator {
+        stage: usize,
+        handshake_state: HandshakeState,
+        authority_public_key: ed25519_dalek::PublicKey,
+    }
+
+    impl LegacyInitiator {
+        pub fn new(authority_public_key: ed25519_dalek::PublicKey) -> Self {
+            let builder = NoiseParamsBuilder::new(EncryptionAlgorithm::ChaChaPoly).get_builder();
+
+            let handshake_state = builder
+                .build_initiator()
+                .expect("BUG: cannot build initiator");
+
+            Self {
+                stage: 0,
+                handshake_state,
+                authority_public_key,
+            }
+        }
+
+        fn verify_remote_static_key_signature(
+            &mut self,
+            signature_noise_message: BytesMut,
+        ) -> Result<()> {
+            let remote_static_key = self
+                .handshake_state
+                .get_remote_static()
+                .expect("BUG: remote static has not been provided yet");
+            let remote_static_key = StaticPublicKey::from(remote_static_key);
+            let signature_noise_message =
+                auth::SignatureNoiseMessage::try_from(&signature_noise_message[..])?;
+
+            let certificate = auth::Certificate::from_noise_message(
+                signature_noise_message,
+                remote_static_key,
+                self.authority_public_key,
+            );
+            certificate.validate()?;
+
+            Ok(())
+        }
+    }
+
+    impl handshake::Step for LegacyInitiator {
+        fn into_handshake_state(self) -> HandshakeState {
+            self.handshake_state
+        }
+
+        fn step(
+            &mut self,
+            in_msg: Option<handshake::Message>,
+            mut noise_bytes: BytesMut,
+        ) -> Result<handshake::StepResult> {
+            let mut buf = vec![0u8; MAX_MESSAGE_SIZE];
+            let result = match self.stage {
+                0 => {
+                    // -> e
+                    let len_written = self.handshake_state.write_message(&[], &mut buf)?;
+                    noise_bytes.extend_from_slice(&buf[..len_written]);
+                    handshake::StepResult::ExpectReply(handshake::Message::new(noise_bytes))
+                }
+                1 => {
+                    // <- e, ee, s, es
+                    let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
+                    let signature_len =
+                        self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
+                    self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
+                    handshake::StepResult::Done
+                }
+                _ => {
+                    panic!(
+                        "BUG: No more steps that can be done by the Initiator in Noise handshake"
+                    );
+                }
+            };
+            self.stage += 1;
+            Ok(result)
+        }
+    }
+
+    pub(crate) fn perform_legacy_handshake() -> (TransportMode, TransportMode) {
+        // Prepare test certificate and a serialized noise message that contains the signature
+        let (signature_noise_message, authority_keypair, static_keypair) =
+            build_serialized_signature_noise_message_and_keypairs();
+
+        let mut initiator = LegacyInitiator::new(authority_keypair.public);
+
+        let mut responder = Responder::new(
+            &static_keypair,
+            signature_noise_message,
+            vec![EncryptionAlgorithm::ChaChaPoly, EncryptionAlgorithm::AESGCM],
+        );
+        let mut responder_in_msg: Option<handshake::Message> = None;
+
+        loop {
+            let initiator_buf: BytesMut = BytesMut::new();
+            let responder_buf: BytesMut = BytesMut::new();
+
+            match responder
+                .step(responder_in_msg.clone(), responder_buf)
+                .expect("BUG: responder failed")
+            {
+                handshake::StepResult::ReceiveMessage => {
+                    match initiator
+                        .step(None, initiator_buf)
+                        .expect("BUG: responder failed")
+                    {
+                        handshake::StepResult::ExpectReply(initiator_out_msg)
+                        | handshake::StepResult::NoMoreReply(initiator_out_msg) => {
+                            (&mut responder_in_msg).replace(initiator_out_msg);
+                        }
+                        handshake::StepResult::NextStep(_) => {
+                            panic!("BUG: Initiator shouldn't ...")
+                        }
+                        handshake::StepResult::Done | handshake::StepResult::ReceiveMessage => {
+                            panic!("BUG: Initiator didn't yield any response!");
+                        }
+                    }
+                }
+                handshake::StepResult::NextStep(_) => {
+                    continue;
+                }
+                handshake::StepResult::ExpectReply(responder_out_msg) => {
+                    match initiator
+                        .step(Some(responder_out_msg), initiator_buf)
+                        .expect("BUG: responder failed")
+                    {
+                        handshake::StepResult::ExpectReply(initiator_out_msg)
+                        | handshake::StepResult::NoMoreReply(initiator_out_msg) => {
+                            (&mut responder_in_msg).replace(initiator_out_msg);
+                        }
+                        handshake::StepResult::NextStep(_) => {
+                            panic!("BUG: Initiator shouldn't ...")
+                        }
+                        handshake::StepResult::Done | handshake::StepResult::ReceiveMessage => {
+                            panic!("BUG: Initiator didn't yield any response!");
+                        }
+                    }
+                }
+                handshake::StepResult::NoMoreReply(responder_out_msg) => {
+                    match initiator
+                        .step(Some(responder_out_msg), initiator_buf)
+                        .expect("BUG: responder failed")
+                    {
+                        handshake::StepResult::ExpectReply(initiator_out_msg)
+                        | handshake::StepResult::NextStep(initiator_out_msg)
+                        | handshake::StepResult::NoMoreReply(initiator_out_msg) => panic!(
+                            "BUG: Initiator provided an unexpected response {:?}",
+                            initiator_out_msg,
+                        ),
+                        // Initiator is now either done or may request another message
+                        handshake::StepResult::ReceiveMessage | handshake::StepResult::Done => {}
+                    }
+                }
+                // Responder is now finalized
+                handshake::StepResult::Done => break,
+            };
+        }
+        let initiator_transport_mode = TransportMode::new(
+            initiator
+                .into_handshake_state()
+                .into_transport_mode()
+                .expect("BUG: cannot convert initiator into transport mode"),
+        );
+        let responder_transport_mode = TransportMode::new(
+            responder
+                .into_handshake_state()
+                .into_transport_mode()
+                .expect("BUG: cannot convert responder into transport mode"),
+        );
+
+        (initiator_transport_mode, responder_transport_mode)
+    }
+
+    #[test]
+    fn test_legacy_handshake() {
+        let (mut initiator_transport_mode, mut responder_transport_mode) =
+            perform_legacy_handshake();
 
         // Verify we can send/receive messages between initiator and responder
         let message = b"test message";
@@ -502,7 +838,11 @@ pub(crate) mod test {
         // Spawn server task that reacts to any incoming message and responds
         // with SetupConnectionSuccess
         tokio::spawn(async move {
-            let responder = Responder::new(&static_keypair, signature_noise_message);
+            let responder = Responder::new(
+                &static_keypair,
+                signature_noise_message,
+                vec![EncryptionAlgorithm::ChaChaPoly, EncryptionAlgorithm::AESGCM],
+            );
 
             let conn = server
                 .next()
@@ -527,7 +867,10 @@ pub(crate) mod test {
             .await
             .expect("BUG: Cannot connect to noise endpoint");
 
-        let initiator = Initiator::new(authority_keypair.public);
+        let initiator = Initiator::new(
+            authority_keypair.public,
+            vec![EncryptionAlgorithm::ChaChaPoly, EncryptionAlgorithm::AESGCM],
+        );
         let mut client_framed_stream = initiator
             .connect(connection)
             .await
