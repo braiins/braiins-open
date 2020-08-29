@@ -20,7 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::convert::From;
 use std::convert::TryFrom;
 use std::convert::TryInto;
@@ -160,8 +160,17 @@ type JobMap = HashMap<u32, V1SubmitTemplate>;
 
 //type V2ReqMap = HashMap<u32, FnMut(&mut V2ToV1Translation, &ii_stratum::Message<Protocol>, &v1::rpc::StratumResult)>;
 
-/// Maps V1 Message Id to V2 sequence number
-type SeqNumMap = HashMap<u32, u32>;
+enum SeqNum {
+    V1(v1::MessageId),
+    V2(u32),
+}
+
+enum SubmitShare {
+    V1ToV2Mapping(u32, u32),
+    SubmitSharesError(v2::messages::SubmitSharesError),
+}
+
+type SubmitShareQueue = VecDeque<SubmitShare>;
 
 /// Object capable of translating stratm V2 header-only mining protocol that uses standard mining
 /// channels into stratum V1 including extranonce 1 subscription
@@ -204,8 +213,8 @@ pub struct V2ToV1Translation {
     v2_job_id: SeqId,
     /// Translates V2 job ID to V1 job ID
     v2_to_v1_job_map: JobMap,
-    /// Maps V1 message id to V2 sequence number
-    v2_seq_num: SeqNumMap,
+    /// Queue of submit shares waiting for response processing
+    v2_submit_share_queue: SubmitShareQueue,
     /// Options for translation
     options: V2ToV1TranslationOptions,
     v1_password: String,
@@ -250,7 +259,7 @@ impl V2ToV1Translation {
             v2_req_id: SeqId::new(),
             v2_job_id: SeqId::new(),
             v2_to_v1_job_map: JobMap::default(),
-            v2_seq_num: SeqNumMap::default(),
+            v2_submit_share_queue: SubmitShareQueue::default(),
             options,
             v1_password,
         }
@@ -581,21 +590,6 @@ impl V2ToV1Translation {
         }
     }
 
-    fn get_v2_seq_num(&mut self, id: &v1::MessageId) -> u32 {
-        // TODO: Return 0 or other value when id cannot be determined?
-        if let Some(v1_seq_num) = id {
-            let v2_seq_num = self.v2_seq_num.remove(&v1_seq_num);
-            if v2_seq_num.is_none() {
-                trace!("Cannot map V1 message id {} to V2 id", v1_seq_num);
-            };
-            v2_seq_num
-        } else {
-            trace!("Cannot map missing V1 message id to V2 id");
-            None
-        }
-        .unwrap_or(0)
-    }
-
     fn handle_submit_result(
         &mut self,
         id: &v1::MessageId,
@@ -613,8 +607,6 @@ impl V2ToV1Translation {
             .map_err(Into::into)
             // Handle the actual submission result
             .and_then(|bool_result| {
-                let seq_num = self.get_v2_seq_num(id);
-
                 let v2_channel_details = self
                     .v2_channel_details
                     .as_ref()
@@ -626,19 +618,17 @@ impl V2ToV1Translation {
                 );
 
                 if bool_result.0 {
-                    let success_msg = v2::messages::SubmitSharesSuccess {
-                        channel_id: Self::CHANNEL_ID,
-                        last_seq_num: seq_num,
-                        new_submits_accepted_count: 1,
-                        new_shares_sum: self.v2_target.expect("BUG: difficulty missing").low_u64(), // TODO what if v2_target > 2**64 - 1?
-                    };
                     self.log_session_details("Share accepted");
-                    util::submit_message(&mut self.v2_tx, success_msg)
+                    // TODO what if v2_target > 2**64 - 1?
+                    self.accept_shares(
+                        id,
+                        self.v2_target.expect("BUG: difficulty missing").low_u64(),
+                    )
                 } else {
                     info!("Share rejected for {}", v2_channel_details.user.to_string());
                     self.reject_shares(
                         Self::CHANNEL_ID,
-                        seq_num,
+                        SeqNum::V1(*id),
                         format!("ShareRjct:{:?}", payload),
                     )
                 }
@@ -659,10 +649,9 @@ impl V2ToV1Translation {
             self.state,
             payload,
         );
-        let seq_num = self.get_v2_seq_num(id);
         self.reject_shares(
             Self::CHANNEL_ID,
-            seq_num,
+            SeqNum::V1(*id),
             format!("ShareRjct:{:?}", payload),
         )
     }
@@ -770,9 +759,76 @@ impl V2ToV1Translation {
         extra_nonce2
     }
 
+    fn submit_queued_share_responses(&mut self) -> Result<()> {
+        loop {
+            match self.v2_submit_share_queue.front() {
+                Some(SubmitShare::SubmitSharesError(_)) => {}
+                _ => return Ok(()),
+            }
+            match self.v2_submit_share_queue.pop_front() {
+                Some(SubmitShare::SubmitSharesError(submit_shares_error_msg)) => {
+                    util::submit_message(&mut self.v2_tx, submit_shares_error_msg).map_err(
+                        |e| {
+                            info!("Cannot send 'SubmitSharesError': {:?}", e);
+                            e
+                        },
+                    )?;
+                }
+                _ => panic!("BUG: unexpected submit share item"),
+            }
+        }
+    }
+
+    fn submit_share_response<T, E>(&mut self, msg: T, err_msg: &str) -> Result<()>
+    where
+        E: fmt::Debug,
+        T: TryInto<v2::Frame, Error = E>,
+    {
+        util::submit_message(&mut self.v2_tx, msg).map_err(|e| {
+            info!("Cannot send '{}': {:?}", err_msg, e);
+            e
+        })?;
+        self.submit_queued_share_responses()
+    }
+
+    fn get_v2_seq_num(&mut self, id: &v1::MessageId) -> Result<u32> {
+        let id = id.ok_or(Error::General(
+            "Missing V1 message id for 'mining.submit' response".to_string(),
+        ))?;
+        match self.v2_submit_share_queue.pop_front() {
+            Some(SubmitShare::V1ToV2Mapping(v1_seq_num, v2_seq_num)) if id == v1_seq_num => {
+                Ok(v2_seq_num)
+            }
+            _ => Err(Error::General(format!(
+                "Unexpected V1 message id ({}) in 'mining.submit' response",
+                id
+            ))),
+        }
+    }
+
+    fn accept_shares(&mut self, id: &v1::MessageId, new_shares: u64) -> Result<()> {
+        let success_msg = v2::messages::SubmitSharesSuccess {
+            channel_id: Self::CHANNEL_ID,
+            last_seq_num: self.get_v2_seq_num(id)?,
+            new_submits_accepted_count: 1,
+            new_shares_sum: new_shares,
+        };
+
+        self.submit_share_response(success_msg, "SubmitSharesSuccess")
+    }
+
     /// Generates log trace entry and reject shares error reply to the client
-    fn reject_shares(&mut self, channel_id: u32, seq_num: u32, err_msg: String) -> Result<()> {
+    fn reject_shares(
+        &mut self,
+        channel_id: u32,
+        seq_num_variant: SeqNum,
+        err_msg: String,
+    ) -> Result<()> {
         trace!("{}", err_msg);
+        let (seq_num, submit) = match seq_num_variant {
+            SeqNum::V1(id) => (self.get_v2_seq_num(&id)?, true),
+            SeqNum::V2(value) => (value, self.v2_submit_share_queue.is_empty()),
+        };
         let submit_shares_error_msg = v2::messages::SubmitSharesError {
             channel_id,
             seq_num,
@@ -785,11 +841,13 @@ impl V2ToV1Translation {
             ),
         };
 
-        let result = util::submit_message(&mut self.v2_tx, submit_shares_error_msg);
-        if let Err(submit_err) = &result {
-            info!("Cannot send 'SubmitSharesError': {:?}", submit_err);
+        if submit {
+            self.submit_share_response(submit_shares_error_msg, "SubmitSharesError")
+        } else {
+            self.v2_submit_share_queue
+                .push_back(SubmitShare::SubmitSharesError(submit_shares_error_msg));
+            Ok(())
         }
-        result
     }
 
     fn perform_notify(&mut self, payload: &v1::messages::Notify) -> Result<()> {
@@ -1302,7 +1360,7 @@ impl V2ToV1Translation {
         if msg.channel_id != Self::CHANNEL_ID {
             let _ = self.reject_shares(
                 msg.channel_id,
-                msg.seq_num,
+                SeqNum::V2(msg.seq_num),
                 format!("Unrecognized channel ID {}", msg.channel_id),
             );
             return Err(Error::Stratum(ii_stratum::error::Error::General(format!(
@@ -1353,24 +1411,29 @@ impl V2ToV1Translation {
                 );
 
                 let v1_seq_num = if let v1::rpc::Rpc::Request(r) = &v1_submit_message {
-                    let v1_seq_num = r.id.expect("BUG: missing v1 request ID");
-                    self.v2_seq_num.insert(v1_seq_num, msg.seq_num);
-                    v1_seq_num
+                    r.id.expect("BUG: missing v1 request ID")
                 } else {
                     panic!("BUG: expected v1 share request");
                 };
 
                 if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_submit_message) {
-                    // Immediately remove sequence number when share cannot be sent
-                    self.v2_seq_num.remove(&v1_seq_num);
                     info!(
                         "SubmitSharesStandard: cannot send translated V1 message: {:?}",
                         submit_err
                     );
+                    let _ = self.reject_shares(
+                        msg.channel_id,
+                        SeqNum::V2(msg.seq_num),
+                        format!("{}", submit_err),
+                    );
+                } else {
+                    self.v2_submit_share_queue
+                        .push_back(SubmitShare::V1ToV2Mapping(v1_seq_num, msg.seq_num));
                 }
             }
             Err(e) => {
-                let _ = self.reject_shares(msg.channel_id, msg.seq_num, format!("{}", e));
+                let _ =
+                    self.reject_shares(msg.channel_id, SeqNum::V2(msg.seq_num), format!("{}", e));
             }
         }
         Ok(())
