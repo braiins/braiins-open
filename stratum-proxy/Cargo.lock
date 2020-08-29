@@ -687,6 +687,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+ "serde_repr",
  "snow",
  "structopt",
  "thiserror",
@@ -1271,6 +1272,17 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_repr"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dc6b7951b17b051f3210b063f12cc17320e2fe30ae05b0fe2a3abb068551c76"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.7",
+ "syn 1.0.34",
 ]
 
 [[package]]

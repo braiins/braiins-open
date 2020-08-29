@@ -334,6 +334,10 @@ where
                 let responder = v2::noise::Responder::new(
                     &security_context.static_key_pair,
                     security_context.signature_noise_message.clone(),
+                    vec![
+                        v2::noise::negotiation::EncryptionAlgorithm::AESGCM,
+                        v2::noise::negotiation::EncryptionAlgorithm::ChaChaPoly,
+                    ],
                 );
                 responder.accept(self.v2_downstream_conn).await?
             }
