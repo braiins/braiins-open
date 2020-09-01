@@ -20,7 +20,9 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use async_trait::async_trait;
 use bitcoin_hashes::{hex::FromHex, sha256d, Hash};
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use uint;
 
@@ -31,6 +33,244 @@ use crate::error::Result;
 use crate::test_utils::common::*;
 use crate::test_utils::v1;
 use crate::v2::{framing, messages::*, telemetry, types::*};
+
+pub enum TestMessage {
+    MsgSetupConnection(SetupConnection),
+    MsgSetupConnectionSuccess(SetupConnectionSuccess),
+    MsgSetupConnectionError(SetupConnectionError),
+    MsgChannelEndpointChanged(ChannelEndpointChanged),
+    MsgOpenStandardMiningChannel(OpenStandardMiningChannel),
+    MsgOpenStandardMiningChannelSuccess(OpenStandardMiningChannelSuccess),
+    MsgOpenMiningChannelError(OpenMiningChannelError),
+    MsgUpdateChannel(UpdateChannel),
+    MsgUpdateChannelError(UpdateChannelError),
+    MsgCloseChannel(CloseChannel),
+    MsgSubmitSharesStandard(SubmitSharesStandard),
+    MsgSubmitSharesSuccess(SubmitSharesSuccess),
+    MsgSubmitSharesError(SubmitSharesError),
+    MsgNewMiningJob(NewMiningJob),
+    MsgNewExtendedMiningJob(NewExtendedMiningJob),
+    MsgSetNewPrevHash(SetNewPrevHash),
+    MsgSetTarget(SetTarget),
+    MsgReconnect(Reconnect),
+}
+
+macro_rules! impl_unwrap {
+    ($method:ident, $from_enum:ident, $to_msg:ident) => {
+        pub fn $method(self) -> $to_msg {
+            match self {
+                Self::$from_enum(msg) => msg,
+                _ => panic!("BUG: expected '{}'", stringify!($to_msg)),
+            }
+        }
+    };
+}
+
+impl TestMessage {
+    impl_unwrap!(unwrap_setup_connection, MsgSetupConnection, SetupConnection);
+    impl_unwrap!(
+        unwrap_setup_connection_success,
+        MsgSetupConnectionSuccess,
+        SetupConnectionSuccess
+    );
+    impl_unwrap!(
+        unwrap_setup_connection_error,
+        MsgSetupConnectionError,
+        SetupConnectionError
+    );
+    impl_unwrap!(
+        unwrap_channel_endpoint_changed,
+        MsgChannelEndpointChanged,
+        ChannelEndpointChanged
+    );
+    impl_unwrap!(
+        unwrap_open_standard_mining_channel,
+        MsgOpenStandardMiningChannel,
+        OpenStandardMiningChannel
+    );
+    impl_unwrap!(
+        unwrap_open_standard_mining_channel_success,
+        MsgOpenStandardMiningChannelSuccess,
+        OpenStandardMiningChannelSuccess
+    );
+    impl_unwrap!(
+        unwrap_open_mining_channel_error,
+        MsgOpenMiningChannelError,
+        OpenMiningChannelError
+    );
+    impl_unwrap!(unwrap_update_channel, MsgUpdateChannel, UpdateChannel);
+    impl_unwrap!(
+        unwrap_update_channel_error,
+        MsgUpdateChannelError,
+        UpdateChannelError
+    );
+    impl_unwrap!(unwrap_close_channel, MsgCloseChannel, CloseChannel);
+    impl_unwrap!(
+        unwrap_submit_shares_standard,
+        MsgSubmitSharesStandard,
+        SubmitSharesStandard
+    );
+    impl_unwrap!(
+        unwrap_submit_shares_success,
+        MsgSubmitSharesSuccess,
+        SubmitSharesSuccess
+    );
+    impl_unwrap!(
+        unwrap_submit_shares_error,
+        MsgSubmitSharesError,
+        SubmitSharesError
+    );
+    impl_unwrap!(unwrap_new_mining_job, MsgNewMiningJob, NewMiningJob);
+    impl_unwrap!(
+        unwrap_new_extended_mining_job,
+        MsgNewExtendedMiningJob,
+        NewExtendedMiningJob
+    );
+    impl_unwrap!(unwrap_set_new_prev_hash, MsgSetNewPrevHash, SetNewPrevHash);
+    impl_unwrap!(unwrap_set_target, MsgSetTarget, SetTarget);
+    impl_unwrap!(unwrap_reconnect, MsgReconnect, Reconnect);
+}
+
+macro_rules! impl_from_msg_to_enum {
+    ($from_msg:ident, $to_enum:ident) => {
+        impl From<$from_msg> for TestMessage {
+            fn from(msg: $from_msg) -> Self {
+                Self::$to_enum(msg)
+            }
+        }
+    };
+}
+
+impl_from_msg_to_enum!(SetupConnection, MsgSetupConnection);
+impl_from_msg_to_enum!(SetupConnectionSuccess, MsgSetupConnectionSuccess);
+impl_from_msg_to_enum!(SetupConnectionError, MsgSetupConnectionError);
+impl_from_msg_to_enum!(ChannelEndpointChanged, MsgChannelEndpointChanged);
+impl_from_msg_to_enum!(OpenStandardMiningChannel, MsgOpenStandardMiningChannel);
+impl_from_msg_to_enum!(
+    OpenStandardMiningChannelSuccess,
+    MsgOpenStandardMiningChannelSuccess
+);
+impl_from_msg_to_enum!(OpenMiningChannelError, MsgOpenMiningChannelError);
+impl_from_msg_to_enum!(UpdateChannel, MsgUpdateChannel);
+impl_from_msg_to_enum!(UpdateChannelError, MsgUpdateChannelError);
+impl_from_msg_to_enum!(CloseChannel, MsgCloseChannel);
+impl_from_msg_to_enum!(SubmitSharesStandard, MsgSubmitSharesStandard);
+impl_from_msg_to_enum!(SubmitSharesSuccess, MsgSubmitSharesSuccess);
+impl_from_msg_to_enum!(SubmitSharesError, MsgSubmitSharesError);
+impl_from_msg_to_enum!(NewMiningJob, MsgNewMiningJob);
+impl_from_msg_to_enum!(NewExtendedMiningJob, MsgNewExtendedMiningJob);
+impl_from_msg_to_enum!(SetNewPrevHash, MsgSetNewPrevHash);
+impl_from_msg_to_enum!(SetTarget, MsgSetTarget);
+impl_from_msg_to_enum!(Reconnect, MsgReconnect);
+
+#[derive(Default)]
+pub struct TestCollectorHandler {
+    messages: VecDeque<TestMessage>,
+}
+
+#[handler(async try framing::Frame suffix _v2)]
+impl TestCollectorHandler {
+    async fn handle_setup_connection(&mut self, msg: SetupConnection) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_setup_connection_success(&mut self, msg: SetupConnectionSuccess) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_setup_connection_error(&mut self, msg: SetupConnectionError) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_channel_endpoint_changed(&mut self, msg: ChannelEndpointChanged) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_open_standard_mining_channel(&mut self, msg: OpenStandardMiningChannel) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_open_standard_mining_channel_success(
+        &mut self,
+        msg: OpenStandardMiningChannelSuccess,
+    ) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_open_mining_channel_error(&mut self, msg: OpenMiningChannelError) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_update_channel(&mut self, msg: UpdateChannel) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_update_channel_error(&mut self, msg: UpdateChannelError) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_close_channel(&mut self, msg: CloseChannel) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_submit_shares_standard(&mut self, msg: SubmitSharesStandard) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_submit_shares_success(&mut self, msg: SubmitSharesSuccess) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_submit_shares_error(&mut self, msg: SubmitSharesError) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_new_mining_job(&mut self, msg: NewMiningJob) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_new_extended_mining_job(&mut self, msg: NewExtendedMiningJob) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_set_new_prev_hash(&mut self, msg: SetNewPrevHash) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_set_target(&mut self, msg: SetTarget) {
+        self.messages.push_back(msg.into());
+    }
+
+    async fn handle_reconnect(&mut self, msg: Reconnect) {
+        self.messages.push_back(msg.into());
+    }
+
+    #[handle(_)]
+    async fn handle_everything(&mut self, frame: Result<framing::Frame>) {
+        let frame = frame.expect("BUG: Message parsing failed");
+        panic!("BUG: No handler method for received frame: {:?}", frame);
+    }
+}
+
+impl Iterator for TestCollectorHandler {
+    type Item = TestMessage;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.messages.pop_front()
+    }
+}
+
+#[async_trait]
+pub trait TestFrameReceiver {
+    async fn receive_v2(&mut self) -> framing::Frame;
+
+    async fn next_v2(&mut self) -> TestMessage {
+        let frame = self.receive_v2().await;
+        let mut handler = TestCollectorHandler::default();
+        handler.handle_v2(frame).await;
+        handler.next().expect("BUG: No message was received")
+    }
+}
 
 /// Message payload visitor that compares the payload of the visited message (e.g. after
 /// deserialization test) with the payload built.
