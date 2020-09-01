@@ -20,8 +20,10 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use async_trait::async_trait;
 use bytes::BytesMut;
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 use std::str::FromStr;
@@ -32,6 +34,170 @@ use ii_unvariant::handler;
 use super::common::*;
 use crate::error::Result;
 use crate::v1::{framing::*, messages::*, rpc::*, ExtraNonce1, HexBytes, MessageId};
+
+pub enum TestMessage {
+    MsgSubscribe(MessageId, Subscribe),
+    MsgExtranonceSubscribe(MessageId, ExtranonceSubscribe),
+    MsgAuthorize(MessageId, Authorize),
+    MsgSetDifficulty(MessageId, SetDifficulty),
+    MsgSetExtranonce(MessageId, SetExtranonce),
+    MsgConfigure(MessageId, Configure),
+    MsgSubmit(MessageId, Submit),
+    MsgNotify(MessageId, Notify),
+    MsgSetVersionMask(MessageId, SetVersionMask),
+    MsgClientReconnect(MessageId, ClientReconnect),
+    MsgStratumResult(MessageId, StratumResult),
+}
+
+macro_rules! impl_unwrap {
+    ($method:ident, $from_enum:ident, $to_msg:ident) => {
+        pub fn $method(self, expected_id: MessageId) -> $to_msg {
+            match self {
+                Self::$from_enum(id, msg) => {
+                    assert_eq!(id, expected_id, "BUG: unexpected id");
+                    msg
+                }
+                _ => panic!("BUG: expected '{}'", stringify!($to_msg)),
+            }
+        }
+    };
+}
+
+macro_rules! impl_unwrap_result {
+    ($method:ident, $to_msg:ident) => {
+        pub fn $method(self, expected_id: MessageId) -> $to_msg {
+            match self {
+                Self::MsgStratumResult(id, msg) => {
+                    assert_eq!(id, expected_id, "BUG: unexpected id");
+                    serde_json::from_value(msg.0)
+                        .expect(format!("BUG: cannot serialize '{}'", stringify!($to_msg)).as_str())
+                }
+                _ => panic!("BUG: expected '{}'", stringify!($to_msg)),
+            }
+        }
+    };
+}
+
+impl TestMessage {
+    impl_unwrap!(unwrap_subscribe, MsgSubscribe, Subscribe);
+    impl_unwrap!(
+        unwrap_extranonce_subscribe,
+        MsgExtranonceSubscribe,
+        ExtranonceSubscribe
+    );
+    impl_unwrap!(unwrap_authorize, MsgAuthorize, Authorize);
+    impl_unwrap!(unwrap_set_difficulty, MsgSetDifficulty, SetDifficulty);
+    impl_unwrap!(unwrap_set_extranonce, MsgSetExtranonce, SetExtranonce);
+    impl_unwrap!(unwrap_configure, MsgConfigure, Configure);
+    impl_unwrap!(unwrap_submit, MsgSubmit, Submit);
+    impl_unwrap!(unwrap_notify, MsgNotify, Notify);
+    impl_unwrap!(unwrap_set_version_mask, MsgSetVersionMask, SetVersionMask);
+    impl_unwrap!(unwrap_client_reconnect, MsgClientReconnect, ClientReconnect);
+
+    impl_unwrap_result!(unwrap_subscribe_result, SubscribeResult);
+    impl_unwrap_result!(unwrap_configure_result, ConfigureResult);
+    impl_unwrap_result!(unwrap_boolean_result, BooleanResult);
+}
+
+macro_rules! impl_from_msg_to_enum {
+    ($from_msg:ident, $to_enum:ident) => {
+        impl From<(MessageId, $from_msg)> for TestMessage {
+            fn from(id_msg: (MessageId, $from_msg)) -> Self {
+                let (id, msg) = id_msg;
+                Self::$to_enum(id, msg)
+            }
+        }
+    };
+}
+
+impl_from_msg_to_enum!(Subscribe, MsgSubscribe);
+impl_from_msg_to_enum!(ExtranonceSubscribe, MsgExtranonceSubscribe);
+impl_from_msg_to_enum!(Authorize, MsgAuthorize);
+impl_from_msg_to_enum!(SetDifficulty, MsgSetDifficulty);
+impl_from_msg_to_enum!(SetExtranonce, MsgSetExtranonce);
+impl_from_msg_to_enum!(Configure, MsgConfigure);
+impl_from_msg_to_enum!(Submit, MsgSubmit);
+impl_from_msg_to_enum!(Notify, MsgNotify);
+impl_from_msg_to_enum!(SetVersionMask, MsgSetVersionMask);
+impl_from_msg_to_enum!(ClientReconnect, MsgClientReconnect);
+impl_from_msg_to_enum!(StratumResult, MsgStratumResult);
+
+#[derive(Default)]
+pub struct TestCollectorHandler {
+    messages: VecDeque<TestMessage>,
+}
+
+#[handler(async try Rpc suffix _v1)]
+impl TestCollectorHandler {
+    async fn handle_subscribe(&mut self, id_msg: (MessageId, Subscribe)) {
+        self.messages.push_back(id_msg.into());
+    }
+
+    async fn handle_extranonce_subscribe(&mut self, id_msg: (MessageId, ExtranonceSubscribe)) {
+        self.messages.push_back(id_msg.into());
+    }
+
+    async fn handle_authorize(&mut self, id_msg: (MessageId, Authorize)) {
+        self.messages.push_back(id_msg.into());
+    }
+
+    async fn handle_set_difficulty(&mut self, id_msg: (MessageId, SetDifficulty)) {
+        self.messages.push_back(id_msg.into());
+    }
+
+    async fn handle_set_extranonce(&mut self, id_msg: (MessageId, SetExtranonce)) {
+        self.messages.push_back(id_msg.into());
+    }
+
+    async fn handle_configure(&mut self, id_msg: (MessageId, Configure)) {
+        self.messages.push_back(id_msg.into());
+    }
+
+    async fn handle_submit(&mut self, id_msg: (MessageId, Submit)) {
+        self.messages.push_back(id_msg.into());
+    }
+
+    async fn handle_notify(&mut self, id_msg: (MessageId, Notify)) {
+        self.messages.push_back(id_msg.into());
+    }
+
+    async fn handle_setversion_mask(&mut self, id_msg: (MessageId, SetVersionMask)) {
+        self.messages.push_back(id_msg.into());
+    }
+
+    async fn handle_client_reconnect(&mut self, id_msg: (MessageId, ClientReconnect)) {
+        self.messages.push_back(id_msg.into());
+    }
+
+    async fn handle_stratum_result(&mut self, id_msg: (MessageId, StratumResult)) {
+        self.messages.push_back(id_msg.into());
+    }
+
+    #[handle(_)]
+    async fn handle_everything(&mut self, rpc: Result<Rpc>) {
+        panic!("BUG: No handler method for received rpc: {:?}", rpc);
+    }
+}
+
+impl Iterator for TestCollectorHandler {
+    type Item = TestMessage;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.messages.pop_front()
+    }
+}
+
+#[async_trait]
+pub trait TestFrameReceiver {
+    async fn receive_v1(&mut self) -> Rpc;
+
+    async fn next_v1(&mut self) -> TestMessage {
+        let rpc = self.receive_v1().await;
+        let mut handler = TestCollectorHandler::default();
+        handler.handle_v1(rpc).await;
+        handler.next().expect("BUG: No message was received")
+    }
+}
 
 pub const MINING_CONFIGURE_REQ_JSON: &str = concat!(
     r#"{"id":0,"method":"mining.configure","#,
