@@ -110,17 +110,68 @@ macro_rules! impl_from_msg_to_enum {
     };
 }
 
-impl_from_msg_to_enum!(Subscribe, MsgSubscribe);
-impl_from_msg_to_enum!(ExtranonceSubscribe, MsgExtranonceSubscribe);
-impl_from_msg_to_enum!(Authorize, MsgAuthorize);
-impl_from_msg_to_enum!(SetDifficulty, MsgSetDifficulty);
-impl_from_msg_to_enum!(SetExtranonce, MsgSetExtranonce);
-impl_from_msg_to_enum!(Configure, MsgConfigure);
-impl_from_msg_to_enum!(Submit, MsgSubmit);
-impl_from_msg_to_enum!(Notify, MsgNotify);
-impl_from_msg_to_enum!(SetVersionMask, MsgSetVersionMask);
-impl_from_msg_to_enum!(ClientReconnect, MsgClientReconnect);
+macro_rules! impl_try_from_enum_to_msg {
+    ($from_enum:ident, $to_msg:ident) => {
+        impl TryFrom<(MessageId, TestMessage)> for $to_msg {
+            type Error = ();
+
+            fn try_from(
+                id_msg: (MessageId, TestMessage),
+            ) -> std::result::Result<Self, Self::Error> {
+                let (expected_id, msg) = id_msg;
+                match msg {
+                    TestMessage::$from_enum(id, msg) if id == expected_id => Ok(msg),
+                    _ => Err(()),
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_try_from_result_to_msg {
+    ($to_msg:ident) => {
+        impl TryFrom<(MessageId, TestMessage)> for $to_msg {
+            type Error = ();
+
+            fn try_from(
+                id_msg: (MessageId, TestMessage),
+            ) -> std::result::Result<Self, Self::Error> {
+                let (expected_id, msg) = id_msg;
+                match msg {
+                    TestMessage::MsgStratumResult(id, msg) if id == expected_id => {
+                        Ok(serde_json::from_value(msg.0).expect(
+                            format!("BUG: cannot serialize '{}'", stringify!($to_msg)).as_str(),
+                        ))
+                    }
+                    _ => Err(()),
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_conversions {
+    ($msg:ident, $test_enum:ident) => {
+        impl_from_msg_to_enum!($msg, $test_enum);
+        impl_try_from_enum_to_msg!($test_enum, $msg);
+    };
+}
+
+impl_conversions!(Subscribe, MsgSubscribe);
+impl_conversions!(ExtranonceSubscribe, MsgExtranonceSubscribe);
+impl_conversions!(Authorize, MsgAuthorize);
+impl_conversions!(SetDifficulty, MsgSetDifficulty);
+impl_conversions!(SetExtranonce, MsgSetExtranonce);
+impl_conversions!(Configure, MsgConfigure);
+impl_conversions!(Submit, MsgSubmit);
+impl_conversions!(Notify, MsgNotify);
+impl_conversions!(SetVersionMask, MsgSetVersionMask);
+impl_conversions!(ClientReconnect, MsgClientReconnect);
+
 impl_from_msg_to_enum!(StratumResult, MsgStratumResult);
+impl_try_from_result_to_msg!(SubscribeResult);
+impl_try_from_result_to_msg!(ConfigureResult);
+impl_try_from_result_to_msg!(BooleanResult);
 
 #[derive(Default)]
 pub struct TestCollectorHandler {
@@ -196,6 +247,16 @@ pub trait TestFrameReceiver {
         let mut handler = TestCollectorHandler::default();
         handler.handle_v1(rpc).await;
         handler.next().expect("BUG: No message was received")
+    }
+
+    async fn check_next_v1<T, U, V>(&mut self, expected_id: MessageId, f: T) -> V
+    where
+        T: FnOnce(U) -> V + Send + Sync,
+        U: TryFrom<(MessageId, TestMessage), Error = ()>,
+    {
+        let msg = self.next_v1().await;
+        f(U::try_from((expected_id, msg))
+            .expect(format!("BUG: expected '{}'", stringify!(U)).as_str()))
     }
 }
 

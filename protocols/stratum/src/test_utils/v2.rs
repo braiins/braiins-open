@@ -141,27 +141,49 @@ macro_rules! impl_from_msg_to_enum {
     };
 }
 
-impl_from_msg_to_enum!(SetupConnection, MsgSetupConnection);
-impl_from_msg_to_enum!(SetupConnectionSuccess, MsgSetupConnectionSuccess);
-impl_from_msg_to_enum!(SetupConnectionError, MsgSetupConnectionError);
-impl_from_msg_to_enum!(ChannelEndpointChanged, MsgChannelEndpointChanged);
-impl_from_msg_to_enum!(OpenStandardMiningChannel, MsgOpenStandardMiningChannel);
-impl_from_msg_to_enum!(
+macro_rules! impl_try_from_enum_to_msg {
+    ($from_enum:ident, $to_msg:ident) => {
+        impl TryFrom<TestMessage> for $to_msg {
+            type Error = ();
+
+            fn try_from(msg: TestMessage) -> std::result::Result<Self, Self::Error> {
+                match msg {
+                    TestMessage::$from_enum(msg) => Ok(msg),
+                    _ => Err(()),
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_conversions {
+    ($msg:ident, $test_enum:ident) => {
+        impl_from_msg_to_enum!($msg, $test_enum);
+        impl_try_from_enum_to_msg!($test_enum, $msg);
+    };
+}
+
+impl_conversions!(SetupConnection, MsgSetupConnection);
+impl_conversions!(SetupConnectionSuccess, MsgSetupConnectionSuccess);
+impl_conversions!(SetupConnectionError, MsgSetupConnectionError);
+impl_conversions!(ChannelEndpointChanged, MsgChannelEndpointChanged);
+impl_conversions!(OpenStandardMiningChannel, MsgOpenStandardMiningChannel);
+impl_conversions!(
     OpenStandardMiningChannelSuccess,
     MsgOpenStandardMiningChannelSuccess
 );
-impl_from_msg_to_enum!(OpenMiningChannelError, MsgOpenMiningChannelError);
-impl_from_msg_to_enum!(UpdateChannel, MsgUpdateChannel);
-impl_from_msg_to_enum!(UpdateChannelError, MsgUpdateChannelError);
-impl_from_msg_to_enum!(CloseChannel, MsgCloseChannel);
-impl_from_msg_to_enum!(SubmitSharesStandard, MsgSubmitSharesStandard);
-impl_from_msg_to_enum!(SubmitSharesSuccess, MsgSubmitSharesSuccess);
-impl_from_msg_to_enum!(SubmitSharesError, MsgSubmitSharesError);
-impl_from_msg_to_enum!(NewMiningJob, MsgNewMiningJob);
-impl_from_msg_to_enum!(NewExtendedMiningJob, MsgNewExtendedMiningJob);
-impl_from_msg_to_enum!(SetNewPrevHash, MsgSetNewPrevHash);
-impl_from_msg_to_enum!(SetTarget, MsgSetTarget);
-impl_from_msg_to_enum!(Reconnect, MsgReconnect);
+impl_conversions!(OpenMiningChannelError, MsgOpenMiningChannelError);
+impl_conversions!(UpdateChannel, MsgUpdateChannel);
+impl_conversions!(UpdateChannelError, MsgUpdateChannelError);
+impl_conversions!(CloseChannel, MsgCloseChannel);
+impl_conversions!(SubmitSharesStandard, MsgSubmitSharesStandard);
+impl_conversions!(SubmitSharesSuccess, MsgSubmitSharesSuccess);
+impl_conversions!(SubmitSharesError, MsgSubmitSharesError);
+impl_conversions!(NewMiningJob, MsgNewMiningJob);
+impl_conversions!(NewExtendedMiningJob, MsgNewExtendedMiningJob);
+impl_conversions!(SetNewPrevHash, MsgSetNewPrevHash);
+impl_conversions!(SetTarget, MsgSetTarget);
+impl_conversions!(Reconnect, MsgReconnect);
 
 #[derive(Default)]
 pub struct TestCollectorHandler {
@@ -269,6 +291,15 @@ pub trait TestFrameReceiver {
         let mut handler = TestCollectorHandler::default();
         handler.handle_v2(frame).await;
         handler.next().expect("BUG: No message was received")
+    }
+
+    async fn check_next_v2<T, U, V>(&mut self, f: T) -> V
+    where
+        T: FnOnce(U) -> V + Send + Sync,
+        U: TryFrom<TestMessage, Error = ()>,
+    {
+        let msg = self.next_v2().await;
+        f(U::try_from(msg).expect(format!("BUG: expected '{}'", stringify!(U)).as_str()))
     }
 }
 
