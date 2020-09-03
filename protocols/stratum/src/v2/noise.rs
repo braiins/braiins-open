@@ -207,9 +207,9 @@ impl handshake::Step for Initiator {
                 let negotiation_message: NegotiationMessage =
                     v2::serialization::from_slice(&in_msg.inner)?;
                 if negotiation_message.encryption_algos.len() != 1 {
-                    Err(Error::Noise(
+                    return Err(Error::Noise(
                         "Wrong number of algorithms arrived (expected 1)".to_string(),
-                    ))?;
+                    ));
                 }
                 let chosen_algorithm = negotiation_message
                     .encryption_algos
