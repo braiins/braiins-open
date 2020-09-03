@@ -89,7 +89,7 @@ impl NegotiationMessage {
         Self {
             magic: MAGIC,
             encryption_algos: Seq0_255::try_from(encryption_algos)
-                .expect("BUG: cannot parse EncryptionAlgorithm"),
+                .expect("BUG: cannot convert EncryptionAlgorithm vector"),
         }
     }
 }
