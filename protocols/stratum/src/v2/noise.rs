@@ -214,7 +214,7 @@ impl handshake::Step for Initiator {
                 let chosen_algorithm = negotiation_message
                     .encryption_algos
                     .first()
-                    .ok_or(Error::Noise("No algorithms arrived".to_string()))?
+                    .expect("BUG: encryption algorithm list empty")
                     .to_owned();
                 prologue.responder_msg = Some(negotiation_message);
                 let negotiation = EncryptionNegotiation::new(prologue, chosen_algorithm);
