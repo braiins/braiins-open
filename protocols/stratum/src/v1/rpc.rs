@@ -65,6 +65,8 @@ pub enum Method {
     SetVersionMask,
     #[serde(rename = "client.reconnect")]
     ClientReconnect,
+    #[serde(rename = "mining.ping")]
+    Ping,
     // Extensions so that Method can be used as an Id by Rpc's GetId
     #[serde(skip)]
     Result,

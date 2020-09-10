@@ -555,3 +555,11 @@ impl ClientReconnect {
         self.0.get(2)
     }
 }
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct Ping(pub Vec<serde_json::Value>);
+impl_request!(Ping, Method::Ping);
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct Pong(pub String);
+impl_response!(Pong);
