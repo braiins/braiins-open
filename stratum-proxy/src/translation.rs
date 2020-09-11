@@ -1105,11 +1105,16 @@ impl V2ToV1Translation {
     }
 
     #[handle(_)]
-    async fn handle_unknown_v1(&mut self, frame: Result<v1::rpc::Rpc>) -> Result<()> {
-        Err(Error::General(format!(
-            "Unrecognized v1 frame: {:?}",
-            frame?
-        )))
+    async fn handle_unknown_v1(&mut self, parsed_frame: Result<v1::rpc::Rpc>) -> Result<()> {
+        match parsed_frame {
+            Ok(rpc_msg) => {
+                warn!("Unknown stratum v1 message received: {:?}", rpc_msg);
+            }
+            Err(e) => {
+                warn!("Broken stratum v1 Rpc frame received: {:?}", e);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1338,10 +1343,15 @@ impl V2ToV1Translation {
     }
 
     #[handle(_)]
-    async fn handle_unknown_v2(&mut self, frame: Result<v2::framing::Frame>) -> Result<()> {
-        Err(Error::General(format!(
-            "Unrecognized v2 frame: {:?}",
-            frame?
-        )))
+    async fn handle_unknown_v2(&mut self, parsed_frame: Result<v2::framing::Frame>) -> Result<()> {
+        match parsed_frame {
+            Ok(v2_frame) => {
+                warn!("Unknown stratum v1 message received: {:?}", v2_frame);
+            }
+            Err(e) => {
+                warn!("Broken stratum v2 frame received: {:?}", e);
+            }
+        }
+        Ok(())
     }
 }
