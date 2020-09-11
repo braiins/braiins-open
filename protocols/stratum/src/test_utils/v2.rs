@@ -303,66 +303,59 @@ pub trait TestFrameReceiver {
     }
 }
 
+pub fn message_check<P>(payload: P, expected_payload: P)
+where
+    P: Debug + PartialEq,
+{
+    trace!("V2: Message {:?}", payload);
+    assert_eq!(expected_payload, payload, "Message payloads don't match");
+}
+
 /// Message payload visitor that compares the payload of the visited message (e.g. after
 /// deserialization test) with the payload built.
 /// This handler should be used in tests to verify that serialization and deserialization yield the
 /// same results
 pub struct TestIdentityHandler;
 
-impl TestIdentityHandler {
-    #[inline]
-    fn check_payload<P, F>(&self, payload: P, build: F)
-    where
-        P: Debug + PartialEq,
-        F: FnOnce() -> P,
-    {
-        // Build expected payload for verifying correct deserialization
-        let expected_payload = build();
-        trace!("V2 TestIdentityHandler: Message {:?}", payload);
-        assert_eq!(expected_payload, payload, "Message payloads don't match");
-    }
-}
-
 #[handler(async try framing::Frame suffix _v2)]
 impl TestIdentityHandler {
     async fn handle_setup_connection(&mut self, msg: SetupConnection) {
-        self.check_payload(msg, build_setup_connection);
+        message_check(msg, build_setup_connection());
     }
 
     async fn handle_setup_connection_success(&mut self, msg: SetupConnectionSuccess) {
-        self.check_payload(msg, build_setup_connection_success);
+        message_check(msg, build_setup_connection_success());
     }
 
     async fn handle_open_standard_mining_channel(&mut self, msg: OpenStandardMiningChannel) {
-        self.check_payload(msg, build_open_channel);
+        message_check(msg, build_open_channel());
     }
 
     async fn handle_open_standard_mining_channel_success(
         &mut self,
         msg: OpenStandardMiningChannelSuccess,
     ) {
-        self.check_payload(msg, build_open_channel_success);
+        message_check(msg, build_open_channel_success());
     }
 
     async fn handle_new_mining_job(&mut self, msg: NewMiningJob) {
-        self.check_payload(msg, build_new_mining_job);
+        message_check(msg, build_new_mining_job());
     }
 
     async fn handle_set_new_prev_hash(&mut self, msg: SetNewPrevHash) {
-        self.check_payload(msg, build_set_new_prev_hash);
+        message_check(msg, build_set_new_prev_hash());
     }
 
     async fn handle_submit_shares_standard(&mut self, msg: SubmitSharesStandard) {
-        self.check_payload(msg, build_submit_shares);
+        message_check(msg, build_submit_shares());
     }
 
-    async fn handle_submit_shares_success(&mut self, _msg: SubmitSharesSuccess) {
-        // self.check_payload(msg, build_submit_shares);
-        // TODO
+    async fn handle_submit_shares_success(&mut self, msg: SubmitSharesSuccess) {
+        message_check(msg, build_submit_shares_success());
     }
 
     async fn handle_reconnect(&mut self, msg: Reconnect) {
-        self.check_payload(msg, build_reconnect);
+        message_check(msg, build_reconnect());
     }
 
     #[handle(_)]
@@ -475,6 +468,15 @@ pub fn build_submit_shares() -> SubmitSharesStandard {
         nonce: MINING_WORK_NONCE,
         ntime: MINING_WORK_NTIME,
         version: MINING_WORK_VERSION,
+    }
+}
+
+pub fn build_submit_shares_success() -> SubmitSharesSuccess {
+    SubmitSharesSuccess {
+        channel_id: 0,
+        last_seq_num: 0,
+        new_submits_accepted_count: 1,
+        new_shares_sum: 0,
     }
 }
 

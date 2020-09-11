@@ -515,83 +515,67 @@ pub fn build_client_reconnect() -> ClientReconnect {
     reconnect
 }
 
+/// Performs 2 checks:
+/// - if the provided message payload matches the one expected by the test (`expected_payload`)
+/// - whether the `full_message` after serialization matches the expected `json_message` JSON
+/// representation
+pub fn message_check<P>(
+    id: MessageId,
+    payload: &P,
+    expected_payload: P,
+    full_message: Rpc,
+    json_message: &str,
+) where
+    P: Debug + PartialEq,
+{
+    trace!("V1: Message ID {:?} {:?}", id, payload);
+    assert_eq!(expected_payload, *payload, "Message payloads don't match");
+
+    // Build frame from the provided Rpc message and use its serialization for test evaluation
+    let message_frame: Frame = full_message
+        .try_into()
+        .expect("BUG: Cannot build frame from Rpc");
+    let mut serialized_frame = BytesMut::new();
+    message_frame
+        .serialize(&mut serialized_frame)
+        .expect("BUG: Cannot serialize frame");
+    assert_eq!(
+        json_message,
+        std::str::from_utf8(&serialized_frame[..])
+            .expect("BUG: Can't convert serialized message to str"),
+        "Serialized messages don't match"
+    );
+}
+
+pub fn message_request_check<P>(id: MessageId, payload: &P, expected_payload: P, json_message: &str)
+where
+    P: Debug + PartialEq + Clone + TryInto<RequestPayload>,
+    <P as std::convert::TryInto<RequestPayload>>::Error: std::fmt::Debug,
+{
+    message_check(
+        id,
+        payload,
+        expected_payload,
+        build_request_message(id, payload.clone()),
+        json_message,
+    );
+}
+
 /// Message payload visitor that compares the payload of the visited message (e.g. after
 /// deserialization test) with the payload built.
 /// This handler should be used in tests to verify that serialization and deserialization yield the
 /// same results
 pub struct TestIdentityHandler;
-//pub struct TestIdentityHandler(fn()->Strat);
-
-impl TestIdentityHandler {
-    /// Performs 2 checks:
-    /// - if the provided message payload matches the one expected by the test (provided by
-    /// `build_payload` function
-    /// - whether the `full_message` after serialization matches the expected `json_message` JSON
-    /// representation
-    fn visit_and_check<P, F>(
-        &mut self,
-        id: MessageId,
-        payload: &P,
-        build_payload: F,
-        full_message: Rpc,
-        json_message: &str,
-    ) where
-        P: Debug + PartialEq,
-        F: FnOnce() -> P,
-    {
-        // Build expected payload for verifying correct deserialization
-        let expected_payload = build_payload();
-        trace!("V1 TestIdentityHandler: Message ID {:?} {:?}", id, payload);
-        assert_eq!(expected_payload, *payload, "Message payloads don't match");
-
-        // Build frame from the provided Rpc message and use its serialization for test evaluation
-        let message_frame: Frame = full_message
-            .try_into()
-            .expect("BUG: Cannot build frame from Rpc");
-        let mut serialized_frame = BytesMut::new();
-        message_frame
-            .serialize(&mut serialized_frame)
-            .expect("BUG: Cannot serialize frame");
-        assert_eq!(
-            json_message,
-            std::str::from_utf8(&serialized_frame[..])
-                .expect("BUG: Can't convert serialized message to str"),
-            "Serialized messages don't match"
-        );
-    }
-
-    fn visit_and_check_request<P, F>(
-        &mut self,
-        id: MessageId,
-        payload: &P,
-        build_payload: F,
-        json_message: &str,
-    ) where
-        P: Debug + PartialEq + Clone + TryInto<RequestPayload>,
-        <P as std::convert::TryInto<RequestPayload>>::Error: std::fmt::Debug,
-        F: FnOnce() -> P,
-    {
-        self.visit_and_check(
-            id,
-            payload,
-            build_payload,
-            build_request_message(id, payload.clone()),
-            json_message,
-        );
-    }
-}
 
 #[handler(async try Rpc suffix _v1)]
 impl TestIdentityHandler {
     async fn handle_stratum_result(&mut self, res: (MessageId, StratumResult)) {
         let (id, res) = res;
-        self.visit_and_check(
+        message_check(
             id,
             &res,
-            || {
-                StratumResult::new(build_subscribe_ok_result())
-                    .expect("BUG: Cannot convert to stratum result")
-            },
+            StratumResult::new(build_subscribe_ok_result())
+                .expect("BUG: Cannot convert to stratum result"),
             build_result_response_message(id.expect("BUG: Message ID missing"), &res),
             MINING_SUBSCRIBE_OK_RESULT_JSON,
         );
@@ -599,32 +583,32 @@ impl TestIdentityHandler {
 
     async fn handle_notify(&mut self, id_msg: (MessageId, Notify)) {
         let (id, msg) = id_msg;
-        self.visit_and_check_request(id, &msg, build_mining_notify, MINING_NOTIFY_JSON);
+        message_request_check(id, &msg, build_mining_notify(), MINING_NOTIFY_JSON);
     }
 
     async fn handle_configure(&mut self, id_msg: (MessageId, Configure)) {
         let (id, msg) = id_msg;
-        self.visit_and_check_request(id, &msg, build_configure, MINING_CONFIGURE_REQ_JSON);
+        message_request_check(id, &msg, build_configure(), MINING_CONFIGURE_REQ_JSON);
     }
 
     async fn handle_subscribe(&mut self, id_msg: (MessageId, Subscribe)) {
         let (id, msg) = id_msg;
-        self.visit_and_check_request(id, &msg, build_subscribe, MINING_SUBSCRIBE_REQ_JSON);
+        message_request_check(id, &msg, build_subscribe(), MINING_SUBSCRIBE_REQ_JSON);
     }
 
     async fn handle_authorize(&mut self, id_msg: (MessageId, Authorize)) {
         let (id, msg) = id_msg;
-        self.visit_and_check_request(id, &msg, build_authorize, MINING_AUTHORIZE_JSON);
+        message_request_check(id, &msg, build_authorize(), MINING_AUTHORIZE_JSON);
     }
 
     async fn handle_set_difficulty(&mut self, id_msg: (MessageId, SetDifficulty)) {
         let (id, msg) = id_msg;
-        self.visit_and_check_request(id, &msg, build_set_difficulty, MINING_SET_DIFFICULTY_JSON);
+        message_request_check(id, &msg, build_set_difficulty(), MINING_SET_DIFFICULTY_JSON);
     }
 
     async fn handle_submit(&mut self, id_msg: (MessageId, Submit)) {
         let (id, msg) = id_msg;
-        self.visit_and_check_request(id, &msg, build_mining_submit, MINING_SUBMIT_JSON);
+        message_request_check(id, &msg, build_mining_submit(), MINING_SUBMIT_JSON);
     }
 
     #[handle(_)]

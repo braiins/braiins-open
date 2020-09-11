@@ -20,90 +20,114 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use async_trait::async_trait;
 use std::iter::repeat;
 
 use futures::stream::StreamExt;
 
 use super::*;
 use ii_stratum::test_utils;
+use ii_stratum::test_utils::v1::TestFrameReceiver as _;
+use ii_stratum::test_utils::v2::TestFrameReceiver as _;
 use ii_stratum::v1;
 use ii_stratum::v2;
 
-/// Simulates incoming message by converting it into a `Frame` and running the deserialization
-/// chain from that point on
-async fn v2_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
-where
-    M: TryInto<v2::Frame, Error = ii_stratum::error::Error>,
-{
-    // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait)
-    let frame: v2::Frame = message
-        .try_into()
-        .expect("BUG: Could not serialize message");
-
-    translation
-        .handle_v2(frame)
-        .await
-        .expect("BUG: Message handling failed");
+struct TranslationTester {
+    translation: V2ToV1Translation,
+    v1_receiver: mpsc::Receiver<v1::Frame>,
+    v2_receiver: mpsc::Receiver<v2::Frame>,
 }
 
-async fn v1_simulate_incoming_message<M>(translation: &mut V2ToV1Translation, message: M)
-where
-    M: TryInto<v1::Frame, Error = ii_stratum::error::Error>,
-{
-    // create a tx frame, we won't send it but only extract the pure data (as it implements the deref trait) as if it arrived to translation
-    let frame: v1::Frame = message.try_into().expect("BUG: Deserialization failed");
+impl TranslationTester {
+    pub fn new(options: V2ToV1TranslationOptions) -> Self {
+        let (v1_sender, v1_receiver) = mpsc::channel(1);
+        let (v2_sender, v2_receiver) = mpsc::channel(1);
+        let translation = V2ToV1Translation::new(v1_sender, v2_sender, options);
 
-    let deserialized = v1::rpc::Rpc::try_from(frame).expect("BUG: Message deserialization failed");
+        Self {
+            translation,
+            v1_receiver,
+            v2_receiver,
+        }
+    }
 
-    translation
-        .handle_v1(deserialized)
-        .await
-        .expect("BUG: V1 Frame handling failed");
+    pub async fn send_v1<M>(&mut self, message: M)
+    where
+        M: TryInto<v1::Frame, Error = ii_stratum::error::Error>,
+    {
+        // create a tx frame, we won't send it but only extract the pure data
+        // (as it implements the deref trait) as if it arrived to translation
+        let frame: v1::Frame = message.try_into().expect("BUG: Deserialization failed");
+        let rpc = v1::rpc::Rpc::try_from(frame).expect("BUG: Message deserialization failed");
+
+        self.translation
+            .handle_v1(rpc)
+            .await
+            .expect("BUG: V1 Frame handling failed");
+    }
+
+    /// Simulates incoming message by converting it into a `Frame` and running the deserialization
+    /// chain from that point on
+    pub async fn send_v2<M>(&mut self, message: M)
+    where
+        M: TryInto<v2::Frame, Error = ii_stratum::error::Error>,
+    {
+        // create a tx frame, we won't send it but only extract the pure data
+        // (as it implements the deref trait)
+        let frame: v2::Frame = message
+            .try_into()
+            .expect("BUG: Could not serialize message");
+
+        self.translation
+            .handle_v2(frame)
+            .await
+            .expect("BUG: Message handling failed");
+    }
 }
 
-async fn v2_verify_generated_response_message(v2_rx: &mut mpsc::Receiver<v2::Frame>) {
-    // Pickup the response and verify it
-    let v2_response_tx_frame = v2_rx
-        .next()
-        .await
-        .expect("BUG: At least 1 message was expected");
-    // This is specific for the unit test only: Instead of sending the message via some
-    // connection, the test case will deserialize it and inspect it using the identity
-    // handler from test utils
-    test_utils::v2::TestIdentityHandler
-        .handle_v2(v2_response_tx_frame)
-        .await;
+impl Default for TranslationTester {
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
 }
 
-async fn v1_verify_generated_response_message(v1_rx: &mut mpsc::Receiver<v1::Frame>) {
-    // Pickup the response and verify it
-    // TODO add timeout
-    let frame = v1_rx
-        .next()
-        .await
-        .expect("BUG: At least 1 message was expected");
+#[async_trait]
+impl test_utils::v1::TestFrameReceiver for TranslationTester {
+    async fn receive_v1(&mut self) -> v1::rpc::Rpc {
+        let frame = self
+            .v1_receiver
+            .next()
+            .await
+            .expect("BUG: At least 1 message was expected");
 
-    let deserialized = v1::rpc::Rpc::try_from(frame).expect("BUG: Message deserialization failed");
-    test_utils::v1::TestIdentityHandler
-        .handle_v1(deserialized)
-        .await;
+        v1::rpc::Rpc::try_from(frame).expect("BUG: Message deserialization failed")
+    }
+}
+
+#[async_trait]
+impl test_utils::v2::TestFrameReceiver for TranslationTester {
+    async fn receive_v2(&mut self) -> v2::framing::Frame {
+        self.v2_receiver
+            .next()
+            .await
+            .expect("BUG: At least 1 message was expected")
+    }
 }
 
 #[tokio::test]
 async fn test_client_reconnect_translate() {
-    let (v1_tx, _v1_rx) = mpsc::channel(1);
-    let (v2_tx, mut v2_rx) = mpsc::channel(1);
     let mut tr_options = V2ToV1TranslationOptions::default();
     tr_options.propagate_reconnect_downstream = true;
-    let mut translation = V2ToV1Translation::new(v1_tx, v2_tx, tr_options);
+    let mut tester = TranslationTester::new(tr_options);
 
-    v1_simulate_incoming_message(
-        &mut translation,
-        test_utils::v1::build_client_reconnect_request_message(),
-    )
-    .await;
-
-    v2_verify_generated_response_message(&mut v2_rx).await;
+    tester
+        .send_v1(test_utils::v1::build_client_reconnect_request_message())
+        .await;
+    tester
+        .check_next_v2(|msg: v2::messages::Reconnect| {
+            test_utils::v2::message_check(msg, test_utils::v2::build_reconnect());
+        })
+        .await;
 }
 
 /// This test simulates incoming connection to the translation and verifies that the translation
@@ -111,57 +135,93 @@ async fn test_client_reconnect_translate() {
 /// TODO we need a way to detect that translation is not responding and the entire test should fail
 #[tokio::test]
 async fn test_setup_connection_translate() {
-    let (v1_tx, mut v1_rx) = mpsc::channel(1);
-    let (v2_tx, mut v2_rx) = mpsc::channel(1);
-    let mut translation = V2ToV1Translation::new(v1_tx, v2_tx, Default::default());
+    let mut tester = TranslationTester::default();
 
-    v2_simulate_incoming_message(&mut translation, test_utils::v2::build_setup_connection()).await;
     // Setup mining connection should result into: mining.configure
-    v1_verify_generated_response_message(&mut v1_rx).await;
-    v1_simulate_incoming_message(
-        &mut translation,
-        test_utils::v1::build_configure_ok_response_message(),
-    )
-    .await;
-    v2_verify_generated_response_message(&mut v2_rx).await;
+    tester
+        .send_v2(test_utils::v2::build_setup_connection())
+        .await;
+    let id = 0.into();
+    tester
+        .check_next_v1(id, |msg: v1::messages::Configure| {
+            test_utils::v1::message_request_check(
+                id,
+                &msg,
+                test_utils::v1::build_configure(),
+                test_utils::v1::MINING_CONFIGURE_REQ_JSON,
+            );
+        })
+        .await;
 
-    // Opening a channel should result into: V1 generating a subscribe request
-    v2_simulate_incoming_message(&mut translation, test_utils::v2::build_open_channel()).await;
+    tester
+        .send_v1(test_utils::v1::build_configure_ok_response_message())
+        .await;
+    tester
+        .check_next_v2(|msg: v2::messages::SetupConnectionSuccess| {
+            test_utils::v2::message_check(msg, test_utils::v2::build_setup_connection_success());
+        })
+        .await;
+
     // Opening a channel should result into: V1 generating a subscribe and authorize requests
-    v1_verify_generated_response_message(&mut v1_rx).await;
-    v1_verify_generated_response_message(&mut v1_rx).await;
+    tester.send_v2(test_utils::v2::build_open_channel()).await;
+    let id = 1.into();
+    tester
+        .check_next_v1(id, |msg: v1::messages::Subscribe| {
+            test_utils::v1::message_request_check(
+                id,
+                &msg,
+                test_utils::v1::build_subscribe(),
+                test_utils::v1::MINING_SUBSCRIBE_REQ_JSON,
+            );
+        })
+        .await;
+    let id = 2.into();
+    tester
+        .check_next_v1(id, |msg: v1::messages::Authorize| {
+            test_utils::v1::message_request_check(
+                id,
+                &msg,
+                test_utils::v1::build_authorize(),
+                test_utils::v1::MINING_AUTHORIZE_JSON,
+            );
+        })
+        .await;
 
     // Subscribe response
-    v1_simulate_incoming_message(
-        &mut translation,
-        test_utils::v1::build_subscribe_ok_response_message(),
-    )
-    .await;
+    tester
+        .send_v1(test_utils::v1::build_subscribe_ok_response_message())
+        .await;
     // Authorize response
-    v1_simulate_incoming_message(
-        &mut translation,
-        test_utils::v1::build_authorize_ok_response_message(),
-    )
-    .await;
+    tester
+        .send_v1(test_utils::v1::build_authorize_ok_response_message())
+        .await;
 
     // SetDifficulty notification before completion
-    v1_simulate_incoming_message(
-        &mut translation,
-        test_utils::v1::build_set_difficulty_request_message(),
-    )
-    .await;
+    tester
+        .send_v1(test_utils::v1::build_set_difficulty_request_message())
+        .await;
     // Now we should have a successfully open channel
-    v2_verify_generated_response_message(&mut v2_rx).await;
+    tester
+        .check_next_v2(|msg: v2::messages::OpenStandardMiningChannelSuccess| {
+            test_utils::v2::message_check(msg, test_utils::v2::build_open_channel_success());
+        })
+        .await;
 
-    v1_simulate_incoming_message(
-        &mut translation,
-        test_utils::v1::build_mining_notify_request_message(),
-    )
-    .await;
+    tester
+        .send_v1(test_utils::v1::build_mining_notify_request_message())
+        .await;
     // Expect NewMiningJob
-    v2_verify_generated_response_message(&mut v2_rx).await;
+    tester
+        .check_next_v2(|msg: v2::messages::NewMiningJob| {
+            test_utils::v2::message_check(msg, test_utils::v2::build_new_mining_job());
+        })
+        .await;
     // Expect SetNewPrevHash
-    v2_verify_generated_response_message(&mut v2_rx).await;
+    tester
+        .check_next_v2(|msg: v2::messages::SetNewPrevHash| {
+            test_utils::v2::message_check(msg, test_utils::v2::build_set_new_prev_hash());
+        })
+        .await;
     // Ensure that the V1 job has been registered
     let submit_template = V1SubmitTemplate {
         job_id: v1::messages::JobId::from_str(&test_utils::v1::MINING_NOTIFY_JOB_ID),
@@ -169,7 +229,8 @@ async fn test_setup_connection_translate() {
         version: test_utils::common::MINING_WORK_VERSION,
     };
 
-    let registered_submit_template = translation
+    let registered_submit_template = tester
+        .translation
         .v2_to_v1_job_map
         .get(&0)
         .expect("BUG: No mining job with V2 ID 0");
@@ -180,18 +241,30 @@ async fn test_setup_connection_translate() {
     );
 
     // Send SubmitShares
-    v2_simulate_incoming_message(&mut translation, test_utils::v2::build_submit_shares()).await;
+    tester.send_v2(test_utils::v2::build_submit_shares()).await;
     // Expect mining.submit to be generated
-    v1_verify_generated_response_message(&mut v1_rx).await;
+    let id = 3.into();
+    tester
+        .check_next_v1(id, |msg: v1::messages::Submit| {
+            test_utils::v1::message_request_check(
+                id,
+                &msg,
+                test_utils::v1::build_mining_submit(),
+                test_utils::v1::MINING_SUBMIT_JSON,
+            );
+        })
+        .await;
+
     // Simulate mining.submit response (true)
-    v1_simulate_incoming_message(
-        &mut translation,
-        test_utils::v1::build_mining_submit_ok_response_message(),
-    )
-    .await;
+    tester
+        .send_v1(test_utils::v1::build_mining_submit_ok_response_message())
+        .await;
     // Expect SubmitSharesSuccess to be generated
-    v2_verify_generated_response_message(&mut v2_rx).await;
-    // });
+    tester
+        .check_next_v2(|msg: v2::messages::SubmitSharesSuccess| {
+            test_utils::v2::message_check(msg, test_utils::v2::build_submit_shares_success());
+        })
+        .await;
 }
 
 #[test]
