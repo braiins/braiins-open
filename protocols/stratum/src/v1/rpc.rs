@@ -26,11 +26,7 @@
 //! - stratum request (with optional ID), request with NULL ID is considered a notification.
 //! - stratum response (associated with a previously issued request by the ID)
 
-use serde;
-use serde::de::{Deserializer, Error as _};
-use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
-use serde_json;
 use serde_json::Value;
 
 use std::convert::{TryFrom, TryInto};
@@ -41,6 +37,7 @@ use super::error::Error as V1Error;
 use super::{framing, MessageId, Protocol};
 use crate::error::{Error, Result};
 use crate::AnyPayload;
+use ii_logging::macros::*;
 use ii_unvariant::{id, GetId, Id};
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -128,7 +125,7 @@ impl TryFrom<Rpc> for (MessageId, StratumResult) {
 
     fn try_from(value: Rpc) -> Result<Self> {
         if let Rpc::Response(r) = value {
-            if let Ok(res) = r.result {
+            if let Some(res) = r.stratum_result {
                 return Ok((Some(r.id), res));
             }
         }
@@ -184,7 +181,7 @@ impl TryFrom<Rpc> for (MessageId, StratumError) {
 
     fn try_from(value: Rpc) -> Result<Self> {
         if let Rpc::Response(r) = value {
-            if let Err(err) = r.result {
+            if let Some(err) = r.stratum_error {
                 return Ok((Some(r.id), err));
             }
         }
@@ -199,56 +196,66 @@ pub type ResponsePayload = StdResult<StratumResult, StratumError>;
 ///
 /// The response maybe optionally paired via 'id' with original request. Empty ID
 /// represents a notification.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Deserialize, Serialize)]
 pub struct Response {
     /// Response pairing identifier
     pub id: u32,
-    /// A Result type is mapped to either `"result": value` or `"error": value`
-    pub result: ResponsePayload,
+    #[serde(rename = "result")]
+    pub stratum_result: Option<StratumResult>,
+    #[serde(rename = "error")]
+    pub stratum_error: Option<StratumError>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct ResponseSeriaize {
-    id: u32,
-    result: Option<StratumResult>,
-    error: Option<StratumError>,
-}
-
-impl Serialize for Response {
-    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let id = self.id;
-        let (result, error) = match self.result.clone() {
-            Ok(ok) => (Some(ok), None),
-            Err(err) => (None, Some(err)),
-        };
-
-        ResponseSeriaize { id, result, error }.serialize(serializer)
+impl Response {
+    pub fn json_rpc_normalize(self) -> Result<Self> {
+        let Self {
+            id,
+            stratum_result,
+            stratum_error,
+        } = self;
+        match (stratum_result, stratum_error) {
+            (Some(result), None) => Ok(Self {
+                id,
+                stratum_result: Some(result),
+                stratum_error: None,
+            }),
+            (None, Some(error)) => Ok(Self {
+                id,
+                stratum_result: None,
+                stratum_error: Some(error),
+            }),
+            (Some(result), Some(error)) => {
+                warn!(
+                    "Processing invalid JSON-RPC structure: both result ({:?}) and error({:?}) \
+                present. Handling it as an error...",
+                    result, error
+                );
+                Ok(Self {
+                    id,
+                    stratum_result: None,
+                    stratum_error: Some(error),
+                })
+            }
+            (None, None) => {
+                warn!("Processing invalid JSON-RPC structure: neither result, nor error present");
+                Err(Error::V1(V1Error::Json("Invalid JSON-RPC".into())))
+            }
+        }
     }
 }
 
-impl<'de> Deserialize<'de> for Response {
-    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let deserialize = ResponseSeriaize::deserialize(deserializer)?;
-        let result = match (deserialize.result, deserialize.error) {
-            (Some(ok), None) => Ok(ok),
-            (None, Some(err)) => Err(err),
-            _ => {
-                return Err(D::Error::custom(
-                    "V1 Response: Either `result` or `error` field must be set",
-                ))
-            }
-        };
+impl TryFrom<Response> for ResponsePayload {
+    type Error = Error;
 
-        Ok(Self {
-            id: deserialize.id,
-            result,
-        })
+    fn try_from(resp: Response) -> Result<Self> {
+        let Response {
+            id: _,
+            stratum_result,
+            stratum_error,
+        } = resp.json_rpc_normalize()?;
+        Ok(stratum_result.ok_or_else(|| {
+            stratum_error.unwrap_or_else(|| unreachable!("BUG: Invalid json rpc generated in code"))
+        }))
     }
 }
 
@@ -266,10 +273,10 @@ impl GetId for Rpc {
         match self {
             Rpc::Request(r) => r.payload.method,
             Rpc::Response(r) => {
-                if r.result.is_ok() {
-                    Method::Result
-                } else {
+                if r.stratum_error.is_some() {
                     Method::Error
+                } else {
+                    Method::Result
                 }
             }
         }
@@ -292,7 +299,7 @@ impl TryFrom<&[u8]> for Rpc {
     type Error = Error;
 
     fn try_from(frame: &[u8]) -> Result<Self> {
-        serde_json::from_slice(&frame).map_err(|e| {
+        let rpc_cmd = serde_json::from_slice::<Self>(&frame).map_err(|e| {
             let (frame, suffix) = if frame.len() > 256 {
                 (&frame[..256], "[snip]")
             } else {
@@ -301,7 +308,12 @@ impl TryFrom<&[u8]> for Rpc {
             let frame = String::from_utf8_lossy(frame);
 
             V1Error::Json(format!("Invalid V1 message: {}\n{}{}", e, frame, suffix)).into()
-        })
+        });
+        if let Ok(Rpc::Response(response)) = rpc_cmd {
+            Ok(Rpc::Response(response.json_rpc_normalize()?))
+        } else {
+            rpc_cmd
+        }
     }
 }
 
@@ -376,13 +388,18 @@ mod test {
     }
 
     #[test]
-    fn autocorrect_broken_rpc_response() {
+    fn deserialize_and_autocorrect_broken_rpc_response() {
         Rpc::try_from(CORRECTABLE_BROKEN_RSP_JSON.as_bytes())
             .expect("BUG: Deserializing should succeed");
     }
 
     #[test]
-    fn test_deserialize_broken_request() {
+    fn deserialize_fully_broken_rpc_response() {
+        Rpc::try_from(FULLY_BROKEN_RSP_JSON.as_bytes()).expect("BUG: Deserializing should succeed");
+    }
+
+    #[test]
+    fn deserialize_broken_request() {
         Rpc::try_from(MINING_BROKEN_REQ_JSON.as_bytes())
             .expect_err("BUG: Deserializing a broken request should've failed");
     }
@@ -397,7 +414,7 @@ mod test {
         );
     }
     #[test]
-    fn test_deserialize_ok_response() {
+    fn deserialize_ok_response() {
         test_deserialize_response(
             MINING_SUBSCRIBE_OK_RESULT_JSON,
             build_subscribe_ok_response_message(),
@@ -405,7 +422,7 @@ mod test {
     }
 
     #[test]
-    fn test_deserialize_err_response() {
+    fn deserialize_err_response() {
         test_deserialize_response(STRATUM_ERROR_JSON, build_stratum_err_response());
     }
 
@@ -427,7 +444,7 @@ mod test {
     }
 
     #[test]
-    fn test_serialize_ok_response() {
+    fn serialize_ok_response() {
         test_serialize_response(
             build_subscribe_ok_response_message(),
             MINING_SUBSCRIBE_OK_RESULT_JSON,
@@ -436,7 +453,7 @@ mod test {
 
     /// Verifies correct implementation of `SerializablePayload` trait for `Rpc`
     #[test]
-    fn test_serialize_err_response() {
+    fn serialize_err_response() {
         test_serialize_response(build_stratum_err_response(), STRATUM_ERROR_JSON);
     }
 }

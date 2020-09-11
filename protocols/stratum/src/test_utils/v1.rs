@@ -109,6 +109,11 @@ pub const CORRECTABLE_BROKEN_RSP_JSON: &str = concat!(
     r#"[21, "Job not found (=stale)", null]}"#
 );
 
+pub const FULLY_BROKEN_RSP_JSON: &str = concat!(
+    r#"{"id": 33, "custom_result": 13, "error": "#,
+    r#"[21, "Job not found (=stale)", null]}"#
+);
+
 /// Random broken request
 pub const MINING_BROKEN_REQ_JSON: &str = concat!(
     r#"{"id":1,"method":"mining.none_existing","#,
@@ -126,7 +131,10 @@ pub const MINING_SUBSCRIBE_OK_RESULT_JSON: &str = concat!(
 fn build_result_response_message<T: Serialize>(id: u32, result: T) -> Rpc {
     Rpc::from(Response {
         id,
-        result: Ok(StratumResult::new(result).expect("BUG: Cannot build test response message")),
+        stratum_result: Some(
+            StratumResult::new(result).expect("BUG: Cannot build test response message"),
+        ),
+        stratum_error: None,
     })
 }
 
@@ -170,7 +178,8 @@ pub fn build_stratum_error() -> StratumError {
 pub fn build_stratum_err_response() -> Rpc {
     Rpc::from(Response {
         id: 1,
-        result: Err(build_stratum_error()),
+        stratum_result: None,
+        stratum_error: Some(build_stratum_error()),
     })
 }
 

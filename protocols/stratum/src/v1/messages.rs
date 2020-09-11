@@ -162,7 +162,9 @@ macro_rules! impl_response {
             type Error = crate::error::Error;
 
             fn try_from(resp: rpc::Response) -> Result<Self> {
-                let result = resp.result.map_err(|_| Error::Json("No result".into()))?;
+                let result = resp
+                    .stratum_result
+                    .ok_or_else(|| Error::Json("No result".into()))?;
                 <$response>::try_from(&result)
             }
         }

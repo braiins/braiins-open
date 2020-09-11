@@ -1093,11 +1093,13 @@ impl V2ToV1Translation {
     async fn handle_ping(&mut self, payload: (MessageId, v1::messages::Ping)) -> Result<()> {
         let msg = v1::messages::Pong("pong".into());
         debug!("Received {:?} message, sending {:?} response", payload, msg);
-        let result = v1::rpc::ResponsePayload::try_from(msg)
-            .expect("BUG: Pong response to ping couldn't be serialized");
+        let stratum_result = v1::rpc::ResponsePayload::try_from(msg)
+            .expect("BUG: Pong response to ping couldn't be serialized")
+            .ok();
         let rpc_pld = v1::rpc::Response {
             id: payload.0.unwrap_or_default(),
-            result,
+            stratum_result,
+            stratum_error: None,
         };
         util::submit_message(&mut self.v1_tx, v1::rpc::Rpc::Response(rpc_pld)).map_err(|e| {
             Error::General(format!("Cannot send ping response to mining.ping: {:?}", e))
