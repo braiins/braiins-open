@@ -207,20 +207,19 @@ pub struct Response {
 }
 
 impl Response {
+    /// Method that normalizes response:
+    ///  - it discards Response.result if Response.error is found, logs that
+    ///    issue and continues as if only error was present
+    ///  - if both "result" and "error" is present, it is considered hard Error
     pub fn json_rpc_normalize(self) -> Result<Self> {
-        let Self {
-            id,
-            stratum_result,
-            stratum_error,
-        } = self;
-        match (stratum_result, stratum_error) {
+        match (self.stratum_result, self.stratum_error) {
             (Some(result), None) => Ok(Self {
-                id,
+                id: self.id,
                 stratum_result: Some(result),
                 stratum_error: None,
             }),
             (None, Some(error)) => Ok(Self {
-                id,
+                id: self.id,
                 stratum_result: None,
                 stratum_error: Some(error),
             }),
@@ -231,7 +230,7 @@ impl Response {
                     result, error
                 );
                 Ok(Self {
-                    id,
+                    id: self.id,
                     stratum_result: None,
                     stratum_error: Some(error),
                 })
@@ -391,13 +390,14 @@ mod test {
 
     #[test]
     fn deserialize_and_autocorrect_broken_rpc_response() {
-        Rpc::try_from(CORRECTABLE_BROKEN_RSP_JSON.as_bytes())
+        Rpc::try_from(CORRECTABLE_BROKEN_RESPONSE_JSON.as_bytes())
             .expect("BUG: Deserializing should succeed");
     }
 
     #[test]
     fn deserialize_fully_broken_rpc_response() {
-        Rpc::try_from(FULLY_BROKEN_RSP_JSON.as_bytes()).expect("BUG: Deserializing should succeed");
+        Rpc::try_from(FULLY_BROKEN_RESPONSE_JSON.as_bytes())
+            .expect("BUG: Deserializing should succeed");
     }
 
     #[test]

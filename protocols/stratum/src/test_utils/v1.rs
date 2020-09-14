@@ -104,12 +104,15 @@ pub fn build_subscribe() -> Subscribe {
     }
 }
 
-pub const CORRECTABLE_BROKEN_RSP_JSON: &str = concat!(
+/// String contains non-empty both fields: "result" and "error", which is not permitted
+/// in JSON-RPC specification
+pub const CORRECTABLE_BROKEN_RESPONSE_JSON: &str = concat!(
     r#"{"id": 33, "result": false, "error": "#,
     r#"[21, "Job not found (=stale)", null]}"#
 );
 
-pub const FULLY_BROKEN_RSP_JSON: &str = concat!(
+/// String contains unrecognized field and should not succeed to parse
+pub const FULLY_BROKEN_RESPONSE_JSON: &str = concat!(
     r#"{"id": 33, "custom_result": 13, "error": "#,
     r#"[21, "Job not found (=stale)", null]}"#
 );
