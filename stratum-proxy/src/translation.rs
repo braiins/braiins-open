@@ -1353,18 +1353,13 @@ impl V2ToV1Translation {
         // and processing broken frame should result in closing the connection
         match parsed_frame {
             Ok(v2_frame) => {
-                Err(Error::General(format!(
-                    "Unknown stratum v1 message received: {:?}",
-                    v2_frame
-                )));
+                warn!("Unknown stratum v2 message received: {:?}", v2_frame);
+                Ok(())
             }
-            Err(e) => {
-                Err(Error::General(format!(
-                    "Broken stratum v2 frame received: {:?}",
-                    e
-                )));
-            }
+            Err(e) => Err(Error::General(format!(
+                "Broken stratum v2 frame received: {:?}",
+                e
+            ))),
         }
-        Ok(())
     }
 }
