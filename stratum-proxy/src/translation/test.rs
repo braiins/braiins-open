@@ -130,13 +130,7 @@ async fn test_client_reconnect_translate() {
         .await;
 }
 
-/// This test simulates incoming connection to the translation and verifies that the translation
-/// emits corresponding V1 or V2 messages
-/// TODO we need a way to detect that translation is not responding and the entire test should fail
-#[tokio::test]
-async fn test_setup_connection_translate() {
-    let mut tester = TranslationTester::default();
-
+async fn test_initial_sequence_translate(tester: &mut TranslationTester) {
     // Setup mining connection should result into: mining.configure
     tester
         .send_v2(test_utils::v2::build_setup_connection())
@@ -239,6 +233,16 @@ async fn test_setup_connection_translate() {
         registered_submit_template.clone(),
         "New Mining Job ID not registered!"
     );
+}
+
+/// This test simulates incoming connection to the translation and verifies that the translation
+/// emits corresponding V1 or V2 messages
+/// TODO we need a way to detect that translation is not responding and the entire test should fail
+#[tokio::test]
+async fn test_setup_connection_translate() {
+    let mut tester = TranslationTester::default();
+
+    test_initial_sequence_translate(&mut tester).await;
 
     // Send SubmitShares
     tester.send_v2(test_utils::v2::build_submit_shares()).await;
@@ -263,6 +267,117 @@ async fn test_setup_connection_translate() {
     tester
         .check_next_v2(|msg: v2::messages::SubmitSharesSuccess| {
             test_utils::v2::message_check(msg, test_utils::v2::build_submit_shares_success());
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn test_shares_sequence_number_translate() {
+    let mut tester = TranslationTester::default();
+
+    test_initial_sequence_translate(&mut tester).await;
+
+    let mut notify_v1 = test_utils::v1::build_mining_notify();
+    let mut new_mining_job_v2 = test_utils::v2::build_new_mining_job();
+    let mut new_prev_hash_v2 = test_utils::v2::build_set_new_prev_hash();
+
+    let mut shares_v2 = test_utils::v2::build_submit_shares();
+    let mut shares_success_v2 = test_utils::v2::build_submit_shares_success();
+    let mut shares_error_v2 = test_utils::v2::build_submit_shares_error();
+    let submit_v1 = test_utils::v1::build_mining_submit();
+
+    const ERR_STALE: &str = "stale";
+
+    // Send shares 1 for job 0
+    tester.send_v2(shares_v2.clone()).await;
+    tester
+        .check_next_v1(3.into(), |msg: v1::messages::Submit| {
+            assert_eq!(submit_v1, msg);
+        })
+        .await;
+
+    tester
+        .send_v1(test_utils::v1::build_ok_response_message(3))
+        .await;
+    tester
+        .check_next_v2(|msg: v2::messages::SubmitSharesSuccess| {
+            assert_eq!(shares_success_v2, msg);
+        })
+        .await;
+
+    // Send shares 2 for job 0
+    shares_v2.seq_num = 1;
+    shares_v2.job_id = 0;
+
+    tester.send_v2(shares_v2.clone()).await;
+    tester
+        .check_next_v1(4.into(), |msg: v1::messages::Submit| {
+            assert_eq!(submit_v1, msg);
+        })
+        .await;
+
+    notify_v1.clean_jobs = true;
+    tester
+        .send_v1(test_utils::v1::build_request_message(
+            None,
+            notify_v1.clone(),
+        ))
+        .await;
+
+    // Send shares 3 for job 0
+    shares_v2.seq_num = 2;
+    shares_v2.job_id = 0;
+
+    tester.send_v2(shares_v2.clone()).await;
+
+    new_mining_job_v2.job_id = 1;
+    new_prev_hash_v2.job_id = 1;
+    tester
+        .check_next_v2(|msg: v2::messages::NewMiningJob| {
+            assert_eq!(new_mining_job_v2.clone(), msg);
+        })
+        .await;
+    tester
+        .check_next_v2(|msg: v2::messages::SetNewPrevHash| {
+            assert_eq!(new_prev_hash_v2.clone(), msg);
+        })
+        .await;
+
+    // Send shares 4 for job 1
+    shares_v2.seq_num = 3;
+    shares_v2.job_id = 1;
+
+    tester.send_v2(shares_v2.clone()).await;
+
+    tester
+        .send_v1(test_utils::v1::build_err_response_message(4, 0, ERR_STALE))
+        .await;
+
+    shares_error_v2.seq_num = 1;
+    shares_error_v2.code =
+        v2::types::Str0_32::from_str(format!("ShareRjct:StratumError(0, \"{}", ERR_STALE).as_str());
+    tester
+        .check_next_v2(|msg: v2::messages::SubmitSharesError| {
+            assert_eq!(shares_error_v2, msg);
+        })
+        .await;
+
+    tester
+        .send_v1(test_utils::v1::build_ok_response_message(5))
+        .await;
+
+    shares_error_v2.seq_num = 2;
+    shares_error_v2.code = v2::types::Str0_32::from_str("General error: V2 Job ID not pre");
+    tester
+        .check_next_v2(|msg: v2::messages::SubmitSharesError| {
+            assert_eq!(shares_error_v2, msg);
+        })
+        .await;
+
+    shares_success_v2.last_seq_num = 3;
+    tester
+        .check_next_v2(|msg: v2::messages::SubmitSharesSuccess| {
+            assert_eq!(shares_success_v2, msg);
         })
         .await;
 }

@@ -306,7 +306,7 @@ pub const MINING_SUBSCRIBE_REQ_JSON: &str = concat!(
 const EXTRA_NONCE_1: &str = "6c6f010000000c";
 const EXTRA_NONCE_2_SIZE: usize = 4;
 
-fn build_request_message<T>(id: MessageId, payload: T) -> Rpc
+pub fn build_request_message<T>(id: MessageId, payload: T) -> Rpc
 where
     T: TryInto<RequestPayload> + Debug,
     <T as std::convert::TryInto<RequestPayload>>::Error: std::fmt::Debug,
@@ -369,8 +369,16 @@ fn build_result_response_message<T: Serialize>(id: u32, result: T) -> Rpc {
 }
 
 /// Special case for simple 'OK' response
-fn build_ok_response_message(id: u32) -> Rpc {
+pub fn build_ok_response_message(id: u32) -> Rpc {
     build_result_response_message(id, BooleanResult(true))
+}
+
+pub fn build_err_response_message(id: u32, code: i32, msg: &str) -> Rpc {
+    Rpc::from(Response {
+        id,
+        stratum_result: None,
+        stratum_error: Some(StratumError(code, msg.to_string(), None)),
+    })
 }
 
 pub fn build_subscribe_ok_response_message() -> Rpc {

@@ -480,6 +480,14 @@ pub fn build_submit_shares_success() -> SubmitSharesSuccess {
     }
 }
 
+pub fn build_submit_shares_error() -> SubmitSharesError {
+    SubmitSharesError {
+        channel_id: 0,
+        seq_num: 0,
+        code: Str0_32::from_str(""),
+    }
+}
+
 pub fn build_reconnect() -> Reconnect {
     Reconnect {
         new_host: Str0_255::from_str(POOL_URL),
