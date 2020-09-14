@@ -307,13 +307,15 @@ impl TryFrom<&[u8]> for Rpc {
             };
             let frame = String::from_utf8_lossy(frame);
 
-            V1Error::Json(format!("Invalid V1 message: {}\n{}{}", e, frame, suffix)).into()
-        });
-        if let Ok(Rpc::Response(response)) = rpc_cmd {
-            Ok(Rpc::Response(response.json_rpc_normalize()?))
+            V1Error::Json(format!("Invalid V1 message: {}\n{}{}", e, frame, suffix))
+        })?;
+        // Normalize an RPC response to support various broken stratum dialects
+        let rpc = if let Rpc::Response(response) = rpc_cmd {
+            Rpc::Response(response.json_rpc_normalize()?)
         } else {
             rpc_cmd
-        }
+        };
+        Ok(rpc)
     }
 }
 
