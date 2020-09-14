@@ -1108,6 +1108,9 @@ impl V2ToV1Translation {
 
     #[handle(_)]
     async fn handle_unknown_v1(&mut self, parsed_frame: Result<v1::rpc::Rpc>) -> Result<()> {
+        // Broken v1 frame is handled only with warning, since legacy Stratum protocol
+        // has many dialects and failure to parse message should usually not result in closing
+        // the connection
         match parsed_frame {
             Ok(rpc_msg) => {
                 warn!("Unknown stratum v1 message received: {:?}", rpc_msg);
@@ -1346,12 +1349,20 @@ impl V2ToV1Translation {
 
     #[handle(_)]
     async fn handle_unknown_v2(&mut self, parsed_frame: Result<v2::framing::Frame>) -> Result<()> {
+        // Broken v2 frame should never occur, since stratum v2 is well defined
+        // and processing broken frame should result in closing the connection
         match parsed_frame {
             Ok(v2_frame) => {
-                warn!("Unknown stratum v1 message received: {:?}", v2_frame);
+                Err(Error::General(format!(
+                    "Unknown stratum v1 message received: {:?}",
+                    v2_frame
+                )));
             }
             Err(e) => {
-                warn!("Broken stratum v2 frame received: {:?}", e);
+                Err(Error::General(format!(
+                    "Broken stratum v2 frame received: {:?}",
+                    e
+                )));
             }
         }
         Ok(())
