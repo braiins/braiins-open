@@ -376,6 +376,12 @@ mod test {
     }
 
     #[test]
+    fn autocorrect_broken_rpc_response() {
+        Rpc::try_from(CORRECTABLE_BROKEN_RSP_JSON.as_bytes())
+            .expect("BUG: Deserializing should succeed");
+    }
+
+    #[test]
     fn test_deserialize_broken_request() {
         Rpc::try_from(MINING_BROKEN_REQ_JSON.as_bytes())
             .expect_err("BUG: Deserializing a broken request should've failed");

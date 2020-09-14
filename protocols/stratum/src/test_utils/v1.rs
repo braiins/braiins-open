@@ -104,6 +104,11 @@ pub fn build_subscribe() -> Subscribe {
     }
 }
 
+pub const CORRECTABLE_BROKEN_RSP_JSON: &str = concat!(
+    r#"{"id": 33, "result": false, "error": "#,
+    r#"[21, "Job not found (=stale)", null]}"#
+);
+
 /// Random broken request
 pub const MINING_BROKEN_REQ_JSON: &str = concat!(
     r#"{"id":1,"method":"mining.none_existing","#,
