@@ -432,10 +432,19 @@ impl HaltHandle {
 mod test {
     use super::*;
 
+    use crate::FutureExt;
+
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
 
     use tokio::time;
+
+    // The pending future or stream never actually yield a value,
+    // they resolve only in the canelled case.
+
+    async fn forever_ft(tripwire: Tripwire) {
+        let _ = future::pending::<()>().cancel(tripwire).await;
+    }
 
     /// Wait indefinitely on a stream with a `Tripwire` for cancellation.
     async fn forever_stream(tripwire: Tripwire) {
@@ -454,7 +463,7 @@ mod test {
 
         // Spawn a couple of tasks on the handle
         for _ in 0..10 {
-            handle.spawn(|tripwire| forever_stream(tripwire));
+            handle.spawn(|tripwire| forever_ft(tripwire));
         }
 
         // Signal ready, halt, and join tasks
