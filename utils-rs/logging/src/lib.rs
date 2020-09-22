@@ -56,7 +56,10 @@ use std::fs::OpenOptions;
 use std::mem;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex, MutexGuard,
+};
 
 use lazy_static::lazy_static;
 use slog::{o, Discard, Drain, FilterLevel, Logger};
@@ -147,7 +150,7 @@ impl Default for LoggingConfig {
 fn lock_logger_config() -> MutexGuard<'static, Option<LoggingConfig>> {
     LOGGER_CONFIG
         .lock()
-        .expect("Could not lock logger config mutex")
+        .expect("TODO: Could not lock logger config mutex")
 }
 
 /// Set new logger configuration and return old one.
@@ -161,7 +164,7 @@ fn lock_logger_config() -> MutexGuard<'static, Option<LoggingConfig>> {
 pub fn set_logger_config(config: LoggingConfig) -> LoggingConfig {
     lock_logger_config()
         .replace(config)
-        .expect("Could not set logger config, LOGGER already instantiated")
+        .expect("TODO: Could not set logger config, LOGGER already instantiated")
 }
 
 /// Setup logger with configuration passed in `config`
@@ -187,6 +190,29 @@ pub fn setup_for_app(drain_channel_size: usize) -> FlushGuard {
     setup(LoggingConfig::for_app(drain_channel_size))
 }
 
+/// Logging setup that should be used by integration tests.
+///
+/// This setup is mindful of tests running in multiple threads,
+/// it can safely be called multiple times.
+///
+/// Also, it is more strict about the `RUST_LOG` variable
+/// - if it is present, it needs to be valid.
+///
+/// If `RUST_LOG` is not set, `DEBUG` level is assumed.
+pub fn init_test_logging() -> Option<FlushGuard> {
+    static INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+    // Tests are run typically in random order in multiple threads,
+    // make sure the initialization is only run once:
+    if !INITIALIZED.compare_and_swap(false, true, Ordering::SeqCst) {
+        Some(setup_for_app(
+            LoggingConfig::ASYNC_LOGGER_DRAIN_CHANNEL_SIZE,
+        ))
+    } else {
+        None
+    }
+}
+
 /// Sets up envlogger filter for a drain, with proper default settings
 fn get_envlogger_drain<D: Drain>(drain: D, default_level: Level) -> EnvLogger<D> {
     let builder = slog_envlogger::LogBuilder::new(drain);
@@ -201,7 +227,7 @@ fn get_envlogger_drain<D: Drain>(drain: D, default_level: Level) -> EnvLogger<D>
             // For some reason there's no impl From<Level> for FilterLevel,
             // so we have go through usize here :-/
             let filter_level = FilterLevel::from_usize(default_level.as_usize())
-                .expect("Internal error: Could not convert slog::Level to slog::FilterLevel");
+                .expect("BUG: Internal error: Could not convert slog::Level to slog::FilterLevel");
 
             builder.filter(None, filter_level).build()
         }
@@ -229,14 +255,13 @@ fn get_file_drain(path: &Path) -> impl Drain<Ok = (), Err = impl fmt::Debug> {
         .append(true)
         .truncate(false)
         .open(path)
-        .map_err(|e| {
+        .unwrap_or_else(|e| {
             panic!(
                 "Logging setup error: Could not open file `{}` for logging: {}",
                 path.display(),
                 e
             )
-        })
-        .unwrap();
+        });
 
     let file_decorator = slog_term::PlainDecorator::new(file);
     let file_drain = slog_term::FullFormat::new(file_decorator).build();
@@ -302,7 +327,7 @@ impl GuardedLogger {
         let mut locker = self
             .guard
             .lock()
-            .expect("Could not lock GuardedLogger mutex");
+            .expect("TODO: Could not lock GuardedLogger mutex");
         mem::replace(&mut *locker, FlushGuard(None))
     }
 
@@ -332,7 +357,7 @@ lazy_static! {
         // Take the configuration data
         let mut config_lock = lock_logger_config();
         let config = config_lock.take()
-            .expect("Internal error: LOGGER_CONFIG empty in LOGGER initialization");
+            .expect("BUG: Internal error: LOGGER_CONFIG empty in LOGGER initialization");
 
         GuardedLogger::new(&config)
     };
