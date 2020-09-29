@@ -165,8 +165,12 @@ enum SeqNum {
     V2(u32),
 }
 
+/// Describes 2 variants of submitted shares
 enum SubmitShare {
+    /// Sequence number mapping between Stratum V1 and V2 SubmitShares/mining.submit resp.
     V1ToV2Mapping(u32, u32),
+    /// Submit share error which proxy generates and can be faster than submitted shares to
+    /// remote server
     SubmitSharesError(v2::messages::SubmitSharesError),
 }
 
@@ -213,7 +217,7 @@ pub struct V2ToV1Translation {
     v2_job_id: SeqId,
     /// Translates V2 job ID to V1 job ID
     v2_to_v1_job_map: JobMap,
-    /// Queue of submit shares waiting for response processing
+    /// Queue of submitted shares waiting for response processing
     v2_submit_share_queue: SubmitShareQueue,
     /// Options for translation
     options: V2ToV1TranslationOptions,
@@ -759,6 +763,8 @@ impl V2ToV1Translation {
         extra_nonce2
     }
 
+    /// Scan the submit share queue if the front item is a `SubmitSharesError`, send out all
+    /// shares error messages
     fn submit_queued_share_responses(&mut self) -> Result<()> {
         loop {
             match self.v2_submit_share_queue.front() {
@@ -818,6 +824,10 @@ impl V2ToV1Translation {
     }
 
     /// Generates log trace entry and reject shares error reply to the client
+    ///
+    /// `seq_num_variant` distinguishes share responses generated immediately in proxy (sequence
+    /// number V2 is known) or responses received from remote server (sequence number V1
+    /// must be remapped to V2)
     fn reject_shares(
         &mut self,
         channel_id: u32,

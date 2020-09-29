@@ -249,6 +249,8 @@ pub trait TestFrameReceiver {
         handler.next().expect("BUG: No message was received")
     }
 
+    /// Convert received `TestMessage` to expected structure (that can be passed to closure `f`
+    /// for further processing)
     async fn check_next_v1<T, U, V>(&mut self, expected_id: MessageId, f: T) -> V
     where
         T: FnOnce(U) -> V + Send + Sync,
