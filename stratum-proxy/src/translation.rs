@@ -797,7 +797,9 @@ impl V2ToV1Translation {
         self.submit_queued_share_responses()
     }
 
-    fn get_v2_seq_num(&mut self, id: &v1::MessageId) -> Result<u32> {
+    /// Helper that converts id of V1 mining.submit message to V2 sequence
+    /// number of a submit shares message
+    fn get_v2_submit_shares_seq_num(&mut self, id: &v1::MessageId) -> Result<u32> {
         let id = id.ok_or(Error::General(
             "Missing V1 message id for 'mining.submit' response".to_string(),
         ))?;
@@ -815,7 +817,7 @@ impl V2ToV1Translation {
     fn accept_shares(&mut self, id: &v1::MessageId, new_shares: u64) -> Result<()> {
         let success_msg = v2::messages::SubmitSharesSuccess {
             channel_id: Self::CHANNEL_ID,
-            last_seq_num: self.get_v2_seq_num(id)?,
+            last_seq_num: self.get_v2_submit_shares_seq_num(id)?,
             new_submits_accepted_count: 1,
             new_shares_sum: new_shares,
         };
@@ -836,7 +838,7 @@ impl V2ToV1Translation {
     ) -> Result<()> {
         trace!("{}", err_msg);
         let (seq_num, submit) = match seq_num_variant {
-            SeqNum::V1(id) => (self.get_v2_seq_num(&id)?, true),
+            SeqNum::V1(id) => (self.get_v2_submit_shares_seq_num(&id)?, true),
             SeqNum::V2(value) => (value, self.v2_submit_share_queue.is_empty()),
         };
         let submit_shares_error_msg = v2::messages::SubmitSharesError {
