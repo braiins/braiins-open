@@ -819,7 +819,7 @@ impl V2ToV1Translation {
             channel_id: Self::CHANNEL_ID,
             last_seq_num: self.get_v2_submit_shares_seq_num(id)?,
             new_submits_accepted_count: 1,
-            new_shares_sum: new_shares,
+            new_shares_sum: new_shares as u32,
         };
 
         self.submit_share_response(success_msg, "SubmitSharesSuccess")
