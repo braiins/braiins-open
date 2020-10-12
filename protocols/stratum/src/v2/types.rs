@@ -111,27 +111,27 @@ macro_rules! sized_string_type {
         }
 
         impl TryFrom<String> for $name {
-            type Error = ();
+            type Error = super::error::Error;
 
             #[inline]
-            fn try_from(s: String) -> Result<Self, ()> {
+            fn try_from(s: String) -> Result<Self, Self::Error> {
                 if (Self::MIN_LEN..=Self::MAX_LEN).contains(&s.len()) {
                     Ok(Self(s))
                 } else {
-                    Err(())
+                    Err(Self::Error::DataTypeOverflow(s.len(), Self::MAX_LEN))
                 }
             }
         }
 
         impl<'a> TryFrom<&'a str> for $name {
-            type Error = ();
+            type Error = super::error::Error;
 
             #[inline]
-            fn try_from(s: &'a str) -> Result<Self, ()> {
+            fn try_from(s: &'a str) -> Result<Self, Self::Error> {
                 if (Self::MIN_LEN..=Self::MAX_LEN).contains(&s.len()) {
                     Ok(Self(s.into()))
                 } else {
-                    Err(())
+                    Err(Self::Error::DataTypeOverflow(s.len(), Self::MAX_LEN))
                 }
             }
         }
@@ -199,27 +199,27 @@ macro_rules! sized_bytes_type {
         }
 
         impl TryFrom<Vec<u8>> for $name {
-            type Error = ();
+            type Error = super::error::Error;
 
             #[inline]
-            fn try_from(v: Vec<u8>) -> Result<Self, ()> {
+            fn try_from(v: Vec<u8>) -> Result<Self, Self::Error> {
                 if (Self::MIN_LEN..=Self::MAX_LEN).contains(&v.len()) {
                     Ok(Self(v.into_boxed_slice()))
                 } else {
-                    Err(())
+                    Err(Self::Error::DataTypeOverflow(v.len(), Self::MAX_LEN))
                 }
             }
         }
 
         impl<'a> TryFrom<&'a [u8]> for $name {
-            type Error = ();
+            type Error = super::error::Error;
 
             #[inline]
-            fn try_from(s: &'a [u8]) -> Result<Self, ()> {
+            fn try_from(s: &'a [u8]) -> Result<Self, Self::Error> {
                 if (Self::MIN_LEN..=Self::MAX_LEN).contains(&s.len()) {
                     Ok(Self(s.into()))
                 } else {
-                    Err(())
+                    Err(Self::Error::DataTypeOverflow(s.len(), Self::MAX_LEN))
                 }
             }
         }

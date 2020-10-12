@@ -31,4 +31,7 @@ pub enum Error {
 
     #[error("Channel not operational: {0}")]
     ChannelNotOperational(String),
+
+    #[error("Type length is out of the permitted range: {0}, max: {1}")]
+    DataTypeOverflow(usize, usize),
 }
