@@ -217,9 +217,8 @@ pub struct HaltHandle {
     signal_task_spawned: AtomicBool,
 }
 
-impl HaltHandle {
-    /// Create a new `HaltHandle`
-    pub fn new() -> Self {
+impl Default for HaltHandle {
+    fn default() -> Self {
         let (trigger, tripwire) = Tripwire::new();
         let notify_join = Arc::new(Notify::new());
         let (tasks_tx, tasks_rx) = mpsc::unbounded_channel();
@@ -237,6 +236,13 @@ impl HaltHandle {
             })),
             signal_task_spawned: AtomicBool::new(false),
         }
+    }
+}
+
+impl HaltHandle {
+    /// Create a new `HaltHandle`
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Create a `HaltHandle` and wrap it in `Arc` for sharing between tasks
@@ -371,7 +377,7 @@ impl HaltHandle {
         // Map errors, return the first one encountered (if any)
         res.drain(..)
             .fold(Ok(()), Result::and)
-            .map_err(|e| HaltError::Join(e))
+            .map_err(HaltError::Join)
     }
 }
 
