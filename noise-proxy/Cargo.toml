@@ -1,0 +1,22 @@
+[package]
+name = "ii-noise-proxy"
+version = "0.1.0"
+authors = ["Braiins"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.33"
+bytes = "0.6"
+structopt = "0.3.20"
+clap = "2.33"
+futures = "0.3"
+ii-async-utils = {path = "../utils-rs/async-utils"}
+ii-logging = {path = "../utils-rs/logging"}
+ii-stratum = {path = "../protocols/stratum"}
+serde = { version = "1.0.123", features = ["derive"] }
+thiserror = "1.0.23"
+tokio = {version = "0.3", features = ["full"]}
+tokio-util = {version = "0.5", features = ["codec"]}
+toml = "0.5.8"
