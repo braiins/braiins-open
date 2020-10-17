@@ -35,6 +35,10 @@ use tokio::task::{JoinError, JoinHandle};
 
 use super::FutureExt;
 
+pub trait Spawnable {
+    fn run(self, tripwire: Tripwire) -> JoinHandle<()>;
+}
+
 /// Internal, used to signal termination via `trigger`
 /// and notify `Tasks` when that happens.
 #[derive(Debug)]
@@ -262,6 +266,10 @@ impl HaltHandle {
     {
         let ft = f(self.tripwire());
         self.add_task(tokio::spawn(ft));
+    }
+
+    pub fn spawn_object<T: Spawnable>(&self, obj: T) {
+        self.add_task(obj.run(self.tripwire()));
     }
 
     pub fn tripwire(&self) -> Tripwire {
