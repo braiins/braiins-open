@@ -302,14 +302,14 @@ macro_rules! sized_seq_type {
         where
             T: Serialize + for<'dx> Deserialize<'dx>,
         {
-            type Error = ();
+            type Error = super::error::Error;
 
             #[inline]
-            fn try_from(vec: Vec<T>) -> Result<Self, ()> {
+            fn try_from(vec: Vec<T>) -> Result<Self, Self::Error> {
                 if (Self::MIN_LEN..=Self::MAX_LEN).contains(&vec.len()) {
                     Ok(Self(vec))
                 } else {
-                    Err(())
+                    Err(Self::Error::DataTypeOverflow(vec.len(), Self::MAX_LEN))
                 }
             }
         }
@@ -318,14 +318,14 @@ macro_rules! sized_seq_type {
         where
             T: Serialize + for<'dx> Deserialize<'dx> + Clone,
         {
-            type Error = ();
+            type Error = super::error::Error;
 
             #[inline]
-            fn try_from(s: &'a [T]) -> Result<Self, ()> {
+            fn try_from(s: &'a [T]) -> Result<Self, Self::Error> {
                 if (Self::MIN_LEN..=Self::MAX_LEN).contains(&s.len()) {
                     Ok(Self(s.into()))
                 } else {
-                    Err(())
+                    Err(Self::Error::DataTypeOverflow(s.len(), Self::MAX_LEN))
                 }
             }
         }
