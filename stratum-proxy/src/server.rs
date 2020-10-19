@@ -179,7 +179,7 @@ impl ConnTranslation {
         let v1_send_task = async move {
             while let Some(frame) = v1_translation_rx.next().await {
                 if let Err(err) = v1_conn_tx.send(frame).await {
-                    error!("V1 connection failed: {}", err);
+                    warn!("V1 connection failed: {}", err);
                     break;
                 }
             }
@@ -370,7 +370,7 @@ where
 
         match self.do_handle(v2_peer_addr).await {
             Ok(()) => info!("Closing connection from {:?} ...", v2_peer_addr),
-            Err(err) => error!("Connection error: {}, peer: {:?}", err, v2_peer_addr),
+            Err(err) => warn!("Connection error: {}, peer: {:?}", err, v2_peer_addr),
         }
     }
 }
