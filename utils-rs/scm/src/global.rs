@@ -20,5 +20,51 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-pub mod global;
-pub mod version;
+use once_cell::sync::OnceCell;
+
+static VERSION: OnceCell<Version> = OnceCell::new();
+
+#[derive(Clone, Debug)]
+pub struct Version {
+    signature: String,
+    full: String,
+}
+
+impl Version {
+    pub fn set(signature: &str, full: &str) {
+        VERSION
+            .set(Self {
+                signature: signature.to_string(),
+                full: full.to_string(),
+            })
+            .expect("BUG: version is already set");
+    }
+
+    #[inline]
+    pub fn get() -> &'static Self {
+        VERSION.get().expect("BUG: version is not set")
+    }
+
+    #[inline]
+    pub fn signature() -> &'static String {
+        &Self::get().signature
+    }
+
+    #[inline]
+    pub fn full() -> &'static String {
+        &Self::get().full
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn global_version() {
+        Version::set("scm", "1");
+
+        assert_eq!(Version::signature(), "scm");
+        assert_eq!(Version::full(), "1");
+    }
+}
