@@ -23,10 +23,20 @@
 #[macro_export]
 macro_rules! full {
     ($($tt:tt)+) => {
-        format!("{} {}-{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), git_version::git_version!($($tt)+))
+        format!(
+            "{} {}-{}",
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+            git_version::git_version!($($tt)+)
+        )
     };
     () => {
-        format!("{} {}-{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), git_version::git_version!(fallback = "unknown"))
+        format!(
+            "{} {}-{}",
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+            git_version::git_version!(fallback = "unknown")
+        )
     }
 }
 
@@ -53,10 +63,16 @@ mod tests {
 
     #[test]
     fn test_full() {
-        assert_eq!(
-            full!(),
-            format!("ii-scm {}-{}", env!("CARGO_PKG_VERSION"), git_version!())
+        let git_version = git_version!();
+        assert!(
+            git_version
+                .split('-')
+                .next()
+                .expect("BUG: cannot split")
+                .len()
+                == 10
         );
+        assert_eq!(full!(), format!("ii-scm 0.1.0-{}", git_version));
     }
 
     #[test]
@@ -64,16 +80,14 @@ mod tests {
         assert_eq!(
             full!(args = ["--abbrev=40", "--always"]),
             format!(
-                "ii-scm {}-{}",
-                env!("CARGO_PKG_VERSION"),
+                "ii-scm 0.1.0-{}",
                 git_version!(args = ["--abbrev=40", "--always"])
             )
         );
         assert_eq!(
             full!(prefix = "git:", cargo_prefix = "cargo:"),
             format!(
-                "ii-scm {}-{}",
-                env!("CARGO_PKG_VERSION"),
+                "ii-scm 0.1.0-{}",
                 git_version!(prefix = "git:", cargo_prefix = "cargo:")
             )
         );
@@ -81,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_semantic() {
-        assert_eq!(semantic!(), env!("CARGO_PKG_VERSION"));
+        assert_eq!(semantic!(), "0.1.0");
     }
 
     #[test]
