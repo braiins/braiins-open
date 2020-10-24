@@ -21,97 +21,66 @@
 // contact us at opensource@braiins.com.
 
 #[macro_export]
-macro_rules! full {
-    ($($tt:tt)+) => {
+macro_rules! version_full {
+    ($($tt:tt)*) => {
         format!(
             "{} {}-{}",
             env!("CARGO_PKG_NAME"),
-            env!("CARGO_PKG_VERSION"),
-            git_version::git_version!($($tt)+)
-        )
-    };
-    () => {
-        format!(
-            "{} {}-{}",
-            env!("CARGO_PKG_NAME"),
-            env!("CARGO_PKG_VERSION"),
-            git_version::git_version!(fallback = "unknown")
+            $crate::version_semantic!(),
+            $crate::version_git!($($tt)*)
         )
     }
 }
 
 #[macro_export]
-macro_rules! semantic {
+macro_rules! version_semantic {
     () => {
         env!("CARGO_PKG_VERSION")
     };
 }
 
 #[macro_export]
-macro_rules! git {
-    ($($tt:tt)+) => {
-        git_version::git_version!($($tt)+)
-    };
-    () => {
-        git_version::git_version!(fallback = "unknown")
+macro_rules! version_git {
+    ($($tt:tt)*) => {
+        $crate::git_hash!(length = 8, $($tt)*)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use git_version::git_version;
-
     #[test]
-    fn test_full() {
-        let git_version = git_version!();
-        assert!(
-            git_version
-                .split('-')
-                .next()
-                .expect("BUG: cannot split")
-                .len()
-                == 10
-        );
-        assert_eq!(full!(), format!("ii-scm 0.1.0-{}", git_version));
+    fn full() {
+        let hash = ii_scm_git::git_hash!(object = "HEAD", length = 8);
+        assert_eq!(hash.len(), 8);
+        assert_eq!(version_full!(), format!("ii-scm 0.1.0-{}", hash));
     }
 
     #[test]
-    fn test_full_args() {
+    fn full_args() {
+        let hash = ii_scm_git::git_hash!(object = "HEAD", length = 5);
+        assert_eq!(hash.len(), 5);
         assert_eq!(
-            full!(args = ["--abbrev=40", "--always"]),
-            format!(
-                "ii-scm 0.1.0-{}",
-                git_version!(args = ["--abbrev=40", "--always"])
-            )
-        );
-        assert_eq!(
-            full!(prefix = "git:", cargo_prefix = "cargo:"),
-            format!(
-                "ii-scm 0.1.0-{}",
-                git_version!(prefix = "git:", cargo_prefix = "cargo:")
-            )
+            version_full!(object = "HEAD", length = 5),
+            format!("ii-scm 0.1.0-{}", hash)
         );
     }
 
     #[test]
-    fn test_semantic() {
-        assert_eq!(semantic!(), "0.1.0");
+    fn semantic() {
+        assert_eq!(version_semantic!(), "0.1.0");
     }
 
     #[test]
-    fn test_git() {
-        assert_eq!(git!(), git_version!(fallback = "unknown"));
+    fn git() {
+        let hash = ii_scm_git::git_hash!(object = "HEAD", length = 8);
+        assert_eq!(hash.len(), 8);
+        assert_eq!(version_git!(), hash);
     }
 
     #[test]
-    fn test_git_args() {
-        assert_eq!(
-            git!(args = ["--abbrev=40", "--always"]),
-            git_version!(args = ["--abbrev=40", "--always"])
-        );
-        assert_eq!(
-            git!(prefix = "git:", cargo_prefix = "cargo:"),
-            git_version!(prefix = "git:", cargo_prefix = "cargo:")
-        );
+    fn git_args() {
+        let hash = ii_scm_git::git_hash!(object = "HEAD", length = 3);
+        assert_eq!(hash.len(), 3);
+        assert_eq!(version_git!(object = "HEAD", length = 3), hash);
     }
 }

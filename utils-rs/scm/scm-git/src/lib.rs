@@ -20,7 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-pub mod global;
-pub mod version;
+use proc_macro_hack::proc_macro_hack;
 
-pub use ii_scm_git::git_hash;
+#[proc_macro_hack]
+pub use ii_scm_macros::git_hash;
