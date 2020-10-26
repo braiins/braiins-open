@@ -50,14 +50,14 @@ macro_rules! version_git {
 mod tests {
     #[test]
     fn full() {
-        let hash = ii_scm_git::git_hash!(object = "HEAD", length = 8);
+        let hash = ii_scm_macros::git_hash!(object = "HEAD", length = 8);
         assert_eq!(hash.len(), 8);
         assert_eq!(version_full!(), format!("ii-scm 0.1.0-{}", hash));
     }
 
     #[test]
     fn full_args() {
-        let hash = ii_scm_git::git_hash!(object = "HEAD", length = 5);
+        let hash = ii_scm_macros::git_hash!(object = "HEAD", length = 5);
         assert_eq!(hash.len(), 5);
         assert_eq!(
             version_full!(object = "HEAD", length = 5),
@@ -72,14 +72,14 @@ mod tests {
 
     #[test]
     fn git() {
-        let hash = ii_scm_git::git_hash!(object = "HEAD", length = 8);
+        let hash = ii_scm_macros::git_hash!(object = "HEAD", length = 8);
         assert_eq!(hash.len(), 8);
         assert_eq!(version_git!(), hash);
     }
 
     #[test]
     fn git_args() {
-        let hash = ii_scm_git::git_hash!(object = "HEAD", length = 3);
+        let hash = ii_scm_macros::git_hash!(object = "HEAD", length = 3);
         assert_eq!(hash.len(), 3);
         assert_eq!(version_git!(object = "HEAD", length = 3), hash);
     }

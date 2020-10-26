@@ -2,6 +2,5 @@
 
 members = [
     "scm",
-    "scm-git",
     "scm-macros",
 ]

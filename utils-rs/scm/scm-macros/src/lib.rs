@@ -24,7 +24,6 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use proc_macro_hack::proc_macro_hack;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::parse_macro_input;
@@ -101,7 +100,7 @@ fn impl_git_hash(input: GitHashInput) -> syn::Result<proc_macro2::TokenStream> {
     }
 }
 
-#[proc_macro_hack]
+#[proc_macro]
 pub fn git_hash(input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(input as GitHashInput);
 

@@ -23,4 +23,4 @@
 pub mod global;
 pub mod version;
 
-pub use ii_scm_git::git_hash;
+pub use ii_scm_macros::git_hash;
