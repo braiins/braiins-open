@@ -29,9 +29,9 @@ use common::*;
 fn unvariant_macro() {
     let get_value = |frame: Frame| -> Result<u32, u32> {
         unvariant!(frame {
-            foo: Foo => { Ok(foo.into()) },
-            bar: Bar => { Ok(bar.into()) },
-            id: _ => { Err(id) },
+            foo: Foo => Ok(foo.into()),
+            bar: Bar => Ok(bar.into()),
+            id: _ => Err(id),
         })
     };
 
@@ -49,9 +49,9 @@ fn unvariant_macro() {
 fn unvariant_macro_try() {
     let get_value = |frame: Frame| -> Result<u32, u32> {
         unvariant!(try frame {
-            res: TryFoo => { res.map(Into::into) },
-            res: TryBar => { res.map(Into::into) },
-            id: _ => { Err(id) },
+            res: TryFoo => res.map(Into::into),
+            res: TryBar => res.map(Into::into),
+            id: _ => Err(id),
         })
     };
 

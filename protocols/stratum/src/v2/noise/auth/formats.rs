@@ -22,6 +22,7 @@
 
 //! All formats that need to be persisted as physical files, too
 
+// use ed25519_dalek::ed25519::signature::Signature;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::fmt;

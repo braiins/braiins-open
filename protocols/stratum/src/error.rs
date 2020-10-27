@@ -80,7 +80,7 @@ pub enum Error {
 
     /// Invalid Bitcoin hash
     #[error("Invalid Bitcoin hash: {0}")]
-    BitcoinHash(#[from] bitcoin_hashes::Error),
+    BitcoinHash(#[from] bitcoin_hashes::hex::Error),
 
     /// Timeout error
     #[error("Timeout error: {0}")]

@@ -23,7 +23,6 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use proc_macro_hack::proc_macro_hack;
 use quote::quote;
 use syn::parse_macro_input;
 
@@ -43,7 +42,7 @@ pub fn id(args: TokenStream, input: TokenStream) -> TokenStream {
 // in an expression context. And so dtolnay's proc_macro_hack is used here instead.
 // Cf. https://github.com/rust-lang/rust/issues/54727
 // This is to be straightened up once stable rust supports proc_macros in expr context.
-#[proc_macro_hack]
+#[proc_macro]
 pub fn unvariant(input: TokenStream) -> TokenStream {
     let item = parse_macro_input!(input as unvariant::Item);
     unvariant::expand(item).into()

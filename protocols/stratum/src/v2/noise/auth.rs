@@ -23,6 +23,7 @@
 //! Authentication module that provides pubkey and certificate handling API
 
 use bytes::{buf::BufMutExt, BytesMut};
+// use ed25519_dalek::Signer;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::time::{Duration, SystemTime};

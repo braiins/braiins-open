@@ -29,6 +29,7 @@ use std::mem::size_of;
 
 use bytes::BytesMut;
 use futures::channel::mpsc;
+use primitive_types::U256;
 
 use bitcoin_hashes::{sha256d, Hash, HashEngine};
 use serde_json;
@@ -212,7 +213,7 @@ pub struct V2ToV1Translation {
     v2_channel_details: Option<v2::messages::OpenStandardMiningChannel>,
     /// Target difficulty derived from mining.set_difficulty message
     /// The channel opening is not complete until the target is determined
-    v2_target: Option<uint::U256>,
+    v2_target: Option<U256>,
     /// Unique job ID generator
     v2_job_id: SeqId,
     /// Translates V2 job ID to V1 job ID
@@ -237,7 +238,7 @@ impl V2ToV1Translation {
     /// U256 in little endian
     /// TODO: consolidate into common part/generalize
     /// TODO: DIFF1 const target is broken, the last U64 word gets actually initialized to 0xffffffff, not sure why
-    const DIFF1_TARGET: uint::U256 = uint::U256([0, 0, 0, 0xffff0000u64]);
+    const DIFF1_TARGET: U256 = U256([0, 0, 0, 0xffff0000u64]);
 
     pub fn new(
         v1_tx: mpsc::Sender<v1::Frame>,

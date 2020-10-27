@@ -24,6 +24,7 @@ use async_trait::async_trait;
 use std::iter::repeat;
 
 use futures::stream::StreamExt;
+use primitive_types::U256;
 
 use super::*;
 use ii_stratum::test_utils;
@@ -390,8 +391,7 @@ fn test_diff_1_bitcoin_target() {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00,
     ];
-    let expected_difficulty_1_target_uint256 =
-        uint::U256::from_big_endian(&difficulty_1_target_bytes);
+    let expected_difficulty_1_target_uint256 = U256::from_big_endian(&difficulty_1_target_bytes);
 
     assert_eq!(
         expected_difficulty_1_target_uint256,

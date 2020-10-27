@@ -20,6 +20,8 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use primitive_types::U256;
+
 use bitcoin_hashes::hex::{FromHex, ToHex};
 use bitcoin_hashes::{sha256, sha256d, Hash, HashEngine};
 
@@ -44,7 +46,7 @@ fn test_midstate_computation() {
         // 0x2f, 0xa7, 0x22, 0xce
     ]);
 
-    let midstate = engine.midstate();
+    let midstate = engine.midstate().into_inner();
     assert_eq!(
         midstate,
         // expected midstate result
@@ -65,16 +67,16 @@ fn test_hash_to_uint256() {
 
     // convert double SHA256 target to `Hash` structure. sha256d unlike sha256 module converts the
     // string as actual hexadecimal number
-    let target = sha256d::Hash::from_hex(target_str).expect("parse hex");
-    let hash = sha256d::Hash::from_hex(hash_str).expect("parse hex");
+    let target = sha256d::Hash::from_hex(target_str).expect("BUG: parse hex");
+    let hash = sha256d::Hash::from_hex(hash_str).expect("BUG: parse hex");
 
     // the inner representation of bytes is reverted back to its original binary digest
     let target_bytes = target.into_inner();
     let hash_bytes = hash.into_inner();
 
     // internal representation is always little endian
-    let target_uint256 = uint::U256::from_little_endian(&target_bytes);
-    let hash_uint256 = uint::U256::from_little_endian(&hash_bytes);
+    let target_uint256 = U256::from_little_endian(&target_bytes);
+    let hash_uint256 = U256::from_little_endian(&hash_bytes);
 
     assert_eq!(&target.to_hex(), &target_str);
     assert_eq!(&hash.to_hex(), &hash_str);
@@ -100,7 +102,7 @@ fn test_target_difficulty() {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00,
     ];
-    let difficulty_1_target_uint256 = uint::U256::from_big_endian(&difficulty_1_target_bytes);
+    let difficulty_1_target_uint256 = U256::from_big_endian(&difficulty_1_target_bytes);
 
     assert_eq!(
         &difficulty_1_target_uint256.to_hex(),
@@ -138,7 +140,7 @@ fn test_target_difficulty() {
     ];
 
     for test in tests {
-        let difficulty_target_uint256 = uint::U256::from_big_endian(&test.output);
+        let difficulty_target_uint256 = U256::from_big_endian(&test.output);
         assert_eq!(
             difficulty_1_target_uint256 / test.difficulty,
             difficulty_target_uint256

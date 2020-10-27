@@ -28,6 +28,8 @@ pub use test_blocks::{TestBlock, TEST_BLOCKS};
 use packed_struct::prelude::*;
 use packed_struct_codegen::PackedStruct;
 
+use primitive_types::U256;
+
 use bitcoin_hashes::{sha256, HashEngine};
 // reexport Bitcoin hash to remove dependency on bitcoin_hashes in other modules
 pub use bitcoin_hashes::{hex::FromHex, sha256d::Hash as DHash, Hash as HashTrait};
@@ -97,7 +99,7 @@ impl BlockHeader {
     pub fn midstate(&self) -> Midstate {
         let mut engine = sha256::Hash::engine();
         engine.input(&self.into_bytes()[..BLOCK_HEADER_CHUNK1_SIZE]);
-        engine.midstate().into()
+        engine.midstate().into_inner().into()
     }
 }
 
@@ -109,7 +111,7 @@ type Sha256Array = [u8; SHA256_DIGEST_SIZE];
 pub struct Midstate(Sha256Array);
 
 impl Midstate {
-    pub fn from_hex(s: &str) -> Result<Self, bitcoin_hashes::Error> {
+    pub fn from_hex(s: &str) -> Result<Self, bitcoin_hashes::hex::Error> {
         // bitcoin crate implements `FromHex` trait for byte arrays with macro `impl_fromhex_array!`
         // this conversion is compatible with `Sha256Array` which is alias to array
         Ok(Self(FromHex::from_hex(s)?))
@@ -219,17 +221,17 @@ impl<'a, T: FromMidstateWord<T>> DoubleEndedIterator for MidstateWords<'a, T> {
 /// target as a hexadecimal string similar to Bitcoin double hash which is SHA256 double hash
 /// printed in reverse order.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Target(uint::U256);
+pub struct Target(U256);
 
 impl Target {
-    fn difficulty_1_target() -> uint::U256 {
-        uint::U256::from_big_endian(&DIFFICULTY_1_TARGET_BYTES)
+    fn difficulty_1_target() -> U256 {
+        U256::from_big_endian(&DIFFICULTY_1_TARGET_BYTES)
     }
 
     /// Create target from hexadecimal string which has the same representation as Bitcoin SHA256
     /// double hash (the hash is written in reverse order because the hash is treated as 256bit
     /// little endian number)
-    pub fn from_hex(s: &str) -> Result<Self, bitcoin_hashes::Error> {
+    pub fn from_hex(s: &str) -> Result<Self, bitcoin_hashes::hex::Error> {
         // the target is treated the same as Bitcoin's double hash
         // the hexadecimal string is already reversed so load it as a big endian
         let target_dhash = DHash::from_hex(s)?;
@@ -262,9 +264,9 @@ impl Target {
         }
 
         Ok(if exponent <= 3 {
-            Into::<uint::U256>::into(mantissa >> (8 * (3 - exponent)))
+            Into::<U256>::into(mantissa >> (8 * (3 - exponent)))
         } else {
-            Into::<uint::U256>::into(mantissa) << (8 * (exponent - 3))
+            Into::<U256>::into(mantissa) << (8 * (exponent - 3))
         }
         .into())
     }
@@ -294,7 +296,7 @@ impl Target {
     }
 
     /// Yields the U256 number that represents the target
-    pub fn into_inner(self) -> uint::U256 {
+    pub fn into_inner(self) -> U256 {
         self.0
     }
 
@@ -312,14 +314,14 @@ impl Default for Target {
     }
 }
 
-impl From<uint::U256> for Target {
+impl From<U256> for Target {
     /// Get target from 256bit integer
-    fn from(value: uint::U256) -> Self {
+    fn from(value: U256) -> Self {
         Self(value)
     }
 }
 
-impl From<Target> for uint::U256 {
+impl From<Target> for U256 {
     /// Get 256bit integer from target
     fn from(target: Target) -> Self {
         target.0
@@ -340,7 +342,7 @@ impl From<Sha256Array> for Target {
     /// Get target from binary representation of SHA256
     /// The target has the same binary representation as Bitcoin SHA256 double hash.
     fn from(bytes: Sha256Array) -> Self {
-        Self(uint::U256::from_little_endian(&bytes))
+        Self(U256::from_little_endian(&bytes))
     }
 }
 
@@ -351,8 +353,8 @@ impl From<DHash> for Target {
     }
 }
 
-impl AsRef<uint::U256> for Target {
-    fn as_ref(&self) -> &uint::U256 {
+impl AsRef<U256> for Target {
+    fn as_ref(&self) -> &U256 {
         &self.0
     }
 }
@@ -619,6 +621,7 @@ pub mod test {
     use test_blocks::TEST_BLOCKS;
 
     use bitcoin_hashes::hex::ToHex;
+    use std::io::Write;
 
     #[test]
     fn test_block_header() {
@@ -671,23 +674,25 @@ pub mod test {
 
     #[test]
     fn test_midstate_words() {
-        use bytes::{BufMut, BytesMut};
-
         for block in TEST_BLOCKS.iter() {
             // test midstate conversion to words iterator and back to bytes representation
             // * for u32 words
-            let mut midstate = BytesMut::with_capacity(32);
+            let mut midstate = Vec::with_capacity(32);
 
-            for midstate_word in block.midstate.words() {
-                midstate.put_u32_le(midstate_word);
+            for midstate_word in block.midstate.words::<u32>() {
+                midstate
+                    .write(&midstate_word.to_le_bytes())
+                    .expect("BUG: cannot write midstate");
             }
-            assert_eq!(block.midstate.as_ref()[..], midstate);
+            assert_eq!(block.midstate.as_ref(), midstate.as_slice());
             // * for u64 words
             midstate.clear();
-            for midstate_word in block.midstate.words() {
-                midstate.put_u64_le(midstate_word);
+            for midstate_word in block.midstate.words::<u64>() {
+                midstate
+                    .write(&midstate_word.to_le_bytes())
+                    .expect("BUG: cannot write midstate");
             }
-            assert_eq!(block.midstate.as_ref()[..], midstate);
+            assert_eq!(block.midstate.as_ref(), midstate.as_slice());
 
             // revert midstate as a reference result
             let mut midstate_rev: Sha256Array = block.midstate.into();
@@ -696,16 +701,20 @@ pub mod test {
             // test midstate reversion with words iterator
             // * for u32 words
             midstate.clear();
-            for midstate_word in block.midstate.words().rev() {
-                midstate.put_u32_be(midstate_word);
+            for midstate_word in block.midstate.words::<u32>().rev() {
+                midstate
+                    .write(&midstate_word.to_be_bytes())
+                    .expect("BUG: cannot write midstate");
             }
-            assert_eq!(midstate_rev[..], midstate);
+            assert_eq!(midstate_rev.as_ref(), midstate.as_slice());
             // * for u64 words
             midstate.clear();
-            for midstate_word in block.midstate.words().rev() {
-                midstate.put_u64_be(midstate_word);
+            for midstate_word in block.midstate.words::<u64>().rev() {
+                midstate
+                    .write(&midstate_word.to_be_bytes())
+                    .expect("BUG: cannot write midstate");
             }
-            assert_eq!(midstate_rev[..], midstate);
+            assert_eq!(midstate_rev.as_ref(), midstate.as_slice());
         }
     }
 
@@ -717,8 +726,8 @@ pub mod test {
 
         // the default target is equal to target with difficulty 1
         assert_eq!(
-            Into::<uint::U256>::into(Target::default()),
-            uint::U256::from_big_endian(&DIFFICULTY_1_TARGET_BYTES)
+            Into::<U256>::into(Target::default()),
+            U256::from_big_endian(&DIFFICULTY_1_TARGET_BYTES)
         );
 
         // the target is stored into byte array as a 256bit little endian integer
@@ -734,8 +743,7 @@ pub mod test {
         );
 
         // reference value of target with difficulty 1
-        let difficulty_1_target: Target =
-            uint::U256::from_big_endian(&DIFFICULTY_1_TARGET_BYTES).into();
+        let difficulty_1_target: Target = U256::from_big_endian(&DIFFICULTY_1_TARGET_BYTES).into();
 
         // check conversion from difficulty
         assert_eq!(difficulty_1_target, Target::from_pool_difficulty(1));

@@ -123,11 +123,8 @@
 
 use std::pin::Pin;
 
-use proc_macro_hack::proc_macro_hack;
-
 pub use ii_unvariant_macros::{handler, id};
 
-#[proc_macro_hack]
 pub use ii_unvariant_macros::unvariant;
 
 mod macro_private;
