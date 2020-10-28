@@ -26,13 +26,11 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use futures::prelude::*;
-use pin_project::pin_project;
+use futures::ready;
 use tokio::net::{TcpListener, TcpStream};
 
-#[pin_project]
 #[derive(Debug)]
 pub struct Server {
-    #[pin]
     tcp: TcpListener,
 }
 
@@ -49,8 +47,7 @@ impl Stream for Server {
     type Item = std::io::Result<TcpStream>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let mut tcp = self.project().tcp;
-
-        Pin::new(&mut tcp.incoming()).poll_next(cx)
+        let (socket, _) = ready!(self.tcp.poll_accept(cx))?;
+        Poll::Ready(Some(Ok(socket)))
     }
 }

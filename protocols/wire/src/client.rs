@@ -317,7 +317,7 @@ impl Client {
         if let Some((when, delay)) = self.next_delay.take() {
             let since_last_attempt = Instant::now().duration_since(when);
             if delay > since_last_attempt {
-                time::delay_for(delay - since_last_attempt).await;
+                time::sleep(delay - since_last_attempt).await;
             }
         }
 
@@ -332,7 +332,7 @@ impl Client {
                 let backoff = self.backoff.next();
                 self.next_delay = Some((Instant::now(), backoff));
                 self.retries += 1;
-                let start_time = self.start_time.unwrap();
+                let start_time = self.start_time.expect("BUG: Missing start time");
                 Err(AttemptError::new(backoff, self.retries, start_time, err))
             }
         }
