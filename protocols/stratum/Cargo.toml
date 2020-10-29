@@ -19,8 +19,9 @@ ii-logging = { path = "../../utils-rs/logging" }
 ii-unvariant = { path = "../../utils-rs/unvariant/unvariant"}
 futures = "0.3.5"
 async-trait = "0.1"
-tokio = { version = "0.2.20", features = ["full"] }
-tokio-util = { version = "0.3.1", features = ["codec"] }
+tokio = { version = "0.3.2", features = ["full"] }
+tokio-util = { version = "0.4.0", features = ["codec"] }
+bytes = "0.5.6"
 thiserror = "1.0.21"
 anyhow = "1.0.33"
 lazy_static = "1.4.0"
@@ -36,7 +37,6 @@ packed_struct_codegen = "0.3.1"
 bitcoin_hashes = "0.9.4"
 snow = {version = "0.7.2", features = ["ring-accelerated"]}
 primitive-types = "0.7.2"
-bytes = "0.5.6"
 structopt = "0.3.20"
 rand = "0.7.3"
 # TODO: Update ed25519-dalek when stable 1.0.0 is out
