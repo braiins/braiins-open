@@ -91,38 +91,75 @@ pub struct Trigger(watch::Sender<bool>);
 
 impl Trigger {
     pub fn cancel(self) {
-        let _ = self.0.broadcast(true);
+        let _ = self.0.send(true);
     }
 }
+
+type WaitForHaltFuture =
+    Pin<Box<dyn Future<Output = Result<(), watch::error::RecvError>> + Send + Sync>>;
 
 /// A synchronization end that tasks can use to wait on
 /// using eg. `take_until()` or `select!()` or similar
 /// to await cancellation.
 ///
 /// NB. This is really just a thin wrapper around `watch::Receiver`.
-#[derive(Clone, Debug)]
-pub struct Tripwire(watch::Receiver<bool>);
+pub struct Tripwire {
+    receiver: Option<watch::Receiver<bool>>,
+    wait_for_halt_future: Option<WaitForHaltFuture>,
+}
 
 impl Tripwire {
     pub fn new() -> (Trigger, Self) {
-        let (trigger, tripwire) = watch::channel(false);
-        (Trigger(trigger), Self(tripwire))
+        let (sender, receiver) = watch::channel(false);
+        (
+            Trigger(sender),
+            Tripwire {
+                receiver: Some(receiver),
+                wait_for_halt_future: None,
+            },
+        )
+    }
+
+    async fn wait_for_halt(
+        mut receiver: watch::Receiver<bool>,
+    ) -> Result<(), watch::error::RecvError> {
+        loop {
+            receiver.changed().await?;
+            if *receiver.borrow() {
+                break;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Clone for Tripwire {
+    fn clone(&self) -> Self {
+        Self {
+            receiver: self.receiver.clone(),
+            wait_for_halt_future: None,
+        }
     }
 }
 
 impl Future for Tripwire {
     type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<()> {
-        let mut this = self.as_mut();
-        let mut next = this.0.next();
-
-        // We need to discard a false value being yielded from
-        // the watch, because after being created, the watch Receiver
-        // is immediately ready with the initial value.
-        match Pin::new(&mut next).poll(ctx) {
-            Poll::Pending | Poll::Ready(Some(false)) => Poll::Pending,
-            _ => Poll::Ready(()),
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let receiver = match &self.receiver {
+            Some(receiver) => receiver.clone(),
+            None => return Poll::Ready(()),
+        };
+        let wait_for_halt_future = self
+            .wait_for_halt_future
+            .get_or_insert_with(|| Box::pin(Self::wait_for_halt(receiver)));
+        match wait_for_halt_future.as_mut().poll(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(_) => {
+                self.receiver.take();
+                self.wait_for_halt_future.take();
+                Poll::Ready(())
+            }
         }
     }
 }
@@ -143,7 +180,6 @@ impl Future for Tripwire {
 /// Note that `halt()` or `halt_on_signal()` doesn't necessarily need to be called
 /// after `ready()`. These can be called pretty much anytime and it won't cause
 /// a race condition as long as `ready()` is called in the right moment.
-#[derive(Debug)]
 pub struct HaltHandle {
     /// Tripwire that is cloned into
     /// 'child' tasks when they are started with this handle.
@@ -229,7 +265,7 @@ impl HaltHandle {
             .take()
         {
             halt.trigger.cancel();
-            halt.notify_join.notify();
+            halt.notify_join.notify_one();
         }
     }
 
@@ -371,7 +407,7 @@ mod test {
         handle.ready();
 
         // Delay a bit so that the task has time to exit if it is to exit
-        time::delay_for(Duration::from_millis(500)).await;
+        time::sleep(Duration::from_millis(500)).await;
 
         // Verify task didn't exit
         assert_eq!(task_done.load(Ordering::SeqCst), false);
@@ -401,7 +437,7 @@ mod test {
 
     // Test that spawn() / halt() / join() is not racy when ready()
     // is used appropriately.
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test(flavor = "multi_thread")]
     async fn halthandle_race() {
         const NUM_TASKS: usize = 10;
 
@@ -418,7 +454,7 @@ mod test {
 
             tokio::spawn(async move {
                 // Delay a bit so that join() happens sooner than spawns
-                time::delay_for(Duration::from_millis(100)).await;
+                time::sleep(Duration::from_millis(100)).await;
 
                 // Spawn a couple of tasks on the handle
                 for _ in 0..NUM_TASKS {
@@ -451,7 +487,7 @@ mod test {
                 forever_stream(tripwire).await;
 
                 // Delay cleanup on purpose here
-                time::delay_for(Duration::from_secs(9001)).await;
+                time::sleep(Duration::from_secs(9001)).await;
             }
         });
 
