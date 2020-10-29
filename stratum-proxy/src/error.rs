@@ -46,7 +46,7 @@ pub enum Error {
 
     /// Timeout error.
     #[error("Timeout error: {0}")]
-    Timeout(#[from] tokio::time::Elapsed),
+    Timeout(#[from] tokio::time::error::Elapsed),
 
     /// Utf8 error
     #[error("Error decoding UTF-8 string: {0}")]

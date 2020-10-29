@@ -46,7 +46,7 @@ pub async fn backoff<E, T, FT: Future<Output = Result<T, E>>, F: Fn() -> FT>(
     }
 
     for _ in 0..iterations {
-        time::delay_for(Duration::from_millis(delay as u64)).await;
+        time::sleep(Duration::from_millis(delay as u64)).await;
         delay = 2 * delay;
 
         res = f().await;
