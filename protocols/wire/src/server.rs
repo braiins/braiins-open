@@ -37,6 +37,7 @@ pub struct Server {
 impl Server {
     pub fn bind<A: StdToSocketAddrs>(addr: A) -> std::io::Result<Self> {
         let tcp = StdTcpListener::bind(addr)?;
+        tcp.set_nonblocking(true)?;
         let tcp = TcpListener::from_std(tcp)?;
 
         Ok(Server { tcp })
