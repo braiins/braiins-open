@@ -25,6 +25,8 @@ use std::net::ToSocketAddrs as StdToSocketAddrs;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate::tokio;
+
 use futures::prelude::*;
 use futures::ready;
 use tokio::net::{TcpListener, TcpStream};
@@ -47,7 +49,11 @@ impl Server {
 impl Stream for Server {
     type Item = std::io::Result<TcpStream>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    // NB. the unused_mut is because of tokio02 where the mut is required
+    fn poll_next(
+        #[allow(unused_mut)] mut self: Pin<&mut Self>,
+        cx: &mut Context,
+    ) -> Poll<Option<Self::Item>> {
         let (socket, _) = ready!(self.tcp.poll_accept(cx))?;
         Poll::Ready(Some(Ok(socket)))
     }

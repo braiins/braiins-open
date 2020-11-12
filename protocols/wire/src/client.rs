@@ -28,8 +28,16 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 use std::vec;
 
+use crate::tokio;
+
 use tokio::net::TcpStream;
+#[cfg(feature = "tokio03")]
 use tokio::time;
+
+#[cfg(feature = "tokio02")]
+mod time {
+    pub use super::tokio::time::delay_for as sleep;
+}
 
 #[cfg(feature = "serde")]
 use serde::{de, ser};

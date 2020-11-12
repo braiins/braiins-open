@@ -7,11 +7,18 @@ edition = "2018"
 
 [dependencies]
 futures = "0.3.7"
-tokio = { version = "0.3.2", features = ["full"] }
-tokio-util = { version = "0.4.0", features = ["codec"] }
+tokio = { version = "0.3.2", features = ["full"], optional = true }
+tokio-util = { version = "0.4.0", features = ["codec"], optional = true }
+tokio02_ = { package = "tokio", version = "0.2.22", features = ["full"], optional = true }
+tokio02-util = { package = "tokio-util", version = "0.3.1", features = ["codec"], optional = true }
 pin-project = "1.0.1"
 thiserror = "1.0.21"
 serde = { version = "1.0.117", optional = true }
 
 [dev-dependencies]
 serde_json = "1.0.59"
+
+[features]
+default = ["tokio03"]
+tokio03 = ["tokio", "tokio-util"]
+tokio02 = ["tokio02_", "tokio02-util"]

@@ -20,8 +20,18 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-// Futures and Tokio are re-exported here for the benefit of dependant crates.
-// That way, the dependencies are specified in one place (in wire/Cargo.toml).
+#[cfg(all(feature = "tokio03", feature = "tokio02"))]
+compile_error!("You can't use both Tokio 0.3 and 0.2. Note: The `tokio02` feature requires default features to be turned off");
+
+#[cfg(feature = "tokio03")]
+pub(crate) use tokio;
+#[cfg(feature = "tokio03")]
+pub(crate) use tokio_util;
+
+#[cfg(feature = "tokio02")]
+pub(crate) use tokio02_ as tokio;
+#[cfg(feature = "tokio02")]
+pub(crate) use tokio02_util as tokio_util;
 
 mod connection;
 pub use connection::*;
