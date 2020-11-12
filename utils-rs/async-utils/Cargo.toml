@@ -7,4 +7,9 @@ edition = "2018"
 
 [dependencies]
 futures = "0.3.7"
-tokio = { version = "0.3.2", features = ["full"] }
+tokio = { version = "0.3.2", features = ["full"], optional = true }
+tokio02 = { package = "tokio", version = "0.2.22", features = ["full"], optional = true }
+
+[features]
+default = ["tokio03"]
+tokio03 = ["tokio"]
