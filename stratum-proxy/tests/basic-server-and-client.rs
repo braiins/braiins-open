@@ -28,11 +28,9 @@
 //! communicating any failures/panics to the test harness.
 
 use async_trait::async_trait;
+use futures::prelude::*;
 use std::convert::{TryFrom, TryInto};
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::str::FromStr;
-
-use futures::prelude::*;
 
 use ii_stratum::error::Error;
 use ii_stratum::test_utils;
@@ -44,8 +42,6 @@ use ii_wire::{
     Address, Connection, Server,
     {proxy, proxy::WithProxyInfo},
 };
-
-use tokio::process::Command;
 
 mod utils;
 
