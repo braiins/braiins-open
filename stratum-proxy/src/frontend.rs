@@ -26,6 +26,7 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 use tokio::{fs::File, io::AsyncReadExt};
 
+use ii_scm::global::Version;
 use ii_stratum::v2::noise::auth::{Certificate, StaticSecretKeyFormat};
 use ii_wire::Address;
 
@@ -33,6 +34,7 @@ use crate::error::{Error, Result};
 use crate::server::ProxyProtocolConfig;
 
 #[derive(Debug, StructOpt)]
+#[structopt(name = Version::signature().as_str(), version = Version::full().as_str())]
 pub struct Args {
     #[structopt(short = "c", long = "conf", help("Path to configuration file"))]
     pub config_file: PathBuf,

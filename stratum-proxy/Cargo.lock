@@ -689,6 +689,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ii-scm"
+version = "0.1.0"
+dependencies = [
+ "ii-scm-macros",
+ "once_cell",
+]
+
+[[package]]
+name = "ii-scm-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.7",
+ "syn 1.0.48",
+]
+
+[[package]]
 name = "ii-stratum"
 version = "0.1.0"
 dependencies = [
@@ -735,6 +752,7 @@ dependencies = [
  "futures",
  "ii-async-utils",
  "ii-logging",
+ "ii-scm",
  "ii-stratum",
  "ii-unvariant",
  "ii-wire",

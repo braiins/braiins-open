@@ -11,6 +11,7 @@ ii-wire = { path = "../protocols/wire", features = ["serde"]}
 ii-async-utils = { path = "../utils-rs/async-utils" }
 ii-logging = { path = "../utils-rs/logging" }
 ii-unvariant = { path = "../utils-rs/unvariant/unvariant" }
+ii-scm = { path = "../utils-rs/scm/scm" }
 futures = "0.3.7"
 async-trait = "0.1.41"
 tokio = { version = "0.3.2", features = ["full"] }

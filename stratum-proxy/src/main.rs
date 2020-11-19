@@ -28,12 +28,15 @@ use ctrlc;
 use std::cell::RefCell;
 use structopt::StructOpt;
 
+use ii_logging::macros::*;
+use ii_scm::global::Version;
 use ii_stratum_proxy::frontend::{Args, Config};
 use ii_stratum_proxy::server;
-use ii_stratum_proxy::server::ProxyConfig;
+use ii_stratum_proxy::server::ProxyProtocolConfig;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    Version::set("StratumProxy", ii_scm::version_full!().as_str());
     ii_async_utils::setup_panic_handling();
     let _log_guard =
         ii_logging::setup_for_app(ii_logging::LoggingConfig::ASYNC_LOGGER_DRAIN_CHANNEL_SIZE);
@@ -44,7 +47,8 @@ async fn main() -> Result<()> {
         .await
         .context("Proxy configuration file couldn't be read.")?;
     let config = toml::from_str::<Config>(config_file_string.as_str())?;
-
+    info!("Starting {}: {}", Version::signature(), Version::full(),);
+    info!("Config: {:#?}", config);
     let server = server::ProxyServer::listen(
         config.listen_address.clone(),
         config.upstream_address.clone(),
