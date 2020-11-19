@@ -35,6 +35,7 @@ use crate::test_utils::common::*;
 use crate::test_utils::v1;
 use crate::v2::{framing, messages::*, telemetry, types::*};
 
+#[derive(Clone, Debug)]
 pub enum TestMessage {
     MsgSetupConnection(SetupConnection),
     MsgSetupConnectionSuccess(SetupConnectionSuccess),
@@ -302,7 +303,14 @@ pub trait TestFrameReceiver {
         U: TryFrom<TestMessage, Error = ()>,
     {
         let msg = self.next_v2().await;
-        f(U::try_from(msg).expect(format!("BUG: expected '{}'", stringify!(U)).as_str()))
+        f(U::try_from(msg.clone()).expect(
+            format!(
+                "BUG: expected '{}', received: {:?}",
+                std::any::type_name::<U>(),
+                msg
+            )
+            .as_str(),
+        ))
     }
 }
 

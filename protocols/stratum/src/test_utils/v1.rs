@@ -35,6 +35,7 @@ use super::common::*;
 use crate::error::Result;
 use crate::v1::{framing::*, messages::*, rpc::*, ExtraNonce1, HexBytes, MessageId};
 
+#[derive(Clone, Debug)]
 pub enum TestMessage {
     MsgSubscribe(MessageId, Subscribe),
     MsgExtranonceSubscribe(MessageId, ExtranonceSubscribe),
@@ -257,8 +258,14 @@ pub trait TestFrameReceiver {
         U: TryFrom<(MessageId, TestMessage), Error = ()>,
     {
         let msg = self.next_v1().await;
-        f(U::try_from((expected_id, msg))
-            .expect(format!("BUG: expected '{}'", stringify!(U)).as_str()))
+        f(U::try_from((expected_id, msg.clone())).expect(
+            format!(
+                "BUG: expected '{}', received: {:?}",
+                std::any::type_name::<U>(),
+                msg
+            )
+            .as_str(),
+        ))
     }
 }
 
