@@ -157,52 +157,6 @@ async fn test_v2server() {
         .await;
 }
 
-// WIP attempt to generalize
-//fn test_server<F, P>(client_handler: &P::Handler, server_handler: &P::Handler, port: usize)
-//where
-//    F: ii_wire::Framing,
-//    P: ii_wire::ProtocolBase,
-//    <F as ii_wire::Framing>::Error: std::fmt::Debug,
-//    <F as ii_wire::Framing>::Tx: std::convert::From<ii_wire::Frame>,
-//    <F as ii_wire::Framing>::Rx:
-//{
-//    ii_async_compat::run(
-//        async {
-//            let addr = format!("{}:{}", ADDR, port).parse().unwrap();
-//
-//            let mut server = Server::<F>::bind(&addr).unwrap();
-//
-//            // Spawn server task that reacts to any incoming message and responds
-//            // with SetupMiningConnectionSuccess
-//            tokio::spawn_async(async move {
-//                let mut conn = await!(server.next()).unwrap().unwrap();
-//                let msg:ii_wire::Message<P> = await!(conn.next()).unwrap().unwrap();
-//                // test handler verifies that the message
-//                msg.accept(server_handler);
-//
-//                // test response frame
-//                let response: Frame =
-//                    RpcResponse(test_utils::v1::build_subscribe_ok_rpc_response())
-//                        .try_into()
-//                        .expect("Cannot serialize response");
-//
-//                await!(conn.send(response));
-//            });
-//
-//            // Testing client
-//            let mut connection =
-//                await!(Connection::<F>::connect(addr)).expect("Could not connect");
-//            let request: TxFrame = RpcRequest(test_utils::v1::build_subscribe_rpc_request())
-//                .try_into()
-//                .expect("Cannot serialize request frame");
-//            await!(connection.send(request));
-//
-//            let response = await!(connection.next()).unwrap().unwrap();
-//            response.accept(client_handler);
-//        }
-//    );
-//}
-
 fn v1server_task<A: ToSocketAddrs>(
     addr: A,
     expected_proxy_header: Option<proxy::ProxyInfo>,
@@ -264,8 +218,7 @@ fn v1server_task<A: ToSocketAddrs>(
     }
 }
 
-/// TODO this test is currently work in progress and is disfunctional. Code needs to be consolidated
-/// And factor out common code with V2 server as attempted above.
+/// Verify functionality of stratum V1 server
 #[tokio::test]
 async fn test_v1server() {
     let addr: SocketAddr = format!("{}:{}", ADDR, PORT_V1)
@@ -315,17 +268,19 @@ async fn test_v1server() {
         .await;
 }
 
-async fn test_v2_client(server_addr: &Address, proxy_header: &Option<proxy::ProxyInfo>) {
+/// Helper V2 client for testing the stratum proxy with or without proxy protocol
+/// TODO: use StratumV2Tester once it is available (equivalent of StratumV1Tester)
+async fn test_v2_client(server_addr: &Address, proxy_proto_info: &Option<proxy::ProxyInfo>) {
     // Test client for V2
     utils::backoff(50, 4, move || {
         async move {
             let mut conn = server_addr.connect().await?;
-            if let Some(proxy_header) = proxy_header {
+            if let Some(proxy_proto_info) = proxy_proto_info {
                 proxy::Connector::new()
                     .connect_to(
                         &mut conn,
-                        proxy_header.original_source,
-                        proxy_header.original_destination,
+                        proxy_proto_info.original_source,
+                        proxy_proto_info.original_destination,
                     )
                     .await
                     .expect("Cannot send proxy header");
@@ -360,7 +315,7 @@ async fn test_v2_client(server_addr: &Address, proxy_header: &Option<proxy::Prox
 }
 
 #[tokio::test]
-async fn test_v2server_full_no_proxy() {
+async fn test_v2server_full_no_proxy_protocol() {
     let addr_v1 = Address(ADDR.into(), PORT_V1_FULL);
     let addr_v2 = Address(ADDR.into(), PORT_V2_FULL);
 
@@ -391,7 +346,7 @@ async fn test_v2server_full_no_proxy() {
 }
 
 #[tokio::test]
-async fn test_v2server_full_with_proxy() {
+async fn test_v2server_full_with_proxy_protocol() {
     let addr_v1 = Address(ADDR.into(), PORT_V1_WITH_PROXY);
     let addr_v2 = Address(ADDR.into(), PORT_V2_WITH_PROXY);
 
