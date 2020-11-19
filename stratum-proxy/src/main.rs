@@ -51,7 +51,9 @@ async fn main() -> Result<()> {
         server::handle_connection,
         config.read_certificate_secret_key_pair().await?,
         (),
-        ProxyConfig::default(),
+        config
+            .proxy_protocol_config
+            .unwrap_or_else(ProxyProtocolConfig::default),
     )
     .context("Cannot bind the server")?;
 

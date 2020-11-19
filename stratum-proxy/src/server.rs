@@ -283,42 +283,26 @@ impl SecurityContext {
 pub enum ProxyProtocolVersion {
     V1,
     V2,
-    Both,
 }
 
-impl std::str::FromStr for ProxyProtocolVersion {
-    type Err = Error;
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        use ProxyProtocolVersion::*;
-        Ok(match s {
-            "v1" => V1,
-            "v2" => V2,
-            "both" => Both,
-            _ => return Err(Error::General("Invalid PROXY protocol version".into())),
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct ProxyConfig {
-    /// Accepts PROXY protocol header on downstream connection
-    pub accept_proxy_protocol: bool,
-    /// PROXY protocol is optional on incoming connection, if not present incoming connection works like normal TCP connection
-    pub proxy_protocol_optional: bool,
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProxyProtocolConfig {
+    /// When true, the PROXY protocol is enforced and the server will not accept any connection
+    /// that doesn't initiate PROXY protocol session
+    pub downstream_required: bool,
     /// Accepted versions of PROXY protocol on incoming connection - either only V1 or V2 or both
-    pub accepted_proxy_protocol_versions: ProxyProtocolVersion,
+    pub downstream_versions: Vec<ProxyProtocolVersion>,
     /// If proxy protocol information is available from downstream connection,
-    /// passes it to upstream connection
-    pub pass_proxy_protocol: Option<ProxyProtocolVersion>,
+    /// this option specifies what upstream version to use
+    pub upstream_version: Option<ProxyProtocolVersion>,
 }
 
-impl Default for ProxyConfig {
+impl Default for ProxyProtocolConfig {
     fn default() -> Self {
-        ProxyConfig {
-            accept_proxy_protocol: false,
-            proxy_protocol_optional: false,
-            accepted_proxy_protocol_versions: ProxyProtocolVersion::Both,
-            pass_proxy_protocol: None,
+        ProxyProtocolConfig {
+            downstream_required: false,
+            downstream_versions: vec![],
+            upstream_version: None,
         }
     }
 }
@@ -358,7 +342,7 @@ struct ProxyConnection<FN, T> {
     security_context: Option<Arc<SecurityContext>>,
     generic_context: T,
     /// Configuration of PROXY protocol
-    proxy_config: ProxyConfig,
+    proxy_protocol_config: ProxyProtocolConfig,
 }
 
 impl<FN, FT, T> ProxyConnection<FN, T>
@@ -373,7 +357,7 @@ where
         security_context: Option<Arc<SecurityContext>>,
         get_connection_handler: Arc<FN>,
         generic_context: T,
-        proxy_config: ProxyConfig,
+        proxy_protocol_config: ProxyProtocolConfig,
     ) -> Self {
         Self {
             v2_downstream_conn,
@@ -381,7 +365,7 @@ where
             get_connection_handler,
             security_context,
             generic_context,
-            proxy_config,
+            proxy_protocol_config,
         }
     }
 
@@ -391,18 +375,19 @@ where
     ///  - pass PROXY protocol header (if configured)
     ///  - establish noise handshake (if configured)
     async fn do_handle(self, v2_peer_addr: SocketAddr) -> Result<()> {
-        let incoming = if self.proxy_config.accept_proxy_protocol {
-            use ProxyProtocolVersion::*;
-            let (support_v1, support_v2) = match self.proxy_config.accepted_proxy_protocol_versions
-            {
-                V1 => (true, false),
-                V2 => (false, true),
-                Both => (true, true),
-            };
+        let incoming = if !self.proxy_protocol_config.downstream_versions.is_empty() {
             let acceptor = Acceptor::new()
-                .support_v1(support_v1)
-                .support_v2(support_v2)
-                .require_proxy_header(!self.proxy_config.proxy_protocol_optional);
+                .support_v1(
+                    self.proxy_protocol_config
+                        .downstream_versions
+                        .contains(&ProxyProtocolVersion::V1),
+                )
+                .support_v2(
+                    self.proxy_protocol_config
+                        .downstream_versions
+                        .contains(&ProxyProtocolVersion::V1),
+                )
+                .require_proxy_header(self.proxy_protocol_config.downstream_required);
             let stream = acceptor.accept(self.v2_downstream_conn).await?;
             debug!("Received connection from downstream proxy - original source, {:?} original destination {:?}",
                    stream.original_peer_addr(), stream.original_destination_addr());
@@ -418,7 +403,7 @@ where
         // peer address
         let mut v1_conn = v1_client.next().await?;
 
-        if let Some(version) = self.proxy_config.pass_proxy_protocol {
+        if let Some(version) = self.proxy_protocol_config.upstream_version {
             if let (src @ Some(_), dst @ Some(_)) = (
                 incoming.original_peer_addr(),
                 incoming.original_destination_addr(),
@@ -532,7 +517,7 @@ pub struct ProxyServer<FN, T> {
     security_context: Option<Arc<SecurityContext>>,
     generic_context: T,
     /// PROXY protocol configuration
-    proxy_config: ProxyConfig,
+    proxy_protocol_config: ProxyProtocolConfig,
 }
 
 impl<FN, FT, T> ProxyServer<FN, T>
@@ -552,7 +537,7 @@ where
             v2::noise::auth::StaticSecretKeyFormat,
         )>,
         generic_context: T,
-        proxy_config: ProxyConfig,
+        proxy_protocol_config: ProxyProtocolConfig,
     ) -> Result<ProxyServer<FN, T>> {
         let server = Server::bind(&listen_addr)?;
 
@@ -574,7 +559,7 @@ where
             get_connection_handler: Arc::new(get_connection_handler),
             security_context,
             generic_context,
-            proxy_config,
+            proxy_protocol_config,
         })
     }
 
@@ -600,7 +585,7 @@ where
                     .map(|context| context.clone()),
                 self.get_connection_handler.clone(),
                 self.generic_context.clone(),
-                self.proxy_config,
+                self.proxy_protocol_config.clone(),
             )
             .handle(),
         );

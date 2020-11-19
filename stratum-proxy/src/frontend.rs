@@ -30,7 +30,7 @@ use ii_stratum::v2::noise::auth::{Certificate, StaticSecretKeyFormat};
 use ii_wire::Address;
 
 use crate::error::{Error, Result};
-use crate::server::ProxyProtocolVersion;
+use crate::server::ProxyProtocolConfig;
 
 #[derive(Debug, StructOpt)]
 pub struct Args {
@@ -42,6 +42,7 @@ pub struct Args {
 // if only one of the certificate or server-private-key config line is present, serde treates it as
 // if none were present and doesn't return error
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub listen_address: Address,
     pub upstream_address: Address,
@@ -49,10 +50,7 @@ pub struct Config {
     pub insecure: bool,
     #[serde(flatten)]
     pub security_context: Option<SecurityContext>,
-    pub accepted_proxy_protocol_versions: ProxyProtocolVersion,
-
-    /// Pass PROXY protocol header to outgoing connection -
-    pub pass_proxy_protocol: Option<ProxyProtocolVersion>,
+    pub proxy_protocol_config: Option<ProxyProtocolConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,8 +66,7 @@ impl Default for Config {
             upstream_address: Address("stratum.slushpool.com".to_owned(), 3333),
             insecure: true,
             security_context: None,
-            accepted_proxy_protocol_versions: ProxyProtocolVersion::Both,
-            pass_proxy_protocol: None,
+            proxy_protocol_config: None,
         }
     }
 }

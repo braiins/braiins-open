@@ -324,11 +324,10 @@ async fn test_v2server_full_no_proxy_protocol() {
         server::handle_connection,
         None,
         (),
-        server::ProxyConfig {
-            accept_proxy_protocol: false,
-            proxy_protocol_optional: true,
-            accepted_proxy_protocol_versions: server::ProxyProtocolVersion::Both,
-            pass_proxy_protocol: None,
+        server::ProxyProtocolConfig {
+            downstream_required: false,
+            downstream_versions: vec![],
+            upstream_version: None,
         },
     )
     .expect("BUG: Could not bind v2server");
@@ -361,11 +360,13 @@ async fn test_v2server_full_with_proxy_protocol() {
         server::handle_connection,
         None,
         (),
-        server::ProxyConfig {
-            accept_proxy_protocol: true,
-            proxy_protocol_optional: true,
-            accepted_proxy_protocol_versions: server::ProxyProtocolVersion::Both,
-            pass_proxy_protocol: Some(server::ProxyProtocolVersion::V2),
+        server::ProxyProtocolConfig {
+            downstream_required: false,
+            downstream_versions: vec![
+                server::ProxyProtocolVersion::V1,
+                server::ProxyProtocolVersion::V2,
+            ],
+            upstream_version: Some(server::ProxyProtocolVersion::V2),
         },
     )
     .expect("BUG: Could not bind v2server");
