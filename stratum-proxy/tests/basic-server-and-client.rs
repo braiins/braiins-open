@@ -27,6 +27,7 @@
 //! NOTE: currently this test must be run with --nocapture flag as there is no reasonable way of
 //! communicating any failures/panics to the test harness.
 
+use async_trait::async_trait;
 use std::convert::{TryFrom, TryInto};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::str::FromStr;
@@ -35,6 +36,7 @@ use futures::prelude::*;
 
 use ii_stratum::error::Error;
 use ii_stratum::test_utils;
+use ii_stratum::test_utils::v1::TestFrameReceiver as _;
 use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_stratum_proxy::server;
@@ -42,6 +44,7 @@ use ii_wire::{
     Address, Connection, Server,
     {proxy, proxy::WithProxyInfo},
 };
+
 use tokio::process::Command;
 
 mod utils;
@@ -54,6 +57,48 @@ static PORT_V2: u16 = 9002;
 static PORT_V2_FULL: u16 = 9003;
 static PORT_V2_WITH_PROXY: u16 = 9004;
 
+/// Generic stratum V1 tester that is able to send and receive a V1 frame and can be used for
+/// verifying client and server protocol flows
+struct StratumV1Tester {
+    conn: Connection<v1::Framing>,
+}
+
+impl StratumV1Tester {
+    fn new(conn: Connection<v1::Framing>) -> Self {
+        Self { conn }
+    }
+
+    pub async fn send_v1<M>(&mut self, message: M)
+    where
+        M: TryInto<v1::Frame, Error = ii_stratum::error::Error>,
+    {
+        // create a tx frame, we won't send it but only extract the pure data
+        // (as it implements the deref trait) as if it arrived to translation
+        let frame: v1::Frame = message.try_into().expect("BUG: Deserialization failed");
+        //let rpc = v1::rpc::Rpc::try_from(frame).expect("BUG: Message deserialization failed");
+
+        self.conn
+            .send(frame)
+            .await
+            .expect("BUG: V1 Frame sending failed");
+    }
+}
+
+#[async_trait]
+impl test_utils::v1::TestFrameReceiver for StratumV1Tester {
+    async fn receive_v1(&mut self) -> v1::rpc::Rpc {
+        let frame = self
+            .conn
+            .next()
+            .await
+            .expect("BUG: At least 1 message was expected")
+            .expect("BUG: Failed to receive a V1 frame");
+
+        v1::rpc::Rpc::try_from(frame).expect("BUG: Message deserialization failed")
+    }
+}
+
+/// TODO consolidate the server to use StratumV2Tester (implement StratumV1Tester equivalent)
 #[tokio::test]
 async fn test_v2server() {
     let addr = Address(ADDR.into(), PORT_V2);
@@ -167,7 +212,7 @@ fn v1server_task<A: ToSocketAddrs>(
     async move {
         while let Some(conn) = server.next().await {
             let conn = conn.expect("BUG server did not provide connection");
-            let mut conn = match expected_proxy_header {
+            let conn = match expected_proxy_header {
                 None => Connection::<v1::Framing>::new(conn),
                 Some(ref proxy_info) => {
                     let proxy_stream = proxy::Acceptor::new()
@@ -186,22 +231,35 @@ fn v1server_task<A: ToSocketAddrs>(
                     proxy_stream.into()
                 }
             };
-
-            while let Some(frame) = conn.next().await {
-                let frame = frame.expect("BUG: Receiving frame failed");
-                let deserialized =
-                    v1::rpc::Rpc::try_from(frame).expect("BUG: Frame deserialization failed");
-                // test handler verifies that the message
-                test_utils::v1::TestIdentityHandler
-                    .handle_v1(deserialized)
-                    .await;
-
-                // test response frame
-                let response = test_utils::v1::build_subscribe_ok_response_message();
-                conn.send(response.try_into().expect("BUG: Cannot convert to frame"))
-                    .await
-                    .expect("BUG: Could not send response");
-            }
+            let mut stratum_v1_tester = StratumV1Tester::new(conn);
+            let id = 0.into();
+            stratum_v1_tester
+                .check_next_v1(id, |msg: v1::messages::Configure| {
+                    test_utils::v1::message_request_check(
+                        id,
+                        &msg,
+                        test_utils::v1::build_configure(),
+                        test_utils::v1::MINING_CONFIGURE_REQ_JSON,
+                    );
+                })
+                .await;
+            stratum_v1_tester
+                .send_v1(test_utils::v1::build_configure_ok_response_message())
+                .await;
+            let id = 1.into();
+            stratum_v1_tester
+                .check_next_v1(id, |msg: v1::messages::Subscribe| {
+                    test_utils::v1::message_request_check(
+                        id,
+                        &msg,
+                        test_utils::v1::build_subscribe(),
+                        test_utils::v1::MINING_SUBSCRIBE_REQ_JSON,
+                    );
+                })
+                .await;
+            stratum_v1_tester
+                .send_v1(test_utils::v1::build_subscribe_ok_response_message())
+                .await;
         }
     }
 }
@@ -219,26 +277,41 @@ async fn test_v1server() {
     tokio::spawn(v1server_task(addr, None));
 
     // Testing client
-    let mut connection = Connection::<v1::Framing>::connect(&addr)
+    let connection = Connection::<v1::Framing>::connect(&addr)
         .await
         .unwrap_or_else(|e| panic!("Could not connect to {}: {}", addr, e));
+    let mut stratum_v1_tester = StratumV1Tester::new(connection);
 
-    let request = test_utils::v1::build_subscribe_request_frame();
-    connection
-        .send(request.try_into().expect("BUG: Cannot convert to frame"))
-        .await
-        .expect("BUG: Could not send request");
+    let id = 0.into();
+    stratum_v1_tester
+        .send_v1(test_utils::v1::build_configure_request())
+        .await;
+    stratum_v1_tester
+        .check_next_v1(id, |msg: v1::messages::ConfigureResult| {
+            test_utils::v1::message_check(
+                id,
+                &msg,
+                test_utils::v1::build_configure_ok_result(),
+                test_utils::v1::build_configure_ok_response_message(),
+                test_utils::v1::MINING_CONFIGURE_OK_RESP_JSON,
+            );
+        })
+        .await;
 
-    let response_frame = connection
-        .next()
-        .await
-        .expect("BUG: Failed to read frame from Connection")
-        .expect("BUG: Failed to read frame from Connection");
-
-    let deserialized =
-        v1::rpc::Rpc::try_from(response_frame).expect("BUG: Frame deserialization failed");
-    test_utils::v1::TestIdentityHandler
-        .handle_v1(deserialized)
+    let id = 1.into();
+    stratum_v1_tester
+        .send_v1(test_utils::v1::build_subscribe_request_frame())
+        .await;
+    stratum_v1_tester
+        .check_next_v1(id, |msg: v1::messages::SubscribeResult| {
+            test_utils::v1::message_check(
+                id,
+                &msg,
+                test_utils::v1::build_subscribe_ok_result(),
+                test_utils::v1::build_subscribe_ok_response_message(),
+                test_utils::v1::MINING_SUBSCRIBE_OK_RESULT_JSON,
+            );
+        })
         .await;
 }
 
@@ -300,7 +373,12 @@ async fn test_v2server_full_no_proxy() {
         server::handle_connection,
         None,
         (),
-        server::ProxyConfig::default(),
+        server::ProxyConfig {
+            accept_proxy_protocol: false,
+            proxy_protocol_optional: true,
+            accepted_proxy_protocol_versions: server::ProxyProtocolVersion::Both,
+            pass_proxy_protocol: None,
+        },
     )
     .expect("BUG: Could not bind v2server");
     let mut v2server_quit = v2server.quit_channel();
@@ -323,49 +401,28 @@ async fn test_v2server_full_with_proxy() {
         .try_into()
         .expect("BUG: invalid addresses");
 
-    // dummy pool server
+    // Dummy pool server
     tokio::spawn(v1server_task(addr_v1.clone(), Some(proxy_info.clone())));
 
-    // let v2server = server::ProxyServer::listen(
-    //     addr_v2.clone(),
-    //     addr_v1,
-    //     server::handle_connection,
-    //     None,
-    //     (),
-    //     server::ProxyConfig {
-    //         proxy_protocol_v1: true,
-    //         pass_proxy_protocol_v1: true,
-    //     },
-    // )
-    // .expect("BUG: Could not bind v2server");
-    // let mut v2server_quit = v2server.quit_channel();
-    //
-    // tokio::spawn(v2server.run());
-    // here we prefer full integration test with running ii-stratum-proxy process
-    // TODO: review if full exec is actually the desired state of the integration test
-    let mut exe_file = std::env::current_exe()
-        .expect("cannot get current exe path")
-        .parent()
-        .expect("cannot get deps dir")
-        .parent()
-        .expect("cannot get bin dir")
-        .to_owned();
-    exe_file.push("ii-stratum-proxy");
-    exe_file.set_extension(std::env::consts::EXE_EXTENSION);
-    assert!(exe_file.exists());
-    let mut child = Command::new(exe_file)
-        .arg("--accept-proxy-protocol")
-        .args(&["--pass-proxy-protocol", "v2"])
-        .arg("--insecure")
-        .arg("-l")
-        .arg(addr_v2.to_string())
-        .arg("-u")
-        .arg(addr_v1.to_string())
-        .spawn()
-        .expect("cannot spawn proxy process");
+    let v2server = server::ProxyServer::listen(
+        addr_v2.clone(),
+        addr_v1,
+        server::handle_connection,
+        None,
+        (),
+        server::ProxyConfig {
+            accept_proxy_protocol: true,
+            proxy_protocol_optional: true,
+            accepted_proxy_protocol_versions: server::ProxyProtocolVersion::Both,
+            pass_proxy_protocol: Some(server::ProxyProtocolVersion::V2),
+        },
+    )
+    .expect("BUG: Could not bind v2server");
+    let mut v2server_quit = v2server.quit_channel();
+    tokio::spawn(v2server.run());
 
     test_v2_client(&addr_v2, &Some(proxy_info)).await;
 
-    // Kill proxy process
-    child.kill().ok();
+    // Signal the server to shut down
+    let _ = v2server_quit.try_send(());
 }
