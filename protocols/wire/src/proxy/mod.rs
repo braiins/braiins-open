@@ -124,7 +124,7 @@ impl Acceptor {
             error!("Proxy protocol is required");
             Err(Error::Proxy("Proxy protocol is required".into()))
         } else {
-            info!("No proxy protocol detected, just passing the stream");
+            debug!("No proxy protocol detected, just passing the stream");
             Ok(ProxyStream {
                 inner: stream,
                 buf,
@@ -200,6 +200,7 @@ impl Default for Connector {
 
 impl Connector {
     /// Creates new `Connector`
+    /// TODO pass
     pub fn new() -> Self {
         Connector::default()
     }
