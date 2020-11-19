@@ -294,14 +294,20 @@ pub fn build_configure() -> Configure {
 }
 
 pub const MINING_CONFIGURE_OK_RESP_JSON: &str = concat!(
-    r#"{"id":0,"error":null,"result": {"version-rolling":true,"#,
-    r#""version-rolling.mask":"1fffe000"}}"#
+    r#"{"id":0,"result":{"version-rolling":true,"version-rolling.mask":"1fffe000"},"error":null}"#
 );
 
+const MINING_CONFIGURE_OK_RESULT_JSON: &str =
+    concat!(r#"{"version-rolling":true,"version-rolling.mask":"1fffe000"}"#);
+
+pub fn build_configure_ok_result() -> ConfigureResult {
+    let cfg: ConfigureResult = serde_json::from_str(MINING_CONFIGURE_OK_RESULT_JSON)
+        .expect("BUG: configure_ok_response deserialization failed");
+    cfg
+}
+
 pub fn build_configure_ok_response_message() -> Rpc {
-    let cfg: ConfigureResult =
-        serde_json::from_str(r#"{"version-rolling":true,"version-rolling.mask":"1fffe000"}"#)
-            .expect("BUG: configure_ok_response deserialization failed");
+    let cfg = build_configure_ok_result();
     trace!("build_configure_ok_response_message() {:?}", cfg);
     build_result_response_message(0, cfg)
 }
