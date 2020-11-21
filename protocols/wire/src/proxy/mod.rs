@@ -219,13 +219,13 @@ impl Connector {
         original_destination: Option<SocketAddr>,
     ) -> Result<TcpStream> {
         let mut stream = TcpStream::connect(addr.as_ref()).await?;
-        self.connect_to(&mut stream, original_source, original_destination)
+        self.write_proxy_header(&mut stream, original_source, original_destination)
             .await?;
         Ok(stream)
     }
 
     /// Adds appropriate PROXY protocol header to given stream
-    pub async fn connect_to<T: AsyncWrite + Unpin>(
+    pub async fn write_proxy_header<T: AsyncWrite + Unpin>(
         &self,
         dest: &mut T,
         original_source: Option<SocketAddr>,
@@ -516,7 +516,9 @@ mod tests {
         let mut buf = Vec::new();
         let src = "127.0.0.1:1111".parse().ok();
         let dest = "127.0.0.1:2222".parse().ok();
-        let _res = Connector::new().connect_to(&mut buf, src, dest).await?;
+        let _res = Connector::new()
+            .write_proxy_header(&mut buf, src, dest)
+            .await?;
         let expected = "PROXY TCP4 127.0.0.1 127.0.0.1 1111 2222\r\n";
         assert_eq!(expected.as_bytes(), &buf[..]);
         Ok(())

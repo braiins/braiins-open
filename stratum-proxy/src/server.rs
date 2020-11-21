@@ -410,7 +410,7 @@ where
             ) {
                 Connector::new()
                     .use_v2(version == ProxyProtocolVersion::V2)
-                    .connect_to(&mut v1_conn, src, dst)
+                    .write_proxy_header(&mut v1_conn, src, dst)
                     .await?;
             } else {
                 warn!("Passing of proxy protocol is required, but incoming connection does not contain original addresses")
