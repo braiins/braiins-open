@@ -248,6 +248,7 @@ impl Connector {
 /// It implements `AsyncRead` and `AsyncWrite` so it can be used as a replacement of `TcpStream`
 /// or other byte streams
 #[pin_project]
+#[derive(Debug)]
 pub struct ProxyStream<T> {
     #[pin]
     inner: T,
