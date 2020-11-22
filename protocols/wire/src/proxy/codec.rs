@@ -28,7 +28,6 @@ pub mod v1;
 pub mod v2;
 
 pub(crate) const MAX_HEADER_SIZE: usize = 536;
-pub(crate) const MIN_HEADER_SIZE: usize = 15;
 
 /// Type of transport
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]

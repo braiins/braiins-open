@@ -34,11 +34,12 @@ use std::task::{Context, Poll};
 use tokio::net::TcpStream;
 
 use tokio::prelude::*;
+use tokio::stream::StreamExt;
 use tokio_util::codec::{Decoder, Encoder, Framed, FramedParts};
 
 use crate::connection::Connection;
 use crate::framing::Framing;
-use codec::{v1::V1Codec, v2::V2Codec, MAX_HEADER_SIZE, MIN_HEADER_SIZE};
+use codec::{v1::V1Codec, v2::V2Codec, MAX_HEADER_SIZE};
 use error::{Error, Result};
 
 pub mod codec;
@@ -85,22 +86,39 @@ impl Default for Acceptor {
 }
 
 impl Acceptor {
+    /// When auto-detecting the Proxy protocol header, this is the sufficient number of bytes that
+    /// need to be initially received to decide whether any of the supported protocol variants
+    const COMMON_HEADER_PREFIX_LEN: usize = 5;
+
     /// Processes proxy protocol header and creates [`ProxyStream`]
     /// with appropriate information in it
+    /// This method may block for ~2 secs until stream timeout is triggered when performing
+    /// autodetection and waitinf for `COMMON_HEADER_PREFIX_LEN` bytes to arrive.
     pub async fn accept<T: AsyncRead + Unpin>(self, mut stream: T) -> Result<ProxyStream<T>> {
+        trace!("wire: Accepting stream");
         let mut buf = BytesMut::with_capacity(MAX_HEADER_SIZE);
-        while buf.len() < MIN_HEADER_SIZE {
+        // This loop will block for ~2 seconds (read_buf() timeout) if less than
+        // COMMON_HEADER_PREFIX_LEN have arrived
+        while buf.len() < Self::COMMON_HEADER_PREFIX_LEN {
             let r = stream.read_buf(&mut buf).await?;
+            trace!("wire: Read {} bytes from stream", r);
             if r == 0 {
+                trace!("wire: no more bytes supplied byte the stream, terminating read");
                 break;
             }
         }
 
-        if buf.remaining() < MIN_HEADER_SIZE {
+        if buf.remaining() < Self::COMMON_HEADER_PREFIX_LEN {
             return if self.require_proxy_header {
-                Err(Error::Proxy("Message too short for proxy protocol".into()))
+                Err(Error::Proxy(
+                    "Message too short for autodetecting proxy protocol".into(),
+                ))
             } else {
-                info!("No proxy protocol detected (because of too short message),  just passing the stream");
+                debug!("wire: No proxy protocol detected (too short message), passing the stream");
+                trace!(
+                    "wire: Preparing dummy proxy stream with preloaded buffer: {:x?}",
+                    buf
+                );
                 Ok(ProxyStream {
                     inner: stream,
                     buf,
@@ -109,22 +127,24 @@ impl Acceptor {
                 })
             };
         }
+        debug!("wire: Buffered initial {} bytes", buf.remaining());
 
-        debug!("Buffered initial {} bytes", buf.remaining());
-
-        if &buf[0..6] == V1_TAG && self.support_v1 {
-            debug!("Detected proxy protocol v1 tag");
-            let mut codec = V1Codec::new();
-            Acceptor::decode_header(buf, stream, &mut codec).await
-        } else if &buf[0..12] == V2_TAG && self.support_v2 {
-            debug!("Detected proxy protocol v2 tag");
-            let mut codec = V2Codec::new();
-            Acceptor::decode_header(buf, stream, &mut codec).await
+        if &buf[0..Self::COMMON_HEADER_PREFIX_LEN] == &V1_TAG[0..Self::COMMON_HEADER_PREFIX_LEN]
+            && self.support_v1
+        {
+            debug!("wire: Detected proxy protocol v1 tag");
+            Acceptor::decode_header(buf, stream, V1Codec::new()).await
+        } else if &buf[0..Self::COMMON_HEADER_PREFIX_LEN]
+            == &V2_TAG[0..Self::COMMON_HEADER_PREFIX_LEN]
+            && self.support_v2
+        {
+            debug!("wire: Detected proxy protocol v2 tag");
+            Acceptor::decode_header(buf, stream, V2Codec::new()).await
         } else if self.require_proxy_header {
             error!("Proxy protocol is required");
             Err(Error::Proxy("Proxy protocol is required".into()))
         } else {
-            debug!("No proxy protocol detected, just passing the stream");
+            debug!("wire: No proxy protocol detected, just passing the stream");
             Ok(ProxyStream {
                 inner: stream,
                 buf,
@@ -134,30 +154,28 @@ impl Acceptor {
         }
     }
 
-    async fn decode_header<C, T>(
-        mut buf: BytesMut,
-        mut stream: T,
-        codec: &mut C,
-    ) -> Result<ProxyStream<T>>
+    async fn decode_header<C, T>(buf: BytesMut, stream: T, codec: C) -> Result<ProxyStream<T>>
     where
         T: AsyncRead + Unpin,
-        C: Decoder<Item = ProxyInfo, Error = Error>,
+        C: Encoder<ProxyInfo> + Decoder<Item = ProxyInfo, Error = Error>,
     {
-        loop {
-            if let Some(proxy_info) = codec.decode(&mut buf)? {
-                return Ok(ProxyStream {
-                    inner: stream,
-                    buf,
-                    orig_source: proxy_info.original_source,
-                    orig_destination: proxy_info.original_destination,
-                });
-            }
+        let mut framed_parts = FramedParts::new(stream, codec);
+        framed_parts.read_buf = buf;
+        let mut framed = Framed::from_parts(framed_parts);
 
-            let r = stream.read_buf(&mut buf).await?;
-            if r == 0 {
-                return Err(Error::Proxy("Incomplete V1 header".into()));
-            }
-        }
+        let proxy_info = framed
+            .next()
+            .await
+            .ok_or_else(|| Error::Proxy("Proxy header is missing".into()))??;
+
+        let parts = framed.into_parts();
+
+        Ok(ProxyStream {
+            inner: parts.io,
+            buf: parts.read_buf,
+            orig_source: proxy_info.original_source,
+            orig_destination: proxy_info.original_destination,
+        })
     }
 
     /// Creates new default `Acceptor`
