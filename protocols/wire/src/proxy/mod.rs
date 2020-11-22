@@ -437,7 +437,10 @@ mod tests {
         ]);
         message.extend(b"Hello");
 
-        let mut ps = Acceptor::new().accept(&message[..]).await?;
+        let mut ps = Acceptor::new()
+            .accept(&message[..])
+            .await
+            .expect("BUG: V2 message not accepted");
         assert_eq!(
             "192.168.0.1:56324".parse::<SocketAddr>().unwrap(),
             ps.original_peer_addr().unwrap()
