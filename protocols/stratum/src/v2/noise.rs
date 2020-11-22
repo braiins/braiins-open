@@ -25,6 +25,7 @@
 //! TransportState of the noise, that will be used for running the AEAD communnication.
 
 use bytes::{Bytes, BytesMut};
+use ii_logging::macros::*;
 use snow::{HandshakeState, TransportState};
 use std::convert::TryFrom;
 
@@ -372,6 +373,7 @@ impl<'a> handshake::Step for Responder<'a> {
             1 => {
                 let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
                 if let Ok(m) = v2::serialization::from_slice::<NegotiationMessage>(&in_msg.inner) {
+                    trace!("Noise: received {:x?}", m);
                     // If list of algorithms is provided, go on with negotiation
                     let algs: Vec<EncryptionAlgorithm> = m.encryption_algos.into();
 
@@ -387,9 +389,13 @@ impl<'a> handshake::Step for Responder<'a> {
 
                     let negotiation_message =
                         NegotiationMessage::new(vec![chosen_algorithm.clone()]);
-
                     noise_bytes
                         .extend_from_slice(&v2::serialization::to_vec(&negotiation_message)?[..]);
+                    trace!(
+                        "Noise: preparing response: {:x?}, serialized bytes: {:x?}",
+                        negotiation_message,
+                        noise_bytes
+                    );
                     prologue.responder_msg = Some(negotiation_message);
                     let negotiation = EncryptionNegotiation::new(prologue, chosen_algorithm);
                     self.build_handshake_state(negotiation)?;
@@ -398,6 +404,10 @@ impl<'a> handshake::Step for Responder<'a> {
                     // Otherwise, create the handshake with default params and pass e to the next step
                     let negotiation =
                         EncryptionNegotiation::new(prologue, EncryptionAlgorithm::ChaChaPoly);
+                    trace!(
+                        "Noise: no negotiation received, defaulting to {:x?} encryption",
+                        negotiation
+                    );
                     self.build_handshake_state(negotiation)?;
                     handshake::StepResult::NextStep(in_msg)
                 }
