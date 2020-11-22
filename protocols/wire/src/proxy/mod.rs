@@ -407,6 +407,7 @@ where
 mod tests {
 
     use super::*;
+    use tokio::stream::StreamExt;
 
     #[tokio::test]
     async fn test_v1_tcp4() -> Result<()> {
@@ -508,6 +509,79 @@ mod tests {
         let mut buf = Vec::new();
         ps.read_to_end(&mut buf).await?;
         assert_eq!(message, &buf[..]);
+        Ok(())
+    }
+
+    type TestItem = [u8; 5];
+
+    /// Test codec for verifying conversion ProxyStream -> FramedParts
+    struct TestCodec {
+        buf: BytesMut,
+    }
+
+    impl Default for TestCodec {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl TestCodec {
+        const MESSAGE: &'static [u8] = b"NIC\r\n";
+        pub fn new() -> Self {
+            Self {
+                buf: BytesMut::with_capacity(Self::MESSAGE.len()),
+            }
+        }
+    }
+
+    impl Decoder for TestCodec {
+        type Item = TestItem;
+        type Error = Error;
+
+        fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>> {
+            let received = buf.split();
+            self.buf.unsplit(received);
+            if self.buf.len() == Self::MESSAGE.len() {
+                let mut item: TestItem = [0; 5];
+                self.buf.split().copy_to_slice(&mut item);
+                Ok(Some(item))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+
+    impl Encoder<TestItem> for TestCodec {
+        type Error = Error;
+        fn encode(&mut self, _item: TestItem, _header: &mut BytesMut) -> Result<()> {
+            Err(Error::Proxy("Encoding not to be tested".into()))
+        }
+    }
+
+    /// Verify that a test message is succesfully passed through the Acceptor and leaves it
+    /// untouched in the form of ProxyStream with prepared buffer. We use framed with a test
+    /// codec to actually collect the message again
+    #[tokio::test]
+    async fn test_short_message_retention_via_proxy_stream() -> Result<()> {
+        let ps = Acceptor::new()
+            .require_proxy_header(false)
+            .accept(&TestCodec::MESSAGE[..])
+            .await
+            .expect("BUG: cannot accept incoming message");
+
+        let mut framed_parts = FramedParts::new(ps.inner, TestCodec::default());
+        framed_parts.read_buf = ps.buf;
+        let mut framed = Framed::from_parts(framed_parts);
+
+        let passed_message = framed
+            .next()
+            .await
+            .expect("BUG: Unexpected end of stream")?;
+        assert_eq!(
+            passed_message,
+            TestCodec::MESSAGE,
+            "BUG: Message didn't flow successfully"
+        );
         Ok(())
     }
 
