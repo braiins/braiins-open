@@ -308,6 +308,7 @@ impl Default for ProxyProtocolConfig {
 }
 
 /// Differentiate if we have TCPStream or ProxyStream
+#[derive(Debug)]
 enum IncomingConnection {
     Tcp(TcpStream),
     Proxy(ProxyStream<TcpStream>),
@@ -375,6 +376,10 @@ where
     ///  - pass PROXY protocol header (if configured)
     ///  - establish noise handshake (if configured)
     async fn do_handle(self, v2_peer_addr: SocketAddr) -> Result<()> {
+        trace!(
+            "stratum proxy: Handling connection from: {:?}",
+            v2_peer_addr
+        );
         let incoming = if !self.proxy_protocol_config.downstream_versions.is_empty() {
             let acceptor = Acceptor::new()
                 .support_v1(
@@ -439,6 +444,7 @@ where
                     let build_stratum_noise_codec = |noise_codec| {
                         <v2::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec))
                     };
+                    trace!("Handling incoming connection: {:?}", incoming);
                     match incoming {
                         IncomingConnection::Proxy(proxy) => {
                             // TODO this needs refactoring there is no point of passing the codec
