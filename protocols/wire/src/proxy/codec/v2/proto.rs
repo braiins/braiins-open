@@ -314,8 +314,8 @@ mod test {
 
     #[test]
     fn test_ip4_addresses_serialize_deserialize() {
-        let src_addr: SocketAddrV4 = "127.0.0.1:1234".parse().unwrap();
-        let dst_addr: SocketAddrV4 = "127.0.0.1:5678".parse().unwrap();
+        let src_addr: SocketAddrV4 = "127.0.0.1:1234".parse().expect("BUG: Cannot parse src IP");
+        let dst_addr: SocketAddrV4 = "127.0.0.1:5678".parse().expect("BUG: Cannot parse dst IP");
         let a1: Ip4Addresses = (src_addr.clone(), dst_addr.clone()).into();
         let mut buf = BytesMut::new();
         a1.serialize(&mut buf);
@@ -331,14 +331,15 @@ mod test {
     fn test_ip6_addresses_serialize_deserialize() {
         let src_addr: SocketAddrV6 = "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ff11]:65535"
             .parse()
-            .unwrap();
+            .expect("BUG: Cannot parse src IPv6");
         let dst_addr: SocketAddrV6 = "[aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aa11]:65534"
             .parse()
-            .unwrap();
+            .expect("BUG: Cannot parse dst IPv6");
         let a1: Ip6Addresses = (src_addr.clone(), dst_addr.clone()).into();
         let mut buf = BytesMut::new();
         a1.serialize(&mut buf);
-        let a2 = Ip6Addresses::deserialize(&mut buf).unwrap();
+        let a2 =
+            Ip6Addresses::deserialize(&mut buf).expect("BUG: Cannot deserialize IPv6 addresses");
         assert_eq!(a1, a2);
         assert!(buf.is_empty());
 

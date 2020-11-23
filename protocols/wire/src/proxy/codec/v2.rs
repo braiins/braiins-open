@@ -192,10 +192,11 @@ mod tests {
         let mut codec = V2Codec::new();
         let info = codec
             .decode(&mut buf)
-            .expect("decoding ok")
-            .expect("has enough data");
-        let src_addr: SocketAddr = "127.0.0.1:80".parse().unwrap();
-        let dst_addr: SocketAddr = "127.0.0.2:443".parse().unwrap();
+            .expect("BUG: ProxyInfo not decoded")
+            .expect("BUG: ProxyInfo decoding faile");
+        let src_addr: SocketAddr = "127.0.0.1:80".parse().expect("BUG: Cannot parse src IP");
+        let dst_addr: SocketAddr = "127.0.0.2:443".parse().expect("BUG: Cannot parse dst IP");
+
         assert_eq!(Some(src_addr), info.original_source);
         assert_eq!(Some(dst_addr), info.original_destination);
         assert_eq!(5, buf.len());
@@ -204,9 +205,9 @@ mod tests {
     #[tokio::test]
     async fn test_accept_v2_framed() {
         let buf = std::io::Cursor::new(test_msg_ip4("Hello").to_vec());
-        let (info, parts) = accept_v2_framed(buf).await.expect("parses ok");
-        let src_addr: SocketAddr = "127.0.0.1:80".parse().unwrap();
-        let dst_addr: SocketAddr = "127.0.0.2:443".parse().unwrap();
+        let (info, parts) = accept_v2_framed(buf).await.expect("BUG: parses ok");
+        let src_addr: SocketAddr = "127.0.0.1:80".parse().expect("BUG: Cannot parse src IP");
+        let dst_addr: SocketAddr = "127.0.0.2:443".parse().expect("BUG: Cannot parse dst IP");
         assert_eq!(Some(src_addr), info.original_source);
         assert_eq!(Some(dst_addr), info.original_destination);
         assert_eq!(5, parts.read_buf.len());
@@ -214,8 +215,8 @@ mod tests {
 
     #[test]
     fn test_v2_encode() {
-        let src_addr: SocketAddr = "127.0.0.1:80".parse().unwrap();
-        let dst_addr: SocketAddr = "127.0.0.2:443".parse().unwrap();
+        let src_addr: SocketAddr = "127.0.0.1:80".parse().expect("BUG: Cannot parse src IP");
+        let dst_addr: SocketAddr = "127.0.0.2:443".parse().expect("BUG: Cannot parse dst IP");
         let info = ProxyInfo {
             socket_type: SocketType::Ipv4,
             original_source: Some(src_addr),
@@ -236,10 +237,10 @@ mod tests {
     fn test_v2_ip6_encode_decode() {
         let src_addr: SocketAddr = "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:80"
             .parse()
-            .unwrap();
+            .expect("BUG: Cannot parse src IPv6");
         let dst_addr: SocketAddr = "[aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa]:443"
             .parse()
-            .unwrap();
+            .expect("BUG: Cannot parse dst IPv6");
         let info = ProxyInfo {
             socket_type: SocketType::Ipv6,
             original_source: Some(src_addr),
@@ -247,11 +248,11 @@ mod tests {
         };
         let mut buf = BytesMut::new();
         let mut codec = V2Codec::new();
-        codec.encode(info.clone(), &mut buf).expect("encoding ok");
+        codec.encode(info.clone(), &mut buf).expect("BUG: encoding");
         let info2 = codec
             .decode(&mut buf)
-            .expect("decoding ok")
-            .expect("has enough data");
+            .expect("BUG: No ProxyInfo decoded")
+            .expect("BUG: ProxInfo decoding failed");
         assert_eq!(info, info2);
         assert!(buf.is_empty());
     }

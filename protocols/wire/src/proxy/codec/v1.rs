@@ -160,14 +160,16 @@ impl Encoder<ProxyInfo> for V1Codec {
                 return Ok(());
             }
         };
+        let original_source = item.original_source.expect("BUG: Source IP missing");
+        let original_destination = item.original_destination.expect("BUG: Source IP missing");
         header.put(
             format!(
                 "{} {} {} {} {}\r\n",
                 proto,
-                item.original_source.expect("IP missing").ip(),
-                item.original_destination.expect("IP missing").ip(),
-                item.original_source.expect("Port missing").port(),
-                item.original_destination.expect("Port missing").port()
+                original_source.ip(),
+                original_destination.ip(),
+                original_source.port(),
+                original_destination.port()
             )
             .as_bytes(),
         );
@@ -216,24 +218,29 @@ mod tests {
         let mut buf = BytesMut::new();
         for &piece in &data[..data.len() - 1] {
             buf.put(piece);
-            let r = d.decode(&mut buf).unwrap();
+            let r = d.decode(&mut buf).expect("BUG: cannot decode");
             assert!(r.is_none())
         }
         // put there last piece
 
-        buf.put(*data.last().unwrap());
+        buf.put(*data.last().expect("BUG: Last piece of data missing"));
         let r = d
             .decode(&mut buf)
-            .expect("Buffer should should be ok")
-            .expect("and contain full header");
+            .expect("BUG: No result from decoding buffer")
+            .expect("BUG: Header decoding failed");
         assert_eq!(SocketType::Ipv4, r.socket_type);
         assert_eq!(
-            "192.168.0.1:56324".parse::<SocketAddr>().unwrap(),
-            r.original_source.unwrap()
+            "192.168.0.1:56324"
+                .parse::<SocketAddr>()
+                .expect("BUG: Cannot parse IP"),
+            r.original_source.expect("BUG: Missing original address")
         );
         assert_eq!(
-            "192.168.0.11:443".parse::<SocketAddr>().unwrap(),
-            r.original_destination.unwrap()
+            "192.168.0.11:443"
+                .parse::<SocketAddr>()
+                .expect("BUG: Cannot parse IP"),
+            r.original_destination
+                .expect("BUG: Missing destination address")
         );
         assert_eq!(b"Usak", &buf[..]);
     }
@@ -266,7 +273,8 @@ mod tests {
 
         let mut buf = BytesMut::new();
         let mut e = V1Codec::new();
-        e.encode(header_info, &mut buf).unwrap();
+        e.encode(header_info, &mut buf)
+            .expect("BUG: Cannot encode V1 header");
 
         assert_eq!(header_bytes, &buf[..]);
     }
@@ -286,7 +294,8 @@ mod tests {
 
         let mut buf = BytesMut::new();
         let mut e = V1Codec::new();
-        e.encode(header_info, &mut buf).unwrap();
+        e.encode(header_info, &mut buf)
+            .expect("BUG: Cannot encode header info");
 
         assert_eq!(&header_bytes[..], &buf[..]);
     }
@@ -299,8 +308,8 @@ mod tests {
         buf.put(&header_bytes[..]);
         let header_info = d
             .decode(&mut buf)
-            .expect("parsed_ok")
-            .expect("contains full header");
+            .expect("BUG: No header decoded")
+            .expect("BUG: Header decoding failed");
         let original_source: Option<SocketAddr> = "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
             .parse()
             .ok();
@@ -323,7 +332,7 @@ mod tests {
         );
         let (info, parts) = accept_v1_framed(message)
             .await
-            .expect("Error parsing header");
+            .expect("BUG: Error parsing header");
 
         assert_eq!(SocketType::Ipv4, info.socket_type);
         assert_eq!(info.original_source, "192.168.0.1:56324".parse().ok());

@@ -552,7 +552,7 @@ mod tests {
             .require_proxy_header(false)
             .accept(&MESSAGE[..])
             .await
-            .expect("BUG: cannot accept incoming message");
+            .expect("BUG: Cannot accept incoming message");
 
         read_and_compare_message(ps, Vec::from(MESSAGE)).await;
     }
