@@ -29,8 +29,6 @@ use bytes::BytesMut;
 use pin_project::pin_project;
 use std::convert::TryInto;
 use std::net::SocketAddr;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use tokio::net::TcpStream;
 
 use tokio::prelude::*;
@@ -276,10 +274,6 @@ pub struct ProxyStream<T> {
 }
 
 impl<T> ProxyStream<T> {
-    fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut T> {
-        self.project().inner
-    }
-
     /// Returns inner stream, but
     /// only when it is save, e.g. no data in buffer
     pub fn try_into_inner(self) -> Result<T> {
@@ -339,54 +333,6 @@ impl<T: AsyncRead + Unpin> ProxyStream<T> {
     }
 }
 
-// impl<T: AsyncRead + Unpin> AsyncRead for ProxyStream<T> {
-//     fn poll_read(
-//         self: Pin<&mut Self>,
-//         ctx: &mut Context,
-//         buf: &mut ReadBuf,
-//     ) -> Poll<io::Result<()>> {
-//         let this = self.project();
-//         if this.buf.is_empty() {
-//             this.inner.poll_read(ctx, buf)
-//         } else {
-//             // send remaining data from buffer
-//             let to_copy = this.buf.remaining().min(buf.filled().len());
-//             this.buf.copy_to_slice(&mut buf[0..to_copy]);
-//
-//             //there is still space in output buffer
-//             // let's try if we have some bytes to add there
-//             if to_copy < buf.len() {
-//                 let added = match this.inner.poll_read(ctx, &mut buf[to_copy..]) {
-//                     Poll::Ready(Ok(n)) => n,
-//                     Poll::Ready(Err(e)) => return Err(e).into(),
-//                     Poll::Pending => 0,
-//                 };
-//                 Poll::Ready(Ok(to_copy + added))
-//             } else {
-//                 Poll::Ready(Ok(to_copy))
-//             }
-//         }
-//     }
-// }
-//
-// impl<R: AsyncRead + AsyncWrite> AsyncWrite for ProxyStream<R> {
-//     fn poll_write(
-//         self: Pin<&mut Self>,
-//         cx: &mut Context<'_>,
-//         buf: &[u8],
-//     ) -> Poll<io::Result<usize>> {
-//         self.get_pin_mut().poll_write(cx, buf)
-//     }
-//
-//     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-//         self.get_pin_mut().poll_flush(cx)
-//     }
-//
-//     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-//         self.get_pin_mut().poll_shutdown(cx)
-//     }
-// }
-
 impl<F> From<ProxyStream<TcpStream>> for Connection<F>
 where
     F: Framing,
@@ -428,10 +374,73 @@ mod tests {
     use super::*;
     use tokio::stream::StreamExt;
 
+    /// Test codec for verifying that a message flows correctly through ProxyStream
+    struct TestCodec {
+        /// Test message that
+        test_message: Vec<u8>,
+        buf: BytesMut,
+    }
+
+    impl TestCodec {
+        pub fn new(test_message: Vec<u8>) -> Self {
+            let test_message_len = test_message.len();
+            Self {
+                test_message,
+                buf: BytesMut::with_capacity(test_message_len),
+            }
+        }
+    }
+
+    impl Decoder for TestCodec {
+        type Item = Vec<u8>;
+        type Error = Error;
+
+        fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>> {
+            let received = buf.split();
+            self.buf.unsplit(received);
+            if self.buf.len() == self.test_message.len() {
+                let message_bytes = self.buf.split();
+                let item: Vec<u8> = message_bytes[..].into();
+                Ok(Some(item))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+
+    impl Encoder<Vec<u8>> for TestCodec {
+        type Error = Error;
+        fn encode(&mut self, _item: Vec<u8>, _header: &mut BytesMut) -> Result<()> {
+            Err(Error::Proxy("Encoding not to be tested".into()))
+        }
+    }
+
+    /// Helper that
+    async fn read_and_compare_message<T: AsyncRead + Unpin>(
+        proxy_stream: ProxyStream<T>,
+        test_message: Vec<u8>,
+    ) {
+        let mut framed_parts =
+            FramedParts::new(proxy_stream.inner, TestCodec::new(test_message.clone()));
+        framed_parts.read_buf = proxy_stream.buf;
+        let mut framed = Framed::from_parts(framed_parts);
+
+        let passed_message = framed
+            .next()
+            .await
+            .expect("BUG: Unexpected end of stream")
+            .expect("BUG: Failed to read message from the stream");
+        assert_eq!(
+            passed_message, test_message,
+            "BUG: Message didn't flow successfully"
+        );
+    }
+
     #[tokio::test]
     async fn test_v1_tcp4() -> Result<()> {
+        const HELLO: &'static [u8] = b"HELLO";
         let message = "PROXY TCP4 192.168.0.1 192.168.0.11 56324 443\r\nHELLO".as_bytes();
-        let mut ps = Acceptor::new().accept(message).await?;
+        let ps = Acceptor::new().accept(message).await?;
         assert_eq!(
             "192.168.0.1:56324".parse::<SocketAddr>().unwrap(),
             ps.original_peer_addr().unwrap()
@@ -440,9 +449,7 @@ mod tests {
             "192.168.0.11:443".parse::<SocketAddr>().unwrap(),
             ps.original_destination_addr().unwrap()
         );
-        let mut buf = Vec::new();
-        ps.read_to_end(&mut buf).await?;
-        assert_eq!(b"HELLO", &buf[..]);
+        read_and_compare_message(ps, Vec::from(HELLO)).await;
         Ok(())
     }
 
@@ -455,7 +462,7 @@ mod tests {
         ]);
         message.extend(b"Hello");
 
-        let mut ps = Acceptor::new()
+        let ps = Acceptor::new()
             .accept(&message[..])
             .await
             .expect("BUG: V2 message not accepted");
@@ -467,37 +474,38 @@ mod tests {
             "192.168.0.11:443".parse::<SocketAddr>().unwrap(),
             ps.original_destination_addr().unwrap()
         );
-        let mut buf = Vec::new();
-        ps.read_to_end(&mut buf).await?;
-        assert_eq!(b"Hello", &buf[..]);
+        assert_eq!(
+            b"Hello",
+            &ps.buf[..],
+            "BUG: Expected message not stored in ProxyStream"
+        );
         Ok(())
     }
 
     #[tokio::test]
     async fn test_v1_unknown_long_message() -> Result<()> {
         let mut message = "PROXY UNKNOWN\r\n".to_string();
-        const DATA_LENGTH: usize = 1_000_000;
-        let data = (b'A'..=b'Z').cycle().take(DATA_LENGTH).map(|c| c as char);
-        message.extend(data);
+        //const DATA_LENGTH: usize = 1_000_000;
+        const DATA_LENGTH: usize = 3;
+        let data: Vec<u8> = (b'A'..=b'Z').cycle().take(DATA_LENGTH).collect();
 
-        let mut ps = ProxyStream::new(message.as_bytes()).await?;
-        assert!(ps.original_peer_addr().is_none());
-        assert!(ps.original_destination_addr().is_none());
-        let mut buf = Vec::new();
-        ps.read_to_end(&mut buf).await?;
-        assert_eq!(DATA_LENGTH, buf.len());
+        let data_str = String::from_utf8(data.clone()).expect("BUG: cannot build test large data");
+        message.push_str(data_str.as_str());
+
+        let ps = ProxyStream::new(message.as_bytes()).await?;
+        read_and_compare_message(ps, Vec::from(data)).await;
         Ok(())
     }
 
     #[tokio::test]
     async fn test_no_proxy_header_passed() -> Result<()> {
-        let message = b"MEMAM PROXY HEADER, CHUDACEK JA";
-        let mut ps = ProxyStream::new(&message[..]).await?;
+        const MESSAGE: &'static [u8] = b"MEMAM PROXY HEADER, CHUDACEK JA";
+
+        let ps = ProxyStream::new(&MESSAGE[..]).await?;
         assert!(ps.original_peer_addr().is_none());
         assert!(ps.original_destination_addr().is_none());
-        let mut buf = Vec::new();
-        ps.read_to_end(&mut buf).await?;
-        assert_eq!(&message[..], &buf[..]);
+        read_and_compare_message(ps, Vec::from(MESSAGE)).await;
+
         Ok(())
     }
 
@@ -523,61 +531,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_too_short_message_pass() -> Result<()> {
-        let message = b"NIC\r\n";
-        let mut ps = Acceptor::new()
-            .require_proxy_header(false)
-            .accept(&message[..])
-            .await?;
-        let mut buf = Vec::new();
-        ps.read_to_end(&mut buf).await?;
-        assert_eq!(message, &buf[..]);
-        Ok(())
-    }
-
-    type TestItem = [u8; 5];
-
-    /// Test codec for verifying conversion ProxyStream -> FramedParts
-    struct TestCodec {
-        buf: BytesMut,
-    }
-
-    impl Default for TestCodec {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
-    impl TestCodec {
         const MESSAGE: &'static [u8] = b"NIC\r\n";
-        pub fn new() -> Self {
-            Self {
-                buf: BytesMut::with_capacity(Self::MESSAGE.len()),
-            }
-        }
-    }
-
-    impl Decoder for TestCodec {
-        type Item = TestItem;
-        type Error = Error;
-
-        fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>> {
-            let received = buf.split();
-            self.buf.unsplit(received);
-            if self.buf.len() == Self::MESSAGE.len() {
-                let mut item: TestItem = [0; 5];
-                self.buf.split().copy_to_slice(&mut item);
-                Ok(Some(item))
-            } else {
-                Ok(None)
-            }
-        }
-    }
-
-    impl Encoder<TestItem> for TestCodec {
-        type Error = Error;
-        fn encode(&mut self, _item: TestItem, _header: &mut BytesMut) -> Result<()> {
-            Err(Error::Proxy("Encoding not to be tested".into()))
-        }
+        let ps = Acceptor::new()
+            .require_proxy_header(false)
+            .accept(&MESSAGE[..])
+            .await?;
+        read_and_compare_message(ps, Vec::from(MESSAGE)).await;
+        Ok(())
     }
 
     /// Verify that a test message is succesfully passed through the Acceptor and leaves it
@@ -585,25 +545,14 @@ mod tests {
     /// codec to actually collect the message again
     #[tokio::test]
     async fn test_short_message_retention_via_proxy_stream() -> Result<()> {
+        const MESSAGE: &'static [u8] = b"NIC\r\n";
         let ps = Acceptor::new()
             .require_proxy_header(false)
-            .accept(&TestCodec::MESSAGE[..])
+            .accept(&MESSAGE[..])
             .await
             .expect("BUG: cannot accept incoming message");
 
-        let mut framed_parts = FramedParts::new(ps.inner, TestCodec::default());
-        framed_parts.read_buf = ps.buf;
-        let mut framed = Framed::from_parts(framed_parts);
-
-        let passed_message = framed
-            .next()
-            .await
-            .expect("BUG: Unexpected end of stream")?;
-        assert_eq!(
-            passed_message,
-            TestCodec::MESSAGE,
-            "BUG: Message didn't flow successfully"
-        );
+        read_and_compare_message(ps, Vec::from(MESSAGE)).await;
         Ok(())
     }
 

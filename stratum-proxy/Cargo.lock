@@ -762,6 +762,7 @@ dependencies = [
  "structopt",
  "thiserror",
  "tokio",
+ "tokio-util",
  "toml",
 ]
 
@@ -787,7 +788,7 @@ dependencies = [
 name = "ii-wire"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes",
  "futures",
  "ii-logging",
  "pin-project",
