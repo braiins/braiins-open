@@ -20,7 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use bytes::{buf::BufMutExt, BytesMut};
+use bytes::{BufMut, BytesMut};
 
 use super::*;
 use crate::test_utils::v2::*;

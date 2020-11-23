@@ -25,7 +25,7 @@
 use std::convert::TryFrom;
 use std::fmt;
 
-use bytes::{buf::BufMutExt, BytesMut};
+use bytes::{BufMut, BytesMut};
 
 use crate::error::{Error, Result};
 use crate::Protocol;

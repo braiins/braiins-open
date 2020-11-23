@@ -22,10 +22,7 @@
 
 //! This module defines basic framing and all protocol message types
 
-use bytes::{
-    buf::{Buf, BufMut, BufMutExt},
-    BytesMut,
-};
+use bytes::{Buf, BufMut, BytesMut};
 
 use ii_logging::macros::*;
 use ii_unvariant::GetId;

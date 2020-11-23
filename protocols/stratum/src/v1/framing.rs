@@ -24,7 +24,7 @@
 
 pub mod codec;
 
-use bytes::{buf::BufMutExt, BytesMut};
+use bytes::{BufMut, BytesMut};
 
 use super::Protocol;
 use crate::error::{Error, Result};
