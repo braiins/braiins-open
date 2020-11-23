@@ -161,15 +161,15 @@ fn v1server_task<A: ToSocketAddrs>(
 
     async move {
         while let Some(conn) = server.next().await {
-            let conn = conn.expect("BUG server did not provide connection");
+            let conn = conn.expect("BUG: server did not provide connection");
             let conn = match expected_proxy_header {
                 None => Connection::<v1::Framing>::new(conn),
                 Some(ref proxy_info) => {
                     let proxy_stream = proxy::Acceptor::new()
                         .accept(conn)
                         .await
-                        .expect("Invalid proxy header");
-                    // test that data in PROXY header is same as expected
+                        .expect("BUG: Invalid proxy header");
+                    // Test that data in PROXY header matches
                     assert_eq!(
                         proxy_info.original_destination,
                         proxy_stream.original_destination_addr()
@@ -279,7 +279,7 @@ async fn test_v2_client(server_addr: &Address, proxy_proto_info: &Option<proxy::
                         proxy_proto_info.original_destination,
                     )
                     .await
-                    .expect("Cannot send proxy header");
+                    .expect("BUG: Cannot send proxy header");
             };
             let mut conn: Connection<v2::Framing> = conn.into();
 
@@ -295,9 +295,8 @@ async fn test_v2_client(server_addr: &Address, proxy_proto_info: &Option<proxy::
             let response = conn
                 .next()
                 .await
-                .expect("should get response message")
-                .map_err(|e| panic!("Got response error {}", e))
-                .unwrap();
+                .expect("BUG: should get response message")
+                .expect("BUG: failed to get response");
 
             test_utils::v2::TestIdentityHandler
                 .handle_v2(response)

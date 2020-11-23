@@ -66,7 +66,7 @@ async fn main() -> Result<()> {
         // Received SIGINT, tell the server task to shut down:
         let _ = quit.try_borrow_mut().map(|mut quit| quit.try_send(()));
     })
-    .expect("Could not set SIGINT handler");
+    .expect("BUG: Could not set SIGINT handler");
 
     server.run().await;
     Ok(())
