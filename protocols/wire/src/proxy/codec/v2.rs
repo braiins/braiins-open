@@ -224,11 +224,13 @@ mod tests {
         };
         let mut buf = BytesMut::new();
         let mut codec = V2Codec::new();
-        codec.encode(info.clone(), &mut buf).expect("encoding ok");
+        codec
+            .encode(info.clone(), &mut buf)
+            .expect("BUG: encoding failed");
         let info2 = codec
             .decode(&mut buf)
-            .expect("decoding ok")
-            .expect("has enough data");
+            .expect("BUG: No ProxyInfo decoded")
+            .expect("BUG: ProxyInfo decoding failed");
         assert_eq!(info, info2);
         assert!(buf.is_empty());
     }

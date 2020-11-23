@@ -307,7 +307,7 @@ mod test {
         let h1 = Header::new(SocketType::Ipv4);
         let mut buf = BytesMut::new();
         h1.serialize(&mut buf);
-        let h2 = Header::deserialize(&mut buf).expect("deserialization error");
+        let h2 = Header::deserialize(&mut buf).expect("BUG: cannot deserialize header");
         assert_eq!(h1, h2);
         assert!(buf.is_empty());
     }
@@ -319,7 +319,8 @@ mod test {
         let a1: Ip4Addresses = (src_addr.clone(), dst_addr.clone()).into();
         let mut buf = BytesMut::new();
         a1.serialize(&mut buf);
-        let a2 = Ip4Addresses::deserialize(&mut buf).unwrap();
+        let a2 =
+            Ip4Addresses::deserialize(&mut buf).expect("BUG: Cannot deserialize IPv4 addresses");
         assert_eq!(a1, a2);
         assert!(buf.is_empty());
 

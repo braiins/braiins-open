@@ -21,8 +21,6 @@
 // contact us at opensource@braiins.com.
 
 //! Implements  [PROXY protocol](http://www.haproxy.org/download/1.8/doc/proxy-protocol.txt) in tokio
-//!
-//! TODO: currently only v1 is implemented
 
 use bytes::Buf;
 use bytes::BytesMut;
@@ -445,12 +443,18 @@ mod tests {
             .await
             .expect("BUG: Cannot accept message");
         assert_eq!(
-            "192.168.0.1:56324".parse::<SocketAddr>().unwrap(),
-            ps.original_peer_addr().unwrap()
+            "192.168.0.1:56324"
+                .parse::<SocketAddr>()
+                .expect("BUG: Cannot parse IP"),
+            ps.original_peer_addr()
+                .expect("BUG: Cannot parse original peer IP")
         );
         assert_eq!(
-            "192.168.0.11:443".parse::<SocketAddr>().unwrap(),
-            ps.original_destination_addr().unwrap()
+            "192.168.0.11:443"
+                .parse::<SocketAddr>()
+                .expect("BUG: Cannot parse IP"),
+            ps.original_destination_addr()
+                .expect("BUG: Cannot parse original dest IP")
         );
         read_and_compare_message(ps, Vec::from(HELLO)).await;
     }
@@ -469,12 +473,18 @@ mod tests {
             .await
             .expect("BUG: V2 message not accepted");
         assert_eq!(
-            "192.168.0.1:56324".parse::<SocketAddr>().unwrap(),
-            ps.original_peer_addr().unwrap()
+            "192.168.0.1:56324"
+                .parse::<SocketAddr>()
+                .expect("BUG: Cannot parse IP"),
+            ps.original_peer_addr()
+                .expect("BUG: Cannot parse original peer IP")
         );
         assert_eq!(
-            "192.168.0.11:443".parse::<SocketAddr>().unwrap(),
-            ps.original_destination_addr().unwrap()
+            "192.168.0.11:443"
+                .parse::<SocketAddr>()
+                .expect("BUG: Cannot parse IP"),
+            ps.original_destination_addr()
+                .expect("BUG: Cannot parse original dest IP")
         );
         assert_eq!(
             b"Hello",
