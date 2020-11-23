@@ -437,10 +437,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_v1_tcp4() -> Result<()> {
+    async fn test_v1_tcp4() {
         const HELLO: &'static [u8] = b"HELLO";
         let message = "PROXY TCP4 192.168.0.1 192.168.0.11 56324 443\r\nHELLO".as_bytes();
-        let ps = Acceptor::new().accept(message).await?;
+        let ps = Acceptor::new()
+            .accept(message)
+            .await
+            .expect("BUG: Cannot accept message");
         assert_eq!(
             "192.168.0.1:56324".parse::<SocketAddr>().unwrap(),
             ps.original_peer_addr().unwrap()
@@ -450,11 +453,10 @@ mod tests {
             ps.original_destination_addr().unwrap()
         );
         read_and_compare_message(ps, Vec::from(HELLO)).await;
-        Ok(())
     }
 
     #[tokio::test]
-    async fn test_v2tcp4() -> Result<()> {
+    async fn test_v2tcp4() {
         let mut message = Vec::new();
         message.extend_from_slice(V2_TAG);
         message.extend(&[
@@ -479,11 +481,10 @@ mod tests {
             &ps.buf[..],
             "BUG: Expected message not stored in ProxyStream"
         );
-        Ok(())
     }
 
     #[tokio::test]
-    async fn test_v1_unknown_long_message() -> Result<()> {
+    async fn test_v1_unknown_long_message() {
         let mut message = "PROXY UNKNOWN\r\n".to_string();
         //const DATA_LENGTH: usize = 1_000_000;
         const DATA_LENGTH: usize = 3;
@@ -492,21 +493,22 @@ mod tests {
         let data_str = String::from_utf8(data.clone()).expect("BUG: cannot build test large data");
         message.push_str(data_str.as_str());
 
-        let ps = ProxyStream::new(message.as_bytes()).await?;
+        let ps = ProxyStream::new(message.as_bytes())
+            .await
+            .expect("BUG: cannot create ProxyStream");
         read_and_compare_message(ps, Vec::from(data)).await;
-        Ok(())
     }
 
     #[tokio::test]
-    async fn test_no_proxy_header_passed() -> Result<()> {
+    async fn test_no_proxy_header_passed() {
         const MESSAGE: &'static [u8] = b"MEMAM PROXY HEADER, CHUDACEK JA";
 
-        let ps = ProxyStream::new(&MESSAGE[..]).await?;
+        let ps = ProxyStream::new(&MESSAGE[..])
+            .await
+            .expect("BUG: cannot create ProxyStream");
         assert!(ps.original_peer_addr().is_none());
         assert!(ps.original_destination_addr().is_none());
         read_and_compare_message(ps, Vec::from(MESSAGE)).await;
-
-        Ok(())
     }
 
     #[tokio::test]
@@ -530,21 +532,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_too_short_message_pass() -> Result<()> {
+    async fn test_too_short_message_pass() {
         const MESSAGE: &'static [u8] = b"NIC\r\n";
         let ps = Acceptor::new()
             .require_proxy_header(false)
             .accept(&MESSAGE[..])
-            .await?;
+            .await
+            .expect("BUG: Cannot accept message");
         read_and_compare_message(ps, Vec::from(MESSAGE)).await;
-        Ok(())
     }
 
     /// Verify that a test message is succesfully passed through the Acceptor and leaves it
     /// untouched in the form of ProxyStream with prepared buffer. We use framed with a test
     /// codec to actually collect the message again
     #[tokio::test]
-    async fn test_short_message_retention_via_proxy_stream() -> Result<()> {
+    async fn test_short_message_retention_via_proxy_stream() {
         const MESSAGE: &'static [u8] = b"NIC\r\n";
         let ps = Acceptor::new()
             .require_proxy_header(false)
@@ -553,19 +555,22 @@ mod tests {
             .expect("BUG: cannot accept incoming message");
 
         read_and_compare_message(ps, Vec::from(MESSAGE)).await;
-        Ok(())
     }
 
     #[tokio::test]
-    async fn test_connect() -> Result<()> {
+    async fn test_connect() {
         let mut buf = Vec::new();
-        let src = "127.0.0.1:1111".parse().ok();
-        let dest = "127.0.0.1:2222".parse().ok();
+        let src = "127.0.0.1:1111"
+            .parse::<SocketAddr>()
+            .expect("BUG: Cannot parse IP");
+        let dest = "127.0.0.1:2222"
+            .parse::<SocketAddr>()
+            .expect("BUG: Cannot parse IP");
         let _res = Connector::new()
-            .write_proxy_header(&mut buf, src, dest)
-            .await?;
+            .write_proxy_header(&mut buf, Some(src), Some(dest))
+            .await
+            .expect("BUG: Cannot write proxy header");
         let expected = "PROXY TCP4 127.0.0.1 127.0.0.1 1111 2222\r\n";
         assert_eq!(expected.as_bytes(), &buf[..]);
-        Ok(())
     }
 }
