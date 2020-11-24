@@ -390,7 +390,7 @@ where
                 .support_v2(
                     self.proxy_protocol_config
                         .downstream_versions
-                        .contains(&ProxyProtocolVersion::V1),
+                        .contains(&ProxyProtocolVersion::V2),
                 )
                 .require_proxy_header(self.proxy_protocol_config.downstream_required);
             let stream = acceptor.accept(self.v2_downstream_conn).await?;
