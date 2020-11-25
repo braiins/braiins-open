@@ -40,7 +40,7 @@ use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_wire::{
-    proxy::{Acceptor, Connector, ProxyStream, WithProxyInfo},
+    proxy::{self, Connector, ProxyStream, WithProxyInfo},
     Address, Client, Connection, Server,
 };
 
@@ -279,29 +279,19 @@ impl SecurityContext {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone, Deserialize)]
-pub enum ProxyProtocolVersion {
-    V1,
-    V2,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProxyProtocolConfig {
-    /// When true, the PROXY protocol is enforced and the server will not accept any connection
-    /// that doesn't initiate PROXY protocol session
-    pub downstream_required: bool,
-    /// Accepted versions of PROXY protocol on incoming connection - either only V1 or V2 or both
-    pub downstream_versions: Vec<ProxyProtocolVersion>,
+    #[serde(flatten)]
+    pub downstream_config: proxy::ProtocolConfig,
     /// If proxy protocol information is available from downstream connection,
     /// this option specifies what upstream version to use
-    pub upstream_version: Option<ProxyProtocolVersion>,
+    pub upstream_version: Option<proxy::ProtocolVersion>,
 }
 
 impl Default for ProxyProtocolConfig {
     fn default() -> Self {
         ProxyProtocolConfig {
-            downstream_required: false,
-            downstream_versions: vec![],
+            downstream_config: proxy::ProtocolConfig::new(false, vec![]),
             upstream_version: None,
         }
     }
@@ -380,20 +370,17 @@ where
             "stratum proxy: Handling connection from: {:?}",
             v2_peer_addr
         );
-        let incoming = if !self.proxy_protocol_config.downstream_versions.is_empty() {
-            let acceptor = Acceptor::new()
-                .support_v1(
-                    self.proxy_protocol_config
-                        .downstream_versions
-                        .contains(&ProxyProtocolVersion::V1),
-                )
-                .support_v2(
-                    self.proxy_protocol_config
-                        .downstream_versions
-                        .contains(&ProxyProtocolVersion::V2),
-                )
-                .require_proxy_header(self.proxy_protocol_config.downstream_required);
-            let stream = acceptor.accept(self.v2_downstream_conn).await?;
+        let incoming = if !self
+            .proxy_protocol_config
+            .downstream_config
+            .versions
+            .is_empty()
+        {
+            let acceptor_builder = ii_wire::proxy::AcceptorBuilder::new(
+                self.proxy_protocol_config.downstream_config.clone(),
+            );
+            let acceptor = acceptor_builder.build(self.v2_downstream_conn);
+            let stream = acceptor.await?;
             debug!("Received connection from downstream proxy - original source, {:?} original destination {:?}",
                    stream.original_peer_addr(), stream.original_destination_addr());
             IncomingConnection::Proxy(stream)
@@ -414,7 +401,7 @@ where
                 incoming.original_destination_addr(),
             ) {
                 Connector::new()
-                    .use_v2(version == ProxyProtocolVersion::V2)
+                    .use_v2(version == proxy::ProtocolVersion::V2)
                     .write_proxy_header(&mut v1_conn, src, dst)
                     .await?;
             } else {

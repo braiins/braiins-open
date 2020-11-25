@@ -24,14 +24,17 @@
 
 use bytes::Buf;
 use bytes::BytesMut;
+use futures::{Future, FutureExt};
 use pin_project::pin_project;
 use std::convert::TryInto;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
-
 use tokio::prelude::*;
 use tokio::stream::StreamExt;
 use tokio_util::codec::{Decoder, Encoder, Framed, FramedParts};
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::connection::Connection;
 use crate::framing::Framing;
@@ -64,6 +67,32 @@ pub trait WithProxyInfo {
 
 impl WithProxyInfo for TcpStream {}
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum ProtocolVersion {
+    V1,
+    V2,
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ProtocolConfig {
+    /// When true, the PROXY protocol is enforced and the server will not accept any connection
+    /// that doesn't initiate PROXY protocol session
+    pub require_proxy_header: bool,
+    /// Accepted versions of PROXY protocol on incoming connection
+    pub versions: Vec<ProtocolVersion>,
+}
+
+impl ProtocolConfig {
+    pub fn new(require_proxy_header: bool, versions: Vec<ProtocolVersion>) -> Self {
+        Self {
+            require_proxy_header,
+            versions,
+        }
+    }
+}
+
 /// Struct to accept stream with PROXY header and extract information from it
 pub struct Acceptor {
     require_proxy_header: bool,
@@ -90,7 +119,10 @@ impl Acceptor {
     /// with appropriate information in it
     /// This method may block for ~2 secs until stream timeout is triggered when performing
     /// autodetection and waitinf for `COMMON_HEADER_PREFIX_LEN` bytes to arrive.
-    pub async fn accept<T: AsyncRead + Unpin>(self, mut stream: T) -> Result<ProxyStream<T>> {
+    pub async fn accept<T: AsyncRead + Send + Unpin>(
+        self,
+        mut stream: T,
+    ) -> Result<ProxyStream<T>> {
         trace!("wire: Accepting stream");
         let mut buf = BytesMut::with_capacity(MAX_HEADER_SIZE);
         // This loop will block for ~2 seconds (read_buf() timeout) if less than
@@ -198,6 +230,46 @@ impl Acceptor {
     /// If true v2 PROXY protocol is supported (default)
     pub fn support_v2(self, support_v2: bool) -> Self {
         Acceptor { support_v2, ..self }
+    }
+}
+
+type AcceptorFuture<T> = Box<dyn Future<Output = Result<ProxyStream<T>>> + Send + Unpin>;
+type BuildMethod<T> = fn(AcceptorBuilder<T>, T) -> AcceptorFuture<T>;
+
+/// Builder is carries configuration for a future acceptor and is preconfigured early
+/// to build an Acceptor in suitable state
+#[derive(Clone)]
+pub struct AcceptorBuilder<T> {
+    config: ProtocolConfig,
+    /// Build method for a particular Acceptor variant is selected based on provided configuration
+    build_method: BuildMethod<T>,
+}
+
+impl<T> AcceptorBuilder<T>
+where
+    T: AsyncRead + Send + Unpin + 'static,
+{
+    pub fn new(config: ProtocolConfig) -> Self {
+        // TODO for now, we only provide hardcoded autodetect build method
+        let build_method = Self::build_auto;
+        Self {
+            config,
+            build_method,
+        }
+    }
+
+    pub fn build(self, stream: T) -> AcceptorFuture<T> {
+        (self.build_method)(self, stream)
+    }
+
+    /// TODO refactor once the Acceptor is streamlined and doesn't require such complex building
+    pub fn build_auto(self, stream: T) -> AcceptorFuture<T> {
+        let acceptor = Acceptor::new()
+            .support_v1(self.config.versions.contains(&ProtocolVersion::V1))
+            .support_v2(self.config.versions.contains(&ProtocolVersion::V2))
+            .require_proxy_header(self.config.require_proxy_header);
+
+        Box::new(acceptor.accept(stream).boxed())
     }
 }
 
@@ -325,7 +397,7 @@ impl<T> WithProxyInfo for ProxyStream<T> {
     }
 }
 
-impl<T: AsyncRead + Unpin> ProxyStream<T> {
+impl<T: AsyncRead + Send + Unpin> ProxyStream<T> {
     pub async fn new(stream: T) -> Result<Self> {
         Acceptor::default().accept(stream).await
     }
@@ -582,5 +654,19 @@ mod tests {
             .expect("BUG: Cannot write proxy header");
         let expected = "PROXY TCP4 127.0.0.1 127.0.0.1 1111 2222\r\n";
         assert_eq!(expected.as_bytes(), &buf[..]);
+    }
+
+    /// Verify that build_auto method has been detected
+    #[test]
+    fn acceptor_builder_auto() {
+        let acceptor_builder: AcceptorBuilder<&[u8]> = AcceptorBuilder::new(ProtocolConfig::new(
+            false,
+            vec![ProtocolVersion::V1, ProtocolVersion::V2],
+        ));
+
+        assert!(
+            acceptor_builder.build_method == AcceptorBuilder::build_auto,
+            "BUG: Expected auto method"
+        )
     }
 }
