@@ -14,7 +14,7 @@ tokio02_ = { package = "tokio", version = "0.2.22", features = ["full"], optiona
 tokio02-util = { package = "tokio-util", version = "0.3.1", features = ["codec"], optional = true }
 pin-project = "1.0.1"
 thiserror = "1.0.21"
-serde = { version = "1.0.117", optional = true }
+serde = { version = "1.0.117", optional = true, features = ["derive"] }
 ii-logging = { path = "../../utils-rs/logging" }
 
 [dev-dependencies]
