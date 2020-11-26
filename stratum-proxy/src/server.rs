@@ -40,7 +40,7 @@ use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_wire::{
-    proxy::{self, Connector, ProxyStream, WithProxyInfo},
+    proxy::{self, Connector, WithProxyInfo as _},
     Address, Client, Connection, Server,
 };
 
@@ -297,34 +297,7 @@ impl Default for ProxyProtocolConfig {
     }
 }
 
-/// Differentiate if we have TCPStream or ProxyStream
-#[derive(Debug)]
-enum IncomingConnection {
-    Tcp(TcpStream),
-    Proxy(ProxyStream<TcpStream>),
-}
-
-impl WithProxyInfo for IncomingConnection {
-    fn original_peer_addr(&self) -> Option<SocketAddr> {
-        use IncomingConnection::*;
-        match self {
-            Tcp(ref s) => s.original_peer_addr(),
-            Proxy(ref p) => p.original_peer_addr(),
-        }
-    }
-
-    fn original_destination_addr(&self) -> Option<SocketAddr> {
-        use IncomingConnection::*;
-        match self {
-            Tcp(ref s) => s.original_destination_addr(),
-            Proxy(ref p) => p.original_destination_addr(),
-        }
-    }
-}
-
 struct ProxyConnection<FN, T> {
-    /// Downstream connection that is to be handled
-    v2_downstream_conn: TcpStream,
     /// Upstream server that we should try to connect to
     v1_upstream_addr: Address,
     /// See ProxyServer
@@ -332,8 +305,13 @@ struct ProxyConnection<FN, T> {
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
     generic_context: T,
-    /// Configuration of PROXY protocol
-    proxy_protocol_config: ProxyProtocolConfig,
+    /// Builds PROXY protocol acceptor for a specified configuration and clones it into
+    /// It is intentionally optional so that the do_handle() method can take it while working with
+    /// a mutable reference of Self instance. At the same time it introduces a state into the
+    /// connection, where going over `do_handle()` twice is considered a BUG.
+    proxy_protocol_acceptor: Option<proxy::AcceptorFuture<TcpStream>>,
+    /// Server will use this version for talking to upstream server (if any)
+    proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
 }
 
 impl<FN, FT, T> ProxyConnection<FN, T>
@@ -343,20 +321,20 @@ where
     T: Send + Sync + Clone,
 {
     fn new(
-        v2_downstream_conn: TcpStream,
         v1_upstream_addr: Address,
         security_context: Option<Arc<SecurityContext>>,
         get_connection_handler: Arc<FN>,
         generic_context: T,
-        proxy_protocol_config: ProxyProtocolConfig,
+        proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
+        proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
     ) -> Self {
         Self {
-            v2_downstream_conn,
             v1_upstream_addr,
             get_connection_handler,
             security_context,
             generic_context,
-            proxy_protocol_config,
+            proxy_protocol_acceptor: Some(proxy_protocol_acceptor),
+            proxy_protocol_upstream_version,
         }
     }
 
@@ -365,40 +343,30 @@ where
     ///  - check PROXY protocol header (if configured)
     ///  - pass PROXY protocol header (if configured)
     ///  - establish noise handshake (if configured)
-    async fn do_handle(self, v2_peer_addr: SocketAddr) -> Result<()> {
-        trace!(
-            "stratum proxy: Handling connection from: {:?}",
-            v2_peer_addr
+    async fn do_handle(&mut self) -> Result<()> {
+        // Handle proxy protocol
+        let proxy_protocol_acceptor = self
+            .proxy_protocol_acceptor
+            .take()
+            .expect("BUG: proxy protocol acceptor has already been used");
+        let proxy_stream = proxy_protocol_acceptor.await?;
+        debug!(
+            "Received connection from downstream - original source, {:?} original destination {:?}",
+            proxy_stream.original_peer_addr(),
+            proxy_stream.original_destination_addr()
         );
-        let incoming = if !self
-            .proxy_protocol_config
-            .downstream_config
-            .versions
-            .is_empty()
-        {
-            let acceptor_builder = ii_wire::proxy::AcceptorBuilder::new(
-                self.proxy_protocol_config.downstream_config.clone(),
-            );
-            let acceptor = acceptor_builder.build(self.v2_downstream_conn);
-            let stream = acceptor.await?;
-            debug!("Received connection from downstream proxy - original source, {:?} original destination {:?}",
-                   stream.original_peer_addr(), stream.original_destination_addr());
-            IncomingConnection::Proxy(stream)
-        } else {
-            IncomingConnection::Tcp(self.v2_downstream_conn)
-        };
         // Connect to upstream V1 server
-        let mut v1_client = Client::new(self.v1_upstream_addr);
+        let mut v1_client = Client::new(self.v1_upstream_addr.clone());
         // TODO Attempt only once to connect -> consider using the backoff for a few rounds before
         // failing. Also
         // Use the connection only to build the Framed object with V1 framing and to extract the
         // peer address
         let mut v1_conn = v1_client.next().await?;
 
-        if let Some(version) = self.proxy_protocol_config.upstream_version {
+        if let Some(version) = self.proxy_protocol_upstream_version {
             if let (src @ Some(_), dst @ Some(_)) = (
-                incoming.original_peer_addr(),
-                incoming.original_destination_addr(),
+                proxy_stream.original_peer_addr(),
+                proxy_stream.original_destination_addr(),
             ) {
                 Connector::new()
                     .use_v2(version == proxy::ProtocolVersion::V2)
@@ -410,62 +378,51 @@ where
         }
         let v1_peer_addr = v1_conn.peer_addr()?;
         let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
+        // TODO, turn this into Debug and provide some sane information
         info!(
-            "Established translation connection with upstream V1 {} for V2 peer: {}",
-            v1_peer_addr, v2_peer_addr
+            "Established translation connection with upstream V1 {} for V2 peer: {:?}",
+            v1_peer_addr,
+            proxy_stream.original_peer_addr()
         );
 
-        let v2_framed_stream =
-            match self.security_context {
-                // Establish noise responder and run the handshake
-                Some(security_context) => {
-                    // TODO pass the signature message once the Responder API is adjusted
-                    let responder = v2::noise::Responder::new(
-                        &security_context.static_key_pair,
-                        security_context.signature_noise_message.clone(),
-                        vec![
-                            v2::noise::negotiation::EncryptionAlgorithm::AESGCM,
-                            v2::noise::negotiation::EncryptionAlgorithm::ChaChaPoly,
-                        ],
-                    );
-                    let build_stratum_noise_codec = |noise_codec| {
-                        <v2::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec))
-                    };
-                    trace!("Handling incoming connection: {:?}", incoming);
-                    match incoming {
-                        IncomingConnection::Proxy(proxy) => {
-                            // TODO this needs refactoring there is no point of passing the codec
-                            // type, we should be able to run noise just with anything that
-                            // implements AsyncRead/AsyncWrite
-                            responder
-                            .accept_parts_with_codec(FramedParts::<TcpStream,
-                                ii_wire::proxy::codec::v1::V1Codec>::from(proxy),
-                                                     build_stratum_noise_codec)
-                            .await?
-                        }
-                        IncomingConnection::Tcp(stream) => {
-                            responder
-                                .accept_with_codec(stream, build_stratum_noise_codec)
-                                .await?
-                        }
-                    }
-                }
-                // Insecure operation has been configured
-                None => match incoming {
-                    IncomingConnection::Proxy(proxy) => {
-                        Connection::<v2::Framing>::from(proxy).into_inner()
-                    }
-                    IncomingConnection::Tcp(stream) => {
-                        Connection::<v2::Framing>::new(stream).into_inner()
-                    }
-                },
-            };
+        let v2_framed_stream = match self.security_context.as_ref() {
+            // Establish noise responder and run the handshake
+            Some(ref security_context) => {
+                // TODO pass the signature message once the Responder API is adjusted
+                let responder = v2::noise::Responder::new(
+                    &security_context.static_key_pair,
+                    security_context.signature_noise_message.clone(),
+                    vec![
+                        v2::noise::negotiation::EncryptionAlgorithm::AESGCM,
+                        v2::noise::negotiation::EncryptionAlgorithm::ChaChaPoly,
+                    ],
+                );
+                let build_stratum_noise_codec =
+                    |noise_codec| <v2::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec));
+                trace!("Handling incoming secure connection: {:?}", proxy_stream);
+                // TODO this needs refactoring there is no point of passing the codec
+                // type, we should be able to run noise just with anything that
+                // implements AsyncRead/AsyncWrite
+                responder
+                    .accept_parts_with_codec(
+                        FramedParts::<TcpStream, ii_wire::proxy::codec::v1::V1Codec>::from(
+                            proxy_stream,
+                        ),
+                        build_stratum_noise_codec,
+                    )
+                    .await?
+            }
+            // Insecure operation has been configured
+            None => Connection::<v2::Framing>::from(proxy_stream).into_inner(),
+        };
 
         // Start processing of both ends
         // TODO adjust connection handler to return a Result
         (self.get_connection_handler)(
             v2_framed_stream,
-            v2_peer_addr,
+            // TODO: provide connection info instead of a pure peer address, for now we just
+            //  clone v1_addr
+            v1_peer_addr.clone(),
             v1_framed_stream,
             v1_peer_addr,
             self.generic_context.clone(),
@@ -475,18 +432,13 @@ where
 
     /// Handle connection by delegating it to a method that is able to handle a Result so that we
     /// have info/error reporting in a single place
-    async fn handle(self) {
-        let v2_peer_addr = match self.v2_downstream_conn.peer_addr() {
-            Ok(a) => a,
-            Err(err) => {
-                debug!("Connection error: {}, can't retrieve peer address", err);
-                return;
-            }
-        };
-
-        match self.do_handle(v2_peer_addr).await {
-            Ok(()) => info!("Closing connection from {:?} ...", v2_peer_addr),
-            Err(err) => warn!("Connection error: {}, peer: {:?}", err, v2_peer_addr),
+    async fn handle(mut self) {
+        match self.do_handle().await {
+            Ok(()) => info!("Closing connection from {:?} ...", self.v1_upstream_addr),
+            Err(err) => warn!(
+                "Connection error: {}, peer: {:?}",
+                err, self.v1_upstream_addr
+            ),
         }
     }
 }
@@ -509,8 +461,10 @@ pub struct ProxyServer<FN, T> {
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
     generic_context: T,
-    /// PROXY protocol configuration
-    proxy_protocol_config: ProxyProtocolConfig,
+    /// Builds PROXY protocol acceptor for a specified configuration
+    proxy_protocol_acceptor_builder: proxy::AcceptorBuilder<TcpStream>,
+    /// Server will use this version for talking to upstream server (when defined)
+    proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
 }
 
 impl<FN, FT, T> ProxyServer<FN, T>
@@ -552,7 +506,10 @@ where
             get_connection_handler: Arc::new(get_connection_handler),
             security_context,
             generic_context,
-            proxy_protocol_config,
+            proxy_protocol_acceptor_builder: proxy::AcceptorBuilder::new(
+                proxy_protocol_config.downstream_config,
+            ),
+            proxy_protocol_upstream_version: proxy_protocol_config.upstream_version,
         })
     }
 
@@ -567,18 +524,18 @@ where
         let connection = connection_result?;
 
         let peer_addr = connection.peer_addr()?;
-
+        trace!("stratum proxy: Handling connection from: {:?}", peer_addr);
         // Fully secured connection has been established
         tokio::spawn(
             ProxyConnection::new(
-                connection,
                 self.v1_upstream_addr.clone(),
                 self.security_context
                     .as_ref()
                     .map(|context| context.clone()),
                 self.get_connection_handler.clone(),
                 self.generic_context.clone(),
-                self.proxy_protocol_config.clone(),
+                self.proxy_protocol_acceptor_builder.build(connection),
+                self.proxy_protocol_upstream_version.clone(),
             )
             .handle(),
         );
