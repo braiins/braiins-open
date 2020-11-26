@@ -233,8 +233,11 @@ impl Acceptor {
     }
 }
 
-type AcceptorFuture<T> = Box<dyn Future<Output = Result<ProxyStream<T>>> + Send + Unpin>;
-type BuildMethod<T> = fn(AcceptorBuilder<T>, T) -> AcceptorFuture<T>;
+/// Represent a prepared acceptor for processing incoming bytes
+pub type AcceptorFuture<T> = Box<dyn Future<Output = Result<ProxyStream<T>>> + Send + Unpin>;
+
+/// Internal builder method selected based on configuration used when constructing `AcceptorBuilder`
+type BuildMethod<T> = fn(&AcceptorBuilder<T>, T) -> AcceptorFuture<T>;
 
 /// Builder is carries configuration for a future acceptor and is preconfigured early
 /// to build an Acceptor in suitable state
@@ -258,12 +261,12 @@ where
         }
     }
 
-    pub fn build(self, stream: T) -> AcceptorFuture<T> {
+    pub fn build(&self, stream: T) -> AcceptorFuture<T> {
         (self.build_method)(self, stream)
     }
 
     /// TODO refactor once the Acceptor is streamlined and doesn't require such complex building
-    pub fn build_auto(self, stream: T) -> AcceptorFuture<T> {
+    pub fn build_auto(&self, stream: T) -> AcceptorFuture<T> {
         let acceptor = Acceptor::new()
             .support_v1(self.config.versions.contains(&ProtocolVersion::V1))
             .support_v2(self.config.versions.contains(&ProtocolVersion::V2))
@@ -664,9 +667,9 @@ mod tests {
             vec![ProtocolVersion::V1, ProtocolVersion::V2],
         ));
 
-        assert!(
-            acceptor_builder.build_method == AcceptorBuilder::build_auto,
-            "BUG: Expected auto method"
-        )
+        let actual = acceptor_builder.build_method as *const BuildMethod<&[u8]>;
+        let expected = AcceptorBuilder::<&[u8]>::build_auto as *const BuildMethod<&[u8]>;
+
+        assert_eq!(actual, expected, "BUG: Expected auto method");
     }
 }
