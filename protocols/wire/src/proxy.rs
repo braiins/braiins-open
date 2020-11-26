@@ -157,13 +157,13 @@ impl Acceptor {
         }
         debug!("wire: Buffered initial {} bytes", buf.remaining());
 
-        if &buf[0..Self::COMMON_HEADER_PREFIX_LEN] == &V1_TAG[0..Self::COMMON_HEADER_PREFIX_LEN]
+        if buf[0..Self::COMMON_HEADER_PREFIX_LEN] == V1_TAG[0..Self::COMMON_HEADER_PREFIX_LEN]
             && self.support_v1
         {
             debug!("wire: Detected proxy protocol v1 tag");
             Acceptor::decode_header(buf, stream, V1Codec::new()).await
-        } else if &buf[0..Self::COMMON_HEADER_PREFIX_LEN]
-            == &V2_TAG[0..Self::COMMON_HEADER_PREFIX_LEN]
+        } else if buf[0..Self::COMMON_HEADER_PREFIX_LEN]
+            == V2_TAG[0..Self::COMMON_HEADER_PREFIX_LEN]
             && self.support_v2
         {
             debug!("wire: Detected proxy protocol v2 tag");
