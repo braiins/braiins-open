@@ -63,9 +63,24 @@ pub trait WithProxyInfo {
     fn original_destination_addr(&self) -> Option<SocketAddr> {
         None
     }
+
+    fn proxy_info(&self) -> Result<ProxyInfo> {
+        use std::convert::TryFrom;
+        let original_source = self.original_peer_addr();
+        let original_destination = self.original_destination_addr();
+        ProxyInfo::try_from((original_source, original_destination))
+    }
 }
 
 impl WithProxyInfo for TcpStream {}
+
+pub trait ProxyInfoVisitor {
+    fn accept<T: WithProxyInfo>(&mut self, connection_context: &T);
+}
+
+impl ProxyInfoVisitor for () {
+    fn accept<T: WithProxyInfo>(&mut self, _connection_context: &T) {}
+}
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

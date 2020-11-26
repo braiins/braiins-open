@@ -40,7 +40,7 @@ use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_wire::{
-    proxy::{self, Connector, WithProxyInfo as _},
+    proxy::{self, Connector, ProxyInfoVisitor, WithProxyInfo as _},
     Address, Client, Connection, Server,
 };
 
@@ -318,7 +318,7 @@ impl<FN, FT, T> ProxyConnection<FN, T>
 where
     FT: Future<Output = Result<()>>,
     FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T) -> FT,
-    T: Send + Sync + Clone,
+    T: Send + Sync + Clone + ProxyInfoVisitor,
 {
     fn new(
         v1_upstream_addr: Address,
@@ -350,6 +350,7 @@ where
             .take()
             .expect("BUG: proxy protocol acceptor has already been used");
         let proxy_stream = proxy_protocol_acceptor.await?;
+        self.generic_context.accept(&proxy_stream);
         debug!(
             "Received connection from downstream - original source, {:?} original destination {:?}",
             proxy_stream.original_peer_addr(),
@@ -470,7 +471,7 @@ impl<FN, FT, T> ProxyServer<FN, T>
 where
     FT: Future<Output = Result<()>> + Send + 'static,
     FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T) -> FT + Send + Sync + 'static,
-    T: Send + Sync + Clone + 'static,
+    T: Send + Sync + Clone + ProxyInfoVisitor + 'static,
 {
     /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
     /// specified `get_connection_handler` that builds the connection handler `Future` on demand

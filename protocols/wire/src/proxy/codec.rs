@@ -41,7 +41,7 @@ pub enum SocketType {
 }
 
 /// Contains information from PROXY protocol
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub struct ProxyInfo {
     /// Type of transport
     pub socket_type: SocketType,
