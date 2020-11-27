@@ -118,7 +118,7 @@ impl Acceptor {
     /// Processes proxy protocol header and creates [`ProxyStream`]
     /// with appropriate information in it
     /// This method may block for ~2 secs until stream timeout is triggered when performing
-    /// autodetection and waitinf for `COMMON_HEADER_PREFIX_LEN` bytes to arrive.
+    /// autodetection and waiting for `COMMON_HEADER_PREFIX_LEN` bytes to arrive.
     pub async fn accept<T: AsyncRead + Send + Unpin>(
         self,
         mut stream: T,
@@ -334,8 +334,6 @@ impl Connector {
 
 /// Stream containing information from PROXY protocol
 ///
-/// It implements `AsyncRead` and `AsyncWrite` so it can be used as a replacement of `TcpStream`
-/// or other byte streams
 #[pin_project]
 #[derive(Debug)]
 pub struct ProxyStream<T> {
