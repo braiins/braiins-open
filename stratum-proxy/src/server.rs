@@ -368,8 +368,7 @@ where
                 proxy_stream.original_peer_addr(),
                 proxy_stream.original_destination_addr(),
             ) {
-                Connector::new()
-                    .use_v2(version == proxy::ProtocolVersion::V2)
+                Connector::new(version)
                     .write_proxy_header(&mut v1_conn, src, dst)
                     .await?;
             } else {

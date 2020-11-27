@@ -278,26 +278,13 @@ where
 
 /// `Connector` enables to add PROXY protocol header to outgoing stream
 pub struct Connector {
-    use_v2: bool,
-}
-
-impl Default for Connector {
-    fn default() -> Self {
-        Connector { use_v2: false }
-    }
+    protocol_version: ProtocolVersion,
 }
 
 impl Connector {
-    /// Creates new `Connector`
-    /// TODO pass
-    pub fn new() -> Self {
-        Connector::default()
-    }
-
-    /// TODO: Add v2 support
     /// If `use_v2` is true, v2 header will be added
-    pub fn use_v2(self, use_v2: bool) -> Self {
-        Connector { use_v2 }
+    pub fn new(protocol_version: ProtocolVersion) -> Self {
+        Connector { protocol_version }
     }
 
     /// Creates outgoing TCP connection with appropriate PROXY protocol header
@@ -322,11 +309,11 @@ impl Connector {
     ) -> Result<()> {
         let proxy_info = (original_source, original_destination).try_into()?;
         let mut data = BytesMut::new();
-        if !self.use_v2 {
-            V1Codec::new().encode(proxy_info, &mut data)?;
-        } else {
-            V2Codec::new().encode(proxy_info, &mut data)?
+        match self.protocol_version {
+            ProtocolVersion::V1 => V1Codec::new().encode(proxy_info, &mut data)?,
+            ProtocolVersion::V2 => V2Codec::new().encode(proxy_info, &mut data)?,
         }
+
         dest.write(&data).await?;
         Ok(())
     }
@@ -649,7 +636,7 @@ mod tests {
         let dest = "127.0.0.1:2222"
             .parse::<SocketAddr>()
             .expect("BUG: Cannot parse IP");
-        let _res = Connector::new()
+        let _res = Connector::new(ProtocolVersion::V1)
             .write_proxy_header(&mut buf, Some(src), Some(dest))
             .await
             .expect("BUG: Cannot write proxy header");

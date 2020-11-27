@@ -272,7 +272,7 @@ async fn test_v2_client(server_addr: &Address, proxy_proto_info: &Option<proxy::
         async move {
             let mut conn = server_addr.connect().await?;
             if let Some(proxy_proto_info) = proxy_proto_info {
-                proxy::Connector::new()
+                proxy::Connector::new(proxy::ProtocolVersion::V2)
                     .write_proxy_header(
                         &mut conn,
                         proxy_proto_info.original_source,
