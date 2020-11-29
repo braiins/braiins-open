@@ -276,7 +276,22 @@ where
 {
     pub fn new(config: ProtocolConfig) -> Self {
         // TODO for now, we only provide hardcoded autodetect build method
-        let build_method = Self::build_auto;
+        let build_method = match config.versions.len() {
+            0 => {
+                assert!(
+                !config.require_proxy_header,
+                "BUG: inconsistent config, proxy header is required and no supported version have\
+                 been specified unsupported"
+            );
+                Self::build_skip
+            }
+            1 => match config.versions[0] {
+                ProtocolVersion::V1 => Self::build_v1,
+                ProtocolVersion::V2 => Self::build_v2,
+            },
+            _ => Self::build_auto,
+        };
+
         Self {
             config,
             build_method,
@@ -287,14 +302,37 @@ where
         (self.build_method)(self, stream)
     }
 
-    /// TODO refactor once the Acceptor is streamlined and doesn't require such complex building
-    pub fn build_auto(&self, stream: T) -> AcceptorFuture<T> {
-        let acceptor = Acceptor::new()
-            .support_v1(self.config.versions.contains(&ProtocolVersion::V1))
-            .support_v2(self.config.versions.contains(&ProtocolVersion::V2))
-            .require_proxy_header(self.config.require_proxy_header);
+    /// Builds a special future that only passes back the `stream` wrapped in ProxyStream
+    fn build_skip(&self, stream: T) -> AcceptorFuture<T> {
+        Box::new(
+            async move {
+                Ok(ProxyStream {
+                    inner: stream,
+                    buf: BytesMut::new(),
+                    orig_source: None,
+                    orig_destination: None,
+                })
+            }
+            .boxed(),
+        )
+    }
+
+    fn build_auto(&self, stream: T) -> AcceptorFuture<T> {
+        let acceptor = Acceptor::new().require_proxy_header(self.config.require_proxy_header);
 
         Box::new(acceptor.accept_auto(stream).boxed())
+    }
+
+    fn build_v1(&self, stream: T) -> AcceptorFuture<T> {
+        let acceptor = Acceptor::new().require_proxy_header(self.config.require_proxy_header);
+
+        Box::new(acceptor.accept_v1(stream).boxed())
+    }
+
+    fn build_v2(&self, stream: T) -> AcceptorFuture<T> {
+        let acceptor = Acceptor::new().require_proxy_header(self.config.require_proxy_header);
+
+        Box::new(acceptor.accept_v2(stream).boxed())
     }
 }
 
@@ -450,7 +488,6 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use tokio::stream::StreamExt;
 
@@ -666,17 +703,59 @@ mod tests {
         assert_eq!(expected.as_bytes(), &buf[..]);
     }
 
+    /// Helper that allows testing `AcceptorBuilder` that it internally configures the correct
+    /// build method that matches `expected_build_method` based on a specified protocol version
+    fn test_acceptor_builder(
+        versions: Vec<ProtocolVersion>,
+        expected_build_method: BuildMethod<&[u8]>,
+        method_suffix: &str,
+    ) {
+        let acceptor_builder: AcceptorBuilder<&[u8]> =
+            AcceptorBuilder::new(ProtocolConfig::new(false, versions));
+
+        let actual = acceptor_builder.build_method as *const BuildMethod<&[u8]>;
+        let expected = expected_build_method as *const BuildMethod<&[u8]>;
+
+        assert_eq!(
+            actual, expected,
+            "BUG: Expected 'build_{}' method",
+            method_suffix
+        );
+    }
+
+    /// Verify that build_skip method has been selected = no proxy handling
+    #[test]
+    fn acceptor_builder_skip() {
+        test_acceptor_builder(vec![], AcceptorBuilder::<&[u8]>::build_skip, "skip");
+    }
+
+    /// Verify that build_v1 method has been selected
+    #[test]
+    fn acceptor_builder_v1() {
+        test_acceptor_builder(
+            vec![ProtocolVersion::V1],
+            AcceptorBuilder::<&[u8]>::build_v1,
+            "v1",
+        );
+    }
+
+    /// Verify that build_v2 method has been selected
+    #[test]
+    fn acceptor_builder_v2() {
+        test_acceptor_builder(
+            vec![ProtocolVersion::V2],
+            AcceptorBuilder::<&[u8]>::build_v2,
+            "v2",
+        );
+    }
+
     /// Verify that build_auto method has been detected
     #[test]
     fn acceptor_builder_auto() {
-        let acceptor_builder: AcceptorBuilder<&[u8]> = AcceptorBuilder::new(ProtocolConfig::new(
-            false,
+        test_acceptor_builder(
             vec![ProtocolVersion::V1, ProtocolVersion::V2],
-        ));
-
-        let actual = acceptor_builder.build_method as *const BuildMethod<&[u8]>;
-        let expected = AcceptorBuilder::<&[u8]>::build_auto as *const BuildMethod<&[u8]>;
-
-        assert_eq!(actual, expected, "BUG: Expected auto method");
+            AcceptorBuilder::<&[u8]>::build_auto,
+            "auto",
+        );
     }
 }
