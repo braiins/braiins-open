@@ -130,15 +130,16 @@ impl Acceptor {
     /// need to be initially received to decide whether any of the supported protocol variants
     const COMMON_HEADER_PREFIX_LEN: usize = 5;
 
-    /// Processes proxy protocol header and creates [`ProxyStream`]
-    /// with appropriate information in it
+    /// Process proxy protocol header, and autodetect PROXY protocol version and
+    /// create [`ProxyStream`] with appropriate information in it.
+    ///
     /// This method may block for ~2 secs until stream timeout is triggered when performing
     /// autodetection and waiting for `COMMON_HEADER_PREFIX_LEN` bytes to arrive.
-    pub async fn accept<T: AsyncRead + Send + Unpin>(
-        self,
-        mut stream: T,
-    ) -> Result<ProxyStream<T>> {
-        trace!("wire: Accepting stream");
+    pub async fn accept_auto<T>(self, mut stream: T) -> Result<ProxyStream<T>>
+    where
+        T: AsyncRead + Send + Unpin,
+    {
+        trace!("wire: Accepting stream, autodetecting PROXY protocol version ");
         let mut buf = BytesMut::with_capacity(MAX_HEADER_SIZE);
         // This loop will block for ~2 seconds (read_buf() timeout) if less than
         // COMMON_HEADER_PREFIX_LEN have arrived
@@ -146,7 +147,7 @@ impl Acceptor {
             let r = stream.read_buf(&mut buf).await?;
             trace!("wire: Read {} bytes from stream", r);
             if r == 0 {
-                trace!("wire: no more bytes supplied byte the stream, terminating read");
+                trace!("wire: no more bytes supplied in the stream, terminating read");
                 break;
             }
         }
@@ -176,13 +177,13 @@ impl Acceptor {
             && self.support_v1
         {
             debug!("wire: Detected proxy protocol v1 tag");
-            Acceptor::decode_header(buf, stream, V1Codec::new()).await
+            Acceptor::decode_header(Some(buf), stream, V1Codec::new()).await
         } else if buf[0..Self::COMMON_HEADER_PREFIX_LEN]
             == V2_TAG[0..Self::COMMON_HEADER_PREFIX_LEN]
             && self.support_v2
         {
             debug!("wire: Detected proxy protocol v2 tag");
-            Acceptor::decode_header(buf, stream, V2Codec::new()).await
+            Acceptor::decode_header(Some(buf), stream, V2Codec::new()).await
         } else if self.require_proxy_header {
             error!("Proxy protocol is required");
             Err(Error::Proxy("Proxy protocol is required".into()))
@@ -197,13 +198,37 @@ impl Acceptor {
         }
     }
 
-    async fn decode_header<C, T>(buf: BytesMut, stream: T, codec: C) -> Result<ProxyStream<T>>
+    pub async fn accept_v1<T>(self, stream: T) -> Result<ProxyStream<T>>
+    where
+        T: AsyncRead + Send + Unpin,
+    {
+        debug!("wire: Accepting stream, decoding PROXY protocol V1");
+        Acceptor::decode_header(None, stream, V1Codec::new()).await
+    }
+
+    pub async fn accept_v2<T>(self, stream: T) -> Result<ProxyStream<T>>
+    where
+        T: AsyncRead + Send + Unpin,
+    {
+        debug!("wire: Accepting stream, decoding PROXY protocol V2");
+        Acceptor::decode_header(None, stream, V2Codec::new()).await
+    }
+
+    /// Accept a PROXY protocol of version defined by `codec`. This helper method takes care of
+    /// constructing Framed `read_buf`
+    async fn decode_header<C, T>(
+        read_buf: Option<BytesMut>,
+        stream: T,
+        codec: C,
+    ) -> Result<ProxyStream<T>>
     where
         T: AsyncRead + Unpin,
         C: Encoder<ProxyInfo> + Decoder<Item = ProxyInfo, Error = Error>,
     {
         let mut framed_parts = FramedParts::new(stream, codec);
-        framed_parts.read_buf = buf;
+        if let Some(read_buf) = read_buf {
+            framed_parts.read_buf = read_buf;
+        }
         let mut framed = Framed::from_parts(framed_parts);
 
         let proxy_info = framed
@@ -287,7 +312,7 @@ where
             .support_v2(self.config.versions.contains(&ProtocolVersion::V2))
             .require_proxy_header(self.config.require_proxy_header);
 
-        Box::new(acceptor.accept(stream).boxed())
+        Box::new(acceptor.accept_auto(stream).boxed())
     }
 }
 
@@ -402,7 +427,7 @@ impl<T> WithProxyInfo for ProxyStream<T> {
 
 impl<T: AsyncRead + Send + Unpin> ProxyStream<T> {
     pub async fn new(stream: T) -> Result<Self> {
-        Acceptor::default().accept(stream).await
+        Acceptor::default().accept_auto(stream).await
     }
 }
 
@@ -514,7 +539,7 @@ mod tests {
         const HELLO: &'static [u8] = b"HELLO";
         let message = "PROXY TCP4 192.168.0.1 192.168.0.11 56324 443\r\nHELLO".as_bytes();
         let ps = Acceptor::new()
-            .accept(message)
+            .accept_auto(message)
             .await
             .expect("BUG: Cannot accept message");
         assert_eq!(
@@ -544,7 +569,7 @@ mod tests {
         message.extend(b"Hello");
 
         let ps = Acceptor::new()
-            .accept(&message[..])
+            .accept_auto(&message[..])
             .await
             .expect("BUG: V2 message not accepted");
         assert_eq!(
@@ -601,7 +626,7 @@ mod tests {
         let message = b"MEMAM PROXY HEADER, CHUDACEK JA";
         let ps = Acceptor::new()
             .require_proxy_header(true)
-            .accept(&message[..])
+            .accept_auto(&message[..])
             .await;
         assert!(ps.is_err());
     }
@@ -611,7 +636,7 @@ mod tests {
         let message = b"NIC\r\n";
         let ps = Acceptor::new()
             .require_proxy_header(true)
-            .accept(&message[..])
+            .accept_auto(&message[..])
             .await;
         assert!(ps.is_err());
     }
@@ -621,7 +646,7 @@ mod tests {
         const MESSAGE: &'static [u8] = b"NIC\r\n";
         let ps = Acceptor::new()
             .require_proxy_header(false)
-            .accept(&MESSAGE[..])
+            .accept_auto(&MESSAGE[..])
             .await
             .expect("BUG: Cannot accept message");
         read_and_compare_message(ps, Vec::from(MESSAGE)).await;
@@ -635,7 +660,7 @@ mod tests {
         const MESSAGE: &'static [u8] = b"NIC\r\n";
         let ps = Acceptor::new()
             .require_proxy_header(false)
-            .accept(&MESSAGE[..])
+            .accept_auto(&MESSAGE[..])
             .await
             .expect("BUG: Cannot accept incoming message");
 

@@ -166,7 +166,7 @@ fn v1server_task<A: ToSocketAddrs>(
                 None => Connection::<v1::Framing>::new(conn),
                 Some(ref proxy_info) => {
                     let proxy_stream = proxy::Acceptor::new()
-                        .accept(conn)
+                        .accept_auto(conn)
                         .await
                         .expect("BUG: Invalid proxy header");
                     // Test that data in PROXY header matches
