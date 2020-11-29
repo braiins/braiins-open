@@ -111,16 +111,12 @@ impl ProtocolConfig {
 /// Struct to accept stream with PROXY header and extract information from it
 pub struct Acceptor {
     require_proxy_header: bool,
-    support_v1: bool,
-    support_v2: bool,
 }
 
 impl Default for Acceptor {
     fn default() -> Self {
         Acceptor {
             require_proxy_header: false,
-            support_v1: true,
-            support_v2: true,
         }
     }
 }
@@ -173,17 +169,14 @@ impl Acceptor {
         }
         debug!("wire: Buffered initial {} bytes", buf.remaining());
 
-        if buf[0..Self::COMMON_HEADER_PREFIX_LEN] == V1_TAG[0..Self::COMMON_HEADER_PREFIX_LEN]
-            && self.support_v1
-        {
+        if buf[0..Self::COMMON_HEADER_PREFIX_LEN] == V1_TAG[0..Self::COMMON_HEADER_PREFIX_LEN] {
             debug!("wire: Detected proxy protocol v1 tag");
-            Acceptor::decode_header(Some(buf), stream, V1Codec::new()).await
+            Acceptor::accept_with_codec(Some(buf), stream, V1Codec::new()).await
         } else if buf[0..Self::COMMON_HEADER_PREFIX_LEN]
             == V2_TAG[0..Self::COMMON_HEADER_PREFIX_LEN]
-            && self.support_v2
         {
             debug!("wire: Detected proxy protocol v2 tag");
-            Acceptor::decode_header(Some(buf), stream, V2Codec::new()).await
+            Acceptor::accept_with_codec(Some(buf), stream, V2Codec::new()).await
         } else if self.require_proxy_header {
             error!("Proxy protocol is required");
             Err(Error::Proxy("Proxy protocol is required".into()))
@@ -203,7 +196,7 @@ impl Acceptor {
         T: AsyncRead + Send + Unpin,
     {
         debug!("wire: Accepting stream, decoding PROXY protocol V1");
-        Acceptor::decode_header(None, stream, V1Codec::new()).await
+        Acceptor::accept_with_codec(None, stream, V1Codec::new()).await
     }
 
     pub async fn accept_v2<T>(self, stream: T) -> Result<ProxyStream<T>>
@@ -211,12 +204,12 @@ impl Acceptor {
         T: AsyncRead + Send + Unpin,
     {
         debug!("wire: Accepting stream, decoding PROXY protocol V2");
-        Acceptor::decode_header(None, stream, V2Codec::new()).await
+        Acceptor::accept_with_codec(None, stream, V2Codec::new()).await
     }
 
     /// Accept a PROXY protocol of version defined by `codec`. This helper method takes care of
     /// constructing Framed `read_buf`
-    async fn decode_header<C, T>(
+    async fn accept_with_codec<C, T>(
         read_buf: Option<BytesMut>,
         stream: T,
         codec: C,
@@ -259,17 +252,6 @@ impl Acceptor {
             require_proxy_header,
             ..self
         }
-    }
-
-    /// If true v1 PROXY protocol is supported (default)
-    pub fn support_v1(self, support_v1: bool) -> Self {
-        Acceptor { support_v1, ..self }
-    }
-
-    /// TODO: Add v2 support
-    /// If true v2 PROXY protocol is supported (default)
-    pub fn support_v2(self, support_v2: bool) -> Self {
-        Acceptor { support_v2, ..self }
     }
 }
 
