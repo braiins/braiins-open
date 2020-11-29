@@ -29,6 +29,7 @@
 
 pub mod error;
 pub mod frontend;
+pub mod metrics;
 pub mod server;
 pub mod translation;
 pub mod util;

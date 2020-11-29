@@ -45,6 +45,7 @@ use ii_wire::{
 };
 
 use crate::error::{Error, Result};
+use crate::metrics::Metrics;
 use crate::translation::V2ToV1Translation;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
@@ -77,13 +78,18 @@ impl ConnTranslation {
         v2_peer_addr: SocketAddr,
         v1_conn: v1::Framed,
         v1_peer_addr: SocketAddr,
+        metrics: Arc<Metrics>,
     ) -> Self {
         let (v1_translation_tx, v1_translation_rx) =
             mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
         let (v2_translation_tx, v2_translation_rx) =
             mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
-        let translation =
-            V2ToV1Translation::new(v1_translation_tx, v2_translation_tx, Default::default());
+        let translation = V2ToV1Translation::new(
+            v1_translation_tx,
+            v2_translation_tx,
+            Default::default(),
+            metrics,
+        );
 
         Self {
             translation,
@@ -237,8 +243,9 @@ pub async fn handle_connection<T: Send + Sync>(
     v1_conn: v1::Framed,
     v1_peer_addr: SocketAddr,
     _generic_context: T,
+    metrics: Arc<Metrics>,
 ) -> Result<()> {
-    let translation = ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn, v1_peer_addr);
+    let translation = ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn, v1_peer_addr, metrics);
 
     translation.run().await
 }
@@ -312,12 +319,13 @@ struct ProxyConnection<FN, T> {
     proxy_protocol_acceptor: Option<proxy::AcceptorFuture<TcpStream>>,
     /// Server will use this version for talking to upstream server (if any)
     proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
+    metrics: Arc<Metrics>,
 }
 
 impl<FN, FT, T> ProxyConnection<FN, T>
 where
     FT: Future<Output = Result<()>>,
-    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T) -> FT,
+    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T, Arc<Metrics>) -> FT,
     T: Send + Sync + Clone + ProxyInfoExtractor,
 {
     fn new(
@@ -327,6 +335,7 @@ where
         generic_context: T,
         proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
         proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
+        metrics: Arc<Metrics>,
     ) -> Self {
         Self {
             v1_upstream_addr,
@@ -335,6 +344,7 @@ where
             generic_context,
             proxy_protocol_acceptor: Some(proxy_protocol_acceptor),
             proxy_protocol_upstream_version,
+            metrics,
         }
     }
 
@@ -436,6 +446,7 @@ where
             v1_framed_stream,
             v1_peer_addr,
             self.generic_context.clone(),
+            self.metrics.clone(),
         )
         .await
     }
@@ -443,13 +454,18 @@ where
     /// Handle connection by delegating it to a method that is able to handle a Result so that we
     /// have info/error reporting in a single place
     async fn handle(mut self) {
+        // needs to be cloned because do_handle moves the reference.
+        let metrics = self.metrics.clone();
+
+        metrics.account_opened_connection();
         match self.do_handle().await {
             Ok(()) => info!("Closing connection from {:?} ...", self.v1_upstream_addr),
             Err(err) => warn!(
                 "Connection error: {}, peer: {:?}",
                 err, self.v1_upstream_addr
             ),
-        }
+        };
+        metrics.account_closed_connection();
     }
 }
 
@@ -470,6 +486,7 @@ pub struct ProxyServer<FN, T> {
     get_connection_handler: Arc<FN>,
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
+    metrics: Arc<Metrics>,
     generic_context: T,
     /// Builds PROXY protocol acceptor for a specified configuration
     proxy_protocol_acceptor_builder: proxy::AcceptorBuilder<TcpStream>,
@@ -480,7 +497,7 @@ pub struct ProxyServer<FN, T> {
 impl<FN, FT, T> ProxyServer<FN, T>
 where
     FT: Future<Output = Result<()>> + Send + 'static,
-    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T) -> FT + Send + Sync + 'static,
+    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T, Arc<Metrics>) -> FT + Send + Sync + 'static,
     T: Send + Sync + Clone + ProxyInfoExtractor + 'static,
 {
     /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
@@ -506,6 +523,8 @@ where
             )),
             None => None,
         };
+        let metrics = Arc::new(Metrics::default());
+        metrics.clone().spawn_stats();
 
         Ok(ProxyServer {
             server,
@@ -515,6 +534,7 @@ where
             quit_tx,
             get_connection_handler: Arc::new(get_connection_handler),
             security_context,
+            metrics,
             generic_context,
             proxy_protocol_acceptor_builder: proxy::AcceptorBuilder::new(
                 proxy_protocol_config.downstream_config,
@@ -527,6 +547,10 @@ where
     /// which can be used to terminate the server task.
     pub fn quit_channel(&self) -> mpsc::Sender<()> {
         self.quit_tx.clone()
+    }
+
+    pub fn metrics(&self) -> Arc<Metrics> {
+        self.metrics.clone()
     }
 
     /// Helper method for accepting incoming connections
@@ -546,6 +570,7 @@ where
                 self.generic_context.clone(),
                 self.proxy_protocol_acceptor_builder.build(connection),
                 self.proxy_protocol_upstream_version.clone(),
+                self.metrics.clone(),
             )
             .handle(),
         );

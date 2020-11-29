@@ -43,7 +43,7 @@ impl TranslationTester {
     pub fn new(options: V2ToV1TranslationOptions) -> Self {
         let (v1_sender, v1_receiver) = mpsc::channel(1);
         let (v2_sender, v2_receiver) = mpsc::channel(1);
-        let translation = V2ToV1Translation::new(v1_sender, v2_sender, options);
+        let translation = V2ToV1Translation::new(v1_sender, v2_sender, options, None);
 
         Self {
             translation,
