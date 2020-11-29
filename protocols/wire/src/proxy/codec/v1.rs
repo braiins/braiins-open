@@ -25,8 +25,7 @@ use crate::proxy::error::{Error, Result};
 use bytes::{Buf, BufMut, BytesMut};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::str::FromStr;
-use tokio::{prelude::*, stream::StreamExt};
-use tokio_util::codec::{Decoder, Encoder, Framed, FramedParts};
+use tokio_util::codec::{Decoder, Encoder};
 
 /// Encoder and Decoder for PROXY protocol v1
 pub struct V1Codec {
@@ -178,27 +177,30 @@ impl Encoder<ProxyInfo> for V1Codec {
     }
 }
 
-/// Helper function to accept stream with PROXY protocol header v1
-///
-/// Consumes header and returns appropriate `ProxyInfo` and rest of data as `FramedParts`,
-/// which can be used to easily create new Framed struct (with different codec)
-pub async fn accept_v1_framed<T>(stream: T) -> Result<(ProxyInfo, FramedParts<T, V1Codec>)>
-where
-    T: AsyncRead + AsyncWrite + Unpin,
-{
-    let mut framed = Framed::new(stream, V1Codec::new());
-    let proxy_info = framed
-        .next()
-        .await
-        .ok_or_else(|| Error::Proxy("Proxy header is missing".into()))??;
-    let parts = framed.into_parts();
-    Ok((proxy_info, parts))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use bytes::{BufMut, BytesMut};
+    use tokio::prelude::*;
+    use tokio::stream::StreamExt;
+    use tokio_util::codec::{Framed, FramedParts};
+
+    /// Helper function to accept stream with PROXY protocol header v1
+    ///
+    /// Consumes header and returns appropriate `ProxyInfo` and rest of data as `FramedParts`,
+    /// which can be used to easily create new Framed struct (with different codec)
+    async fn accept_v1_framed<T>(stream: T) -> Result<(ProxyInfo, FramedParts<T, V1Codec>)>
+    where
+        T: AsyncRead + AsyncWrite + Unpin,
+    {
+        let mut framed = Framed::new(stream, V1Codec::new());
+        let proxy_info = framed
+            .next()
+            .await
+            .ok_or_else(|| Error::Proxy("Proxy header is missing".into()))??;
+        let parts = framed.into_parts();
+        Ok((proxy_info, parts))
+    }
 
     #[test]
     fn test_header_v1_in_small_pieces() {

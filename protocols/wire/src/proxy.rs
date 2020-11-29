@@ -43,7 +43,7 @@ use error::{Error, Result};
 
 pub mod codec;
 pub mod error;
-pub use codec::{v1::accept_v1_framed, v2::accept_v2_framed, ProxyInfo};
+pub use codec::ProxyInfo;
 
 const V1_TAG: &[u8] = b"PROXY ";
 const V2_TAG: &[u8] = codec::v2::SIGNATURE;

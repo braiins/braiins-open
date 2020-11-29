@@ -23,11 +23,9 @@
 use super::{ProxyInfo, SocketType};
 use crate::proxy::error::{Error, Result};
 use bytes::BytesMut;
-use futures::stream::StreamExt;
 use proto::*;
 use std::net::SocketAddr;
-use tokio::prelude::*;
-use tokio_util::codec::{Decoder, Encoder, Framed, FramedParts};
+use tokio_util::codec::{Decoder, Encoder};
 
 pub mod proto;
 
@@ -150,27 +148,30 @@ impl Encoder<ProxyInfo> for V2Codec {
     }
 }
 
-/// Helper function to accept stream with PROXY protocol header v2
-///
-/// Consumes header and returns appropriate `ProxyInfo` and rest of data as `FramedParts`,
-/// which can be used to easily create new Framed struct (with different codec)
-pub async fn accept_v2_framed<T>(stream: T) -> Result<(ProxyInfo, FramedParts<T, V2Codec>)>
-where
-    T: AsyncRead + AsyncWrite + Unpin,
-{
-    let mut framed = Framed::new(stream, V2Codec::new());
-    let proxy_info = framed
-        .next()
-        .await
-        .ok_or_else(|| Error::Proxy("Proxy header is missing".into()))??;
-    let parts = framed.into_parts();
-    Ok((proxy_info, parts))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use bytes::BufMut;
+    use tokio::prelude::*;
+    use tokio::stream::StreamExt;
+    use tokio_util::codec::{Framed, FramedParts};
+
+    /// Helper function to accept stream with PROXY protocol header v2
+    ///
+    /// Consumes header and returns appropriate `ProxyInfo` and rest of data as `FramedParts`,
+    /// which can be used to easily create new Framed struct (with different codec)
+    async fn accept_v2_framed<T>(stream: T) -> Result<(ProxyInfo, FramedParts<T, V2Codec>)>
+    where
+        T: AsyncRead + AsyncWrite + Unpin,
+    {
+        let mut framed = Framed::new(stream, V2Codec::new());
+        let proxy_info = framed
+            .next()
+            .await
+            .ok_or_else(|| Error::Proxy("Proxy header is missing".into()))??;
+        let parts = framed.into_parts();
+        Ok((proxy_info, parts))
+    }
 
     fn test_msg_ip4(msg: &str) -> BytesMut {
         let mut output = BytesMut::with_capacity(16 + 12 + msg.len());
