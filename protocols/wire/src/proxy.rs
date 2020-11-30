@@ -44,6 +44,7 @@ use error::{Error, Result};
 pub mod codec;
 pub mod error;
 pub use codec::ProxyInfo;
+use std::pin::Pin;
 
 const V1_TAG: &[u8] = b"PROXY ";
 const V2_TAG: &[u8] = codec::v2::SIGNATURE;
@@ -264,7 +265,7 @@ impl Acceptor {
 }
 
 /// Represent a prepared acceptor for processing incoming bytes
-pub type AcceptorFuture<T> = Box<dyn Future<Output = Result<ProxyStream<T>>> + Send + Unpin>;
+pub type AcceptorFuture<T> = Pin<Box<dyn Future<Output = Result<ProxyStream<T>>> + Send>>;
 
 /// Internal builder method selected based on configuration used when constructing `AcceptorBuilder`
 type BuildMethod<T> = fn(&AcceptorBuilder<T>, T) -> AcceptorFuture<T>;
@@ -323,35 +324,32 @@ where
 
     /// Builds a special future that only passes back the `stream` wrapped in ProxyStream
     fn build_skip(&self, stream: T) -> AcceptorFuture<T> {
-        Box::new(
-            async move {
-                Ok(ProxyStream {
-                    inner: stream,
-                    buf: BytesMut::new(),
-                    orig_source: None,
-                    orig_destination: None,
-                })
-            }
-            .boxed(),
-        )
+        async move {
+            Ok(ProxyStream {
+                inner: stream,
+                buf: BytesMut::new(),
+                orig_source: None,
+                orig_destination: None,
+            })
+        }
+        .boxed()
     }
-
     fn build_auto(&self, stream: T) -> AcceptorFuture<T> {
         let acceptor = Acceptor::new().require_proxy_header(self.config.require_proxy_header);
 
-        Box::new(acceptor.accept_auto(stream).boxed())
+        acceptor.accept_auto(stream).boxed()
     }
 
     fn build_v1(&self, stream: T) -> AcceptorFuture<T> {
         let acceptor = Acceptor::new().require_proxy_header(self.config.require_proxy_header);
 
-        Box::new(acceptor.accept_v1(stream).boxed())
+        acceptor.accept_v1(stream).boxed()
     }
 
     fn build_v2(&self, stream: T) -> AcceptorFuture<T> {
         let acceptor = Acceptor::new().require_proxy_header(self.config.require_proxy_header);
 
-        Box::new(acceptor.accept_v2(stream).boxed())
+        acceptor.accept_v2(stream).boxed()
     }
 }
 
