@@ -288,15 +288,26 @@ where
             0 => {
                 assert!(
                 !config.require_proxy_header,
-                "BUG: inconsistent config, proxy header is required and no supported version have\
+                "BUG: inconsistent config, proxy header is required and no supported version has \
                  been specified unsupported"
             );
                 Self::build_skip
             }
-            1 => match config.versions[0] {
-                ProtocolVersion::V1 => Self::build_v1,
-                ProtocolVersion::V2 => Self::build_v2,
-            },
+            1 => {
+                if config.require_proxy_header {
+                    match config.versions[0] {
+                        ProtocolVersion::V1 => Self::build_v1,
+                        ProtocolVersion::V2 => Self::build_v2,
+                    }
+                } else {
+                    info!(
+                        "wire: Ignoring direct PROXY protocol version config ({:?}), using auto \
+                         detection since proxy protocol is not enforced in the configuration",
+                        config.versions[0]
+                    );
+                    Self::build_auto
+                }
+            }
             _ => Self::build_auto,
         };
 
@@ -714,12 +725,13 @@ mod tests {
     /// Helper that allows testing `AcceptorBuilder` that it internally configures the correct
     /// build method that matches `expected_build_method` based on a specified protocol version
     fn test_acceptor_builder(
+        require_proxy_header: bool,
         versions: Vec<ProtocolVersion>,
         expected_build_method: BuildMethod<&[u8]>,
         method_suffix: &str,
     ) {
         let acceptor_builder: AcceptorBuilder<&[u8]> =
-            AcceptorBuilder::new(ProtocolConfig::new(false, versions));
+            AcceptorBuilder::new(ProtocolConfig::new(require_proxy_header, versions));
 
         let actual = acceptor_builder.build_method as *const BuildMethod<&[u8]>;
         let expected = expected_build_method as *const BuildMethod<&[u8]>;
@@ -734,13 +746,22 @@ mod tests {
     /// Verify that build_skip method has been selected = no proxy handling
     #[test]
     fn acceptor_builder_skip() {
-        test_acceptor_builder(vec![], AcceptorBuilder::<&[u8]>::build_skip, "skip");
+        test_acceptor_builder(false, vec![], AcceptorBuilder::<&[u8]>::build_skip, "skip");
+    }
+
+    /// Verify that build_skip method is not selected and the builder panics with a bug due to
+    /// selecting no supported versions and requiring proxy header
+    #[test]
+    #[should_panic]
+    fn acceptor_builder_panic() {
+        test_acceptor_builder(true, vec![], AcceptorBuilder::<&[u8]>::build_skip, "skip");
     }
 
     /// Verify that build_v1 method has been selected
     #[test]
     fn acceptor_builder_v1() {
         test_acceptor_builder(
+            true,
             vec![ProtocolVersion::V1],
             AcceptorBuilder::<&[u8]>::build_v1,
             "v1",
@@ -751,9 +772,34 @@ mod tests {
     #[test]
     fn acceptor_builder_v2() {
         test_acceptor_builder(
+            true,
             vec![ProtocolVersion::V2],
             AcceptorBuilder::<&[u8]>::build_v2,
             "v2",
+        );
+    }
+
+    /// Verify that build_auto method has been selected regardless of the protocol version when
+    /// proxy header is not required
+    #[test]
+    fn acceptor_builder_v1_auto() {
+        test_acceptor_builder(
+            false,
+            vec![ProtocolVersion::V1],
+            AcceptorBuilder::<&[u8]>::build_auto,
+            "auto",
+        );
+    }
+
+    /// Verify that build_auto method has been selected regardless of the protocol version when
+    /// proxy header is not required
+    #[test]
+    fn acceptor_builder_v2_auto() {
+        test_acceptor_builder(
+            false,
+            vec![ProtocolVersion::V1],
+            AcceptorBuilder::<&[u8]>::build_auto,
+            "auto",
         );
     }
 
@@ -761,6 +807,7 @@ mod tests {
     #[test]
     fn acceptor_builder_auto() {
         test_acceptor_builder(
+            false,
             vec![ProtocolVersion::V1, ProtocolVersion::V2],
             AcceptorBuilder::<&[u8]>::build_auto,
             "auto",
