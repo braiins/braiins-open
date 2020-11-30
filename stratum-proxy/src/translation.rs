@@ -249,7 +249,6 @@ impl V2ToV1Translation {
         } else {
             Self::DIFF1_TARGET / target
         }
-
     }
 
     pub fn diff_to_target<T: Into<U256>>(diff: T) -> U256 {
@@ -657,6 +656,9 @@ impl V2ToV1Translation {
                     )
                 } else {
                     info!("Share rejected for {}", v2_channel_details.user.to_string());
+                    if let Some(metrics) = self.metrics.as_ref() {
+                        metrics.account_rejected_share(self.v2_target);
+                    }
                     self.reject_shares(
                         Self::CHANNEL_ID,
                         SeqNum::V1(*id),
