@@ -1,4 +1,4 @@
-use bitcoin_hashes::core::fmt::Formatter;
+use std::fmt::Formatter;
 use std::collections::VecDeque;
 use std::sync::{
     atomic::{AtomicU64, Ordering::*},
