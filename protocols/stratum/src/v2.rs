@@ -41,7 +41,7 @@ pub use self::framing::codec::Codec;
 pub use self::framing::{Frame, Framing};
 
 /// Tcp stream that produces/consumes V2 frames
-pub type Framed = tokio_util::codec::Framed<TcpStream, <Framing as ii_wire::Framing>::Codec>;
+pub type Framed = tokio_util::codec::Framed<TcpStream, self::noise::CompoundCodec<Codec>>;
 
 pub trait FramedSink:
     Sink<<Framing as ii_wire::Framing>::Tx, Error = <Framing as ii_wire::Framing>::Error>
