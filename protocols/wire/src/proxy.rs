@@ -288,10 +288,10 @@ where
         let build_method = match config.versions.len() {
             0 => {
                 assert!(
-                !config.require_proxy_header,
-                "BUG: inconsistent config, proxy header is required and no supported version has \
-                 been specified unsupported"
-            );
+                    !config.require_proxy_header,
+                    "BUG: inconsistent config, proxy header is required and no supported \
+                     version has been specified unsupported"
+                );
                 Self::build_skip
             }
             1 => {
