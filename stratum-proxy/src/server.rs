@@ -389,8 +389,7 @@ where
         }
         let v1_peer_addr = v1_conn.peer_addr()?;
         let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
-        // TODO, turn this into Debug and provide some sane information
-        info!(
+        debug!(
             "Established translation connection with upstream V1 {} for V2 peer: {:?}",
             v1_peer_addr,
             proxy_stream.original_peer_addr()
@@ -607,8 +606,8 @@ where
 
         while let Some(result) = self.next().await {
             match result {
-                Ok(peer) => info!("Connection accepted from {}", peer),
-                Err(err) => error!("Connection error: {}", err),
+                Ok(peer) => debug!("Connection accepted from {}", peer),
+                Err(err) => debug!("Connection error: {}", err),
             }
         }
 
