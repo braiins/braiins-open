@@ -243,6 +243,24 @@ impl V2ToV1Translation {
     /// TODO: DIFF1 const target is broken, the last U64 word gets actually initialized to 0xffffffff, not sure why
     const DIFF1_TARGET: U256 = U256([0, 0, 0, 0xffff0000u64]);
 
+    pub fn target_to_diff(target: U256) -> U256 {
+        if target == U256::from(0) {
+            U256::MAX
+        } else {
+            Self::DIFF1_TARGET / target
+        }
+
+    }
+
+    pub fn diff_to_target<T: Into<U256>>(diff: T) -> U256 {
+        let diff = diff.into();
+        if diff == U256::from(0) {
+            U256::MAX
+        } else {
+            Self::DIFF1_TARGET / diff
+        }
+    }
+
     pub fn new(
         v1_tx: mpsc::Sender<v1::Frame>,
         v2_tx: mpsc::Sender<v2::Frame>,
@@ -630,7 +648,7 @@ impl V2ToV1Translation {
                 if bool_result.0 {
                     self.log_session_details("Share accepted");
                     if let Some(metrics) = self.metrics.as_ref() {
-                        metrics.account_share();
+                        metrics.account_accepted_share(self.v2_target);
                     }
                     // TODO what if v2_target > 2**64 - 1?
                     self.accept_shares(
@@ -1073,7 +1091,7 @@ impl V2ToV1Translation {
             msg,
         );
         let diff = msg.value() as u32;
-        self.v2_target = Some(Self::DIFF1_TARGET / diff);
+        self.v2_target = Some(Self::diff_to_target(diff));
         if self.v1_authorized && self.v1_extra_nonce1.is_some() {
             // Initial set difficulty finalizes open channel if all preconditions are met
             if self.state == V2ToV1TranslationState::OpenStandardMiningChannelPending {
