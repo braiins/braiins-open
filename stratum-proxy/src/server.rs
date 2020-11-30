@@ -40,7 +40,7 @@ use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_wire::{
-    proxy::{self, Connector, ProxyInfoVisitor, WithProxyInfo as _},
+    proxy::{self, Connector, ProxyInfoExtractor, WithProxyInfo as _},
     Address, Client, Connection, Server,
 };
 
@@ -318,7 +318,7 @@ impl<FN, FT, T> ProxyConnection<FN, T>
 where
     FT: Future<Output = Result<()>>,
     FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T) -> FT,
-    T: Send + Sync + Clone + ProxyInfoVisitor,
+    T: Send + Sync + Clone + ProxyInfoExtractor,
 {
     fn new(
         v1_upstream_addr: Address,
@@ -481,7 +481,7 @@ impl<FN, FT, T> ProxyServer<FN, T>
 where
     FT: Future<Output = Result<()>> + Send + 'static,
     FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T) -> FT + Send + Sync + 'static,
-    T: Send + Sync + Clone + ProxyInfoVisitor + 'static,
+    T: Send + Sync + Clone + ProxyInfoExtractor + 'static,
 {
     /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
     /// specified `get_connection_handler` that builds the connection handler `Future` on demand
