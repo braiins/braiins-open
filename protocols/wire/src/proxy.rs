@@ -149,36 +149,53 @@ impl Acceptor {
         }
 
         if buf.remaining() < Self::COMMON_HEADER_PREFIX_LEN {
-            return if self.require_proxy_header {
-                Err(Error::Proxy(
-                    "Message too short for autodetecting proxy protocol".into(),
-                ))
-            } else {
-                debug!("wire: No proxy protocol detected (too short message), passing the stream");
-                trace!(
-                    "wire: Preparing dummy proxy stream with preloaded buffer: {:x?}",
-                    buf
-                );
-                Ok(ProxyStream {
-                    inner: stream,
-                    buf,
-                    orig_source: None,
-                    orig_destination: None,
-                })
-            };
+            return self.try_from_stream_to_proxy_stream(stream, buf);
         }
         debug!("wire: Buffered initial {} bytes", buf.remaining());
 
         if buf[0..Self::COMMON_HEADER_PREFIX_LEN] == V1_TAG[0..Self::COMMON_HEADER_PREFIX_LEN] {
             debug!("wire: Detected proxy protocol v1 tag");
-            Acceptor::accept_with_codec(Some(buf), stream, V1Codec::new()).await
+            self.accept_with_codec(Some(buf), stream, V1Codec::new())
+                .await
         } else if buf[0..Self::COMMON_HEADER_PREFIX_LEN]
             == V2_TAG[0..Self::COMMON_HEADER_PREFIX_LEN]
         {
             debug!("wire: Detected proxy protocol v2 tag");
-            Acceptor::accept_with_codec(Some(buf), stream, V2Codec::new()).await
-        } else if self.require_proxy_header {
-            error!("Proxy protocol is required");
+            self.accept_with_codec(Some(buf), stream, V2Codec::new())
+                .await
+        } else {
+            self.try_from_stream_to_proxy_stream(stream, buf)
+        }
+    }
+
+    pub async fn accept_v1<T>(self, stream: T) -> Result<ProxyStream<T>>
+    where
+        T: AsyncRead + Send + Unpin,
+    {
+        debug!("wire: Accepting stream, decoding PROXY protocol V1");
+        self.accept_with_codec(None, stream, V1Codec::new()).await
+    }
+
+    pub async fn accept_v2<T>(self, stream: T) -> Result<ProxyStream<T>>
+    where
+        T: AsyncRead + Send + Unpin,
+    {
+        debug!("wire: Accepting stream, decoding PROXY protocol V2");
+        self.accept_with_codec(None, stream, V2Codec::new()).await
+    }
+
+    /// Conditionally convert the stream as long as the proxy header is not required or return an
+    /// error
+    fn try_from_stream_to_proxy_stream<T>(&self, stream: T, buf: BytesMut) -> Result<ProxyStream<T>>
+    where
+        T: AsyncRead + Unpin,
+    {
+        debug!(
+            "wire: Trying to convert stream to dummy ProxyStream, bytes received: {:#x?}",
+            buf
+        );
+        if self.require_proxy_header {
+            debug!("wire: Proxy protocol is required");
             Err(Error::Proxy("Proxy protocol is required".into()))
         } else {
             debug!("wire: No proxy protocol detected, just passing the stream");
@@ -191,25 +208,10 @@ impl Acceptor {
         }
     }
 
-    pub async fn accept_v1<T>(self, stream: T) -> Result<ProxyStream<T>>
-    where
-        T: AsyncRead + Send + Unpin,
-    {
-        debug!("wire: Accepting stream, decoding PROXY protocol V1");
-        Acceptor::accept_with_codec(None, stream, V1Codec::new()).await
-    }
-
-    pub async fn accept_v2<T>(self, stream: T) -> Result<ProxyStream<T>>
-    where
-        T: AsyncRead + Send + Unpin,
-    {
-        debug!("wire: Accepting stream, decoding PROXY protocol V2");
-        Acceptor::accept_with_codec(None, stream, V2Codec::new()).await
-    }
-
     /// Accept a PROXY protocol of version defined by `codec`. This helper method takes care of
     /// constructing Framed `read_buf`
     async fn accept_with_codec<C, T>(
+        &self,
         read_buf: Option<BytesMut>,
         stream: T,
         codec: C,
@@ -224,19 +226,25 @@ impl Acceptor {
         }
         let mut framed = Framed::from_parts(framed_parts);
 
-        let proxy_info = framed
+        let proxy_info_result = framed
             .next()
             .await
-            .ok_or_else(|| Error::Proxy("Proxy header is missing".into()))??;
+            .ok_or_else(|| Error::Proxy("Stream terminated".into()))?;
 
         let parts = framed.into_parts();
 
-        Ok(ProxyStream {
-            inner: parts.io,
-            buf: parts.read_buf,
-            orig_source: proxy_info.original_source,
-            orig_destination: proxy_info.original_destination,
-        })
+        match proxy_info_result {
+            Ok(proxy_info) => Ok(ProxyStream {
+                inner: parts.io,
+                buf: parts.read_buf,
+                orig_source: proxy_info.original_source,
+                orig_destination: proxy_info.original_destination,
+            }),
+            Err(e) => {
+                debug!("wire: PROXY protocol header not present: {}", e);
+                self.try_from_stream_to_proxy_stream(parts.io, parts.read_buf)
+            }
+        }
     }
 
     /// Creates new default `Acceptor`
