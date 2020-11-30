@@ -78,7 +78,7 @@ impl ConnTranslation {
         v2_peer_addr: SocketAddr,
         v1_conn: v1::Framed,
         v1_peer_addr: SocketAddr,
-        metrics: Arc<Metrics>,
+        metrics: Option<Arc<Metrics>>,
     ) -> Self {
         let (v1_translation_tx, v1_translation_rx) =
             mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
@@ -245,7 +245,8 @@ pub async fn handle_connection<T: Send + Sync>(
     _generic_context: T,
     metrics: Arc<Metrics>,
 ) -> Result<()> {
-    let translation = ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn, v1_peer_addr, metrics);
+    let translation =
+        ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn, v1_peer_addr, Some(metrics));
 
     translation.run().await
 }

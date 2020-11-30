@@ -225,7 +225,7 @@ pub struct V2ToV1Translation {
     /// Options for translation
     options: V2ToV1TranslationOptions,
     v1_password: String,
-    metrics: Arc<Metrics>,
+    metrics: Option<Arc<Metrics>>,
 }
 
 impl V2ToV1Translation {
@@ -247,7 +247,7 @@ impl V2ToV1Translation {
         v1_tx: mpsc::Sender<v1::Frame>,
         v2_tx: mpsc::Sender<v2::Frame>,
         options: V2ToV1TranslationOptions,
-        metrics: Arc<Metrics>,
+        metrics: Option<Arc<Metrics>>,
     ) -> Self {
         let v1_password = options.password.to_string();
         Self {
@@ -629,7 +629,9 @@ impl V2ToV1Translation {
 
                 if bool_result.0 {
                     self.log_session_details("Share accepted");
-                    self.metrics.account_share();
+                    if let Some(metrics) = self.metrics.as_ref() {
+                        metrics.account_share();
+                    }
                     // TODO what if v2_target > 2**64 - 1?
                     self.accept_shares(
                         id,
