@@ -350,9 +350,15 @@ where
             .take()
             .expect("BUG: proxy protocol acceptor has already been used");
         let proxy_stream = proxy_protocol_acceptor.await?;
+        let peer_addr = proxy_stream.peer_addr()?;
+        let local_addr = proxy_stream.local_addr()?;
+
         self.generic_context.accept(&proxy_stream);
         debug!(
-            "Received connection from downstream - original source, {:?} original destination {:?}",
+            "Received connection from downstream - source: {:?}, destination: {:?}, original \
+            source: {:?}, original destination: {:?}",
+            peer_addr,
+            local_addr,
             proxy_stream.original_peer_addr(),
             proxy_stream.original_destination_addr()
         );
@@ -365,16 +371,21 @@ where
         let mut v1_conn = v1_client.next().await?;
 
         if let Some(version) = self.proxy_protocol_upstream_version {
-            if let (src @ Some(_), dst @ Some(_)) = (
+            let (src, dst) = if let (Some(src), Some(dst)) = (
                 proxy_stream.original_peer_addr(),
                 proxy_stream.original_destination_addr(),
             ) {
-                Connector::new(version)
-                    .write_proxy_header(&mut v1_conn, src, dst)
-                    .await?;
+                (Some(src), Some(dst))
             } else {
-                warn!("Passing of proxy protocol is required, but incoming connection does not contain original addresses")
-            }
+                debug!(
+                    "Passing of proxy protocol is required, but incoming connection does \
+                            not contain original addresses, using socket addresses"
+                );
+                (Some(peer_addr), Some(local_addr))
+            };
+            Connector::new(version)
+                .write_proxy_header(&mut v1_conn, src, dst)
+                .await?;
         }
         let v1_peer_addr = v1_conn.peer_addr()?;
         let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
