@@ -524,7 +524,8 @@ where
             )),
             None => None,
         };
-        let metrics = Arc::new(Metrics::default());
+        // TODO review whether an Arc is needed
+        let metrics = Arc::new(Metrics::new());
         metrics.clone().spawn_stats();
 
         Ok(ProxyServer {

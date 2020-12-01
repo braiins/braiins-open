@@ -69,6 +69,10 @@ pub enum Error {
     /// PROXY protocol error
     #[error("PROXY protocol error: {0}")]
     ProxyProtocol(#[from] ProxyError),
+
+    /// Prometheus metrics error.
+    #[error("Metrics error: {0}")]
+    Metrics(#[from] prometheus::Error),
 }
 
 impl<T> From<futures::channel::mpsc::TrySendError<T>> for Error
