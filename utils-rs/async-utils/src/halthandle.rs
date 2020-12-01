@@ -305,11 +305,8 @@ impl HaltHandle {
         }
     }
 
-    // TODO: Convert these to take self: &Arc<Self> once this is stabilized
-    // cf. https://github.com/rust-lang/rust/issues/44874
-    /// Tell the handle to call `halt()` on `SIGTERM` & `SIGINT`.
-    pub fn halt_on_signal(self: Arc<Self>) {
-        Self::handle_signal(self, |this| async move { this.halt() });
+    pub fn halt_on_signal(self: &Arc<Self>) {
+        Self::handle_signal(self.clone(), |this| async move { this.halt() });
     }
 
     /// Tell the handle to catch `SIGTERM` & `SIGINT` and run
