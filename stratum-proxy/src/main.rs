@@ -49,6 +49,11 @@ async fn main() -> Result<()> {
     let config = toml::from_str::<Config>(config_file_string.as_str())?;
     info!("Starting {}: {}", Version::signature(), Version::full(),);
     info!("Config: {:#?}", config);
+
+    // TODO review whether an Arc is needed
+    let metrics = std::sync::Arc::new(ii_stratum_proxy::metrics::Metrics::new());
+    metrics.clone().spawn_stats();
+
     let server = server::ProxyServer::listen(
         config.listen_address.clone(),
         config.upstream_address.clone(),
@@ -58,6 +63,7 @@ async fn main() -> Result<()> {
         config
             .proxy_protocol_config
             .unwrap_or_else(ProxyProtocolConfig::default),
+        metrics,
     )
     .context("Cannot bind the server")?;
 

@@ -513,6 +513,7 @@ where
         )>,
         generic_context: T,
         proxy_protocol_config: ProxyProtocolConfig,
+        metrics: Arc<Metrics>,
     ) -> Result<ProxyServer<FN, T>> {
         let server = Server::bind(&listen_addr)?;
 
@@ -524,9 +525,6 @@ where
             )),
             None => None,
         };
-        // TODO review whether an Arc is needed
-        let metrics = Arc::new(Metrics::new());
-        metrics.clone().spawn_stats();
 
         Ok(ProxyServer {
             server,
