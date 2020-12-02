@@ -551,10 +551,6 @@ where
         self.quit_tx.clone()
     }
 
-    pub fn metrics(&self) -> Arc<Metrics> {
-        self.metrics.clone()
-    }
-
     /// Helper method for accepting incoming connections
     async fn accept(&self, connection_result: std::io::Result<TcpStream>) -> Result<SocketAddr> {
         let connection = connection_result?;
