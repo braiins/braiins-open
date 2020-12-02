@@ -455,10 +455,6 @@ where
     /// Handle connection by delegating it to a method that is able to handle a Result so that we
     /// have info/error reporting in a single place
     async fn handle(mut self) {
-        // needs to be cloned because do_handle moves the reference.
-        let metrics = self.metrics.clone();
-
-        metrics.account_opened_connection();
         match self.do_handle().await {
             Ok(()) => info!("Closing connection from {:?} ...", self.v1_upstream_addr),
             Err(err) => warn!(
@@ -466,7 +462,6 @@ where
                 err, self.v1_upstream_addr
             ),
         };
-        metrics.account_closed_connection();
     }
 }
 
@@ -498,7 +493,10 @@ pub struct ProxyServer<FN, T> {
 impl<FN, FT, T> ProxyServer<FN, T>
 where
     FT: Future<Output = Result<()>> + Send + 'static,
-    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T, Arc<Metrics>) -> FT + Send + Sync + 'static,
+    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T, Arc<Metrics>) -> FT
+        + Send
+        + Sync
+        + 'static,
     T: Send + Sync + Clone + ProxyInfoExtractor + 'static,
 {
     /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
@@ -627,8 +625,14 @@ where
 
         while let Some(result) = self.next().await {
             match result {
-                Ok(peer) => debug!("Connection accepted from {}", peer),
-                Err(err) => debug!("Connection error: {}", err),
+                Ok(peer) => {
+                    debug!("Connection accepted from {}", peer);
+                    self.metrics.account_opened_connection();
+                }
+                Err(err) => {
+                    debug!("Connection error: {}", err);
+                    self.metrics.account_closed_connection();
+                }
             }
         }
 
