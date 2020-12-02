@@ -1,7 +1,6 @@
 use crate::error::Result;
 use crate::translation::V2ToV1Translation;
 use ii_logging::macros::*;
-use once_cell::sync;
 use primitive_types::U256;
 use prometheus::{
     labels, opts, register_int_counter, register_int_counter_vec, Encoder, IntCounter,
@@ -140,7 +139,3 @@ pub fn to_text() -> Result<(Vec<u8>, String)> {
     encoder.encode(&metric_families, &mut buffer)?;
     Ok((buffer, String::from(encoder.format_type())))
 }
-
-/// Globally accessible metrics that are registered in the default registry
-/// TODO remove this as the global instance will not be needed
-pub static METRICS: sync::Lazy<Metrics> = sync::Lazy::new(|| Metrics::new());

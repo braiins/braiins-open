@@ -49,6 +49,7 @@ use crate::error::{Error, Result};
 use crate::metrics::Metrics;
 use crate::util;
 use std::sync::Arc;
+use tokio::time::{Duration, Instant};
 
 mod stratum {
     pub use ii_stratum::error::{Error, Result};
@@ -140,7 +141,31 @@ type V1StratumResultHandler =
 type V1StratumErrorHandler =
     fn(&mut V2ToV1Translation, &v1::MessageId, &v1::rpc::StratumError) -> Result<()>;
 
-type V1CompoundHandler = (V1StratumResultHandler, V1StratumErrorHandler);
+struct V1CompoundHandler {
+    v1_stratum_result_handler: V1StratumResultHandler,
+    v1_stratum_error_handler: V1StratumErrorHandler,
+    /// Request method associated with these handlers is used for code instrumentation
+    request_method: v1::rpc::Method,
+    /// Time stamp when the request has been submitted
+    timestamp_created: Instant,
+}
+impl V1CompoundHandler {
+    fn new(
+        v1_stratum_result_handler: V1StratumResultHandler,
+        v1_stratum_error_handler: V1StratumErrorHandler,
+        request_method: v1::rpc::Method,
+    ) -> Self {
+        Self {
+            v1_stratum_result_handler,
+            v1_stratum_error_handler,
+            request_method,
+            timestamp_created: Instant::now(),
+        }
+    }
+    fn elapsed(&self) -> Duration {
+        self.timestamp_created.elapsed()
+    }
+}
 
 /// Custom mapping of V1 request id onto result/error handlers
 type V1ReqMap = HashMap<u32, V1CompoundHandler>;
@@ -312,7 +337,10 @@ impl V2ToV1Translation {
         trace!("Registering v1, request ID: {} method: {:?}", id, payload);
         if self
             .v1_req_map
-            .insert(id, (result_handler, error_handler))
+            .insert(
+                id,
+                V1CompoundHandler::new(result_handler, error_handler, payload.method),
+            )
             .is_some()
         {
             error!("BUG: V1 id {} already exists...", id);
@@ -656,9 +684,6 @@ impl V2ToV1Translation {
                     )
                 } else {
                     info!("Share rejected for {}", v2_channel_details.user.to_string());
-                    if let Some(metrics) = self.metrics.as_ref() {
-                        metrics.account_rejected_share(self.v2_target);
-                    }
                     self.reject_shares(
                         Self::CHANNEL_ID,
                         SeqNum::V1(*id),
@@ -870,6 +895,9 @@ impl V2ToV1Translation {
             SeqNum::V1(id) => (self.get_v2_submit_shares_seq_num(&id)?, true),
             SeqNum::V2(value) => (value, self.v2_submit_share_queue.is_empty()),
         };
+        if let Some(metrics) = self.metrics.as_ref() {
+            metrics.account_rejected_share(self.v2_target);
+        }
         let submit_shares_error_msg = v2::messages::SubmitSharesError {
             channel_id,
             seq_num,
@@ -971,9 +999,22 @@ impl V2ToV1Translation {
                 ))))
         })
         // run the result through the result handler
-        .and_then(|handler| match payload {
-            V1ResultOrError::Result(r) => handler.0(self, id, r),
-            V1ResultOrError::Error(e) => handler.1(self, id, e),
+        .and_then(|handler| {
+            let req_duration = handler.elapsed();
+            match payload {
+                V1ResultOrError::Result(r) => {
+                    self.metrics.as_ref().map(|m| {
+                        m.observe_v1_request_success(handler.request_method, req_duration)
+                    });
+                    (handler.v1_stratum_result_handler)(self, id, r)
+                }
+                V1ResultOrError::Error(e) => {
+                    self.metrics
+                        .as_ref()
+                        .map(|m| m.observe_v1_request_error(handler.request_method, req_duration));
+                    (handler.v1_stratum_error_handler)(self, id, e)
+                }
+            }
         })
     }
 

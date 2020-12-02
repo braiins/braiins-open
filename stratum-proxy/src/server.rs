@@ -455,13 +455,15 @@ where
     /// Handle connection by delegating it to a method that is able to handle a Result so that we
     /// have info/error reporting in a single place
     async fn handle(mut self) {
+        let metrics = self.metrics.clone();
+        self.metrics.account_opened_connection();
+        // TODO report full address info here once ProxyConnection has internal information about
+        // (possible provide full 'ProxyInfo')
         match self.do_handle().await {
-            Ok(()) => info!("Closing connection from {:?} ...", self.v1_upstream_addr),
-            Err(err) => warn!(
-                "Connection error: {}, peer: {:?}",
-                err, self.v1_upstream_addr
-            ),
+            Ok(()) => debug!("Closing connection from {} ...", "N/A"),
+            Err(err) => debug!("Connection error: {}, peer: {}", err, "N/A"),
         };
+        metrics.account_closed_connection();
     }
 }
 
@@ -550,7 +552,9 @@ where
     /// Helper method for accepting incoming connections
     async fn accept(&self, connection_result: std::io::Result<TcpStream>) -> Result<SocketAddr> {
         let connection = connection_result?;
-
+        // TODO this is suboptimal as ultrashort connection attempts will get un-noticed, we don't
+        //  need to extract the peer address here (extracting the address fails when connection is
+        //  dropped!)
         let peer_addr = connection.peer_addr()?;
         trace!("stratum proxy: Handling connection from: {:?}", peer_addr);
         // Fully secured connection has been established
@@ -627,11 +631,9 @@ where
             match result {
                 Ok(peer) => {
                     debug!("Connection accepted from {}", peer);
-                    self.metrics.account_opened_connection();
                 }
                 Err(err) => {
                     debug!("Connection error: {}", err);
-                    self.metrics.account_closed_connection();
                 }
             }
         }

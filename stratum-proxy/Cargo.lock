@@ -790,7 +790,6 @@ dependencies = [
  "ii-stratum",
  "ii-unvariant",
  "ii-wire",
- "once_cell",
  "primitive-types",
  "prometheus",
  "serde",
