@@ -18,9 +18,10 @@ use tokio::time::Duration;
 /// hostname - name of the machine where the metrics are being taken
 #[derive(Debug)]
 pub struct Metrics {
-    /// TCP connections, labels:
-    /// - type = (open,close)
-    tcp_connection_event_total: IntCounterVec,
+    /// TCP connection open events
+    tcp_connection_open_total: IntCounter,
+    /// TCP connection close events
+    tcp_connection_close_total: IntCounter,
     /// Aggregate of submitted shares, labels:
     /// - type = (downstream, upstream)
     /// - status = (accepted, rejected)
@@ -45,15 +46,19 @@ impl Metrics {
         let variable_label_names = &["direction", "status"];
 
         Self {
-            tcp_connection_event_total: register_int_counter_vec!(
-                opts!(
-                    "tcp_connection_event_total",
-                    "Number of total connection events",
-                    const_labels.clone()
-                ),
-                &["type"]
-            )
-            .expect("BUG: cannot build tcp_connection_event_total"),
+            tcp_connection_open_total: register_int_counter!(opts!(
+                "tcp_connection_open_total",
+                "Number of total connection open events",
+                const_labels.clone()
+            ))
+            .expect("BUG: cannot build tcp_connection_open_total"),
+
+            tcp_connection_close_total: register_int_counter!(opts!(
+                "tcp_connection_close_total",
+                "Number of total connection close events",
+                const_labels.clone()
+            ))
+            .expect("BUG: cannot build tcp_connection_close_total"),
 
             shares_total: register_int_counter_vec!(
                 opts!(
@@ -101,14 +106,10 @@ impl Metrics {
     }
 
     pub fn account_opened_connection(&self) {
-        self.tcp_connection_event_total
-            .with_label_values(&["open"])
-            .inc();
+        self.tcp_connection_open_total.inc();
     }
     pub fn account_closed_connection(&self) {
-        self.tcp_connection_event_total
-            .with_label_values(&["close"])
-            .inc();
+        self.tcp_connection_close_total.inc();
     }
 
     /// TODO rename this to stats_log_task
