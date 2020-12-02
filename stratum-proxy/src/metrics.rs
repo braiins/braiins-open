@@ -3,7 +3,10 @@ use crate::translation::V2ToV1Translation;
 use ii_logging::macros::*;
 use once_cell::sync;
 use primitive_types::U256;
-use prometheus::{labels, opts, register_int_counter_vec, Encoder, IntCounterVec, TextEncoder};
+use prometheus::{
+    labels, opts, register_int_counter, register_int_counter_vec, Encoder, IntCounter,
+    IntCounterVec, TextEncoder,
+};
 use std::convert::TryInto;
 use std::sync::Arc;
 use tokio::time::Duration;
@@ -39,7 +42,7 @@ impl Metrics {
            "host" => hostname.as_str(),
         };
 
-        let variable_label_names = &["status"];
+        let variable_label_names = &["direction", "status"];
 
         Self {
             tcp_connection_event_total: register_int_counter_vec!(
@@ -58,7 +61,7 @@ impl Metrics {
                     "Sum of shares difficulty that have been processed",
                     const_labels.clone()
                 ),
-                &["direction", "status"]
+                variable_label_names
             )
             .expect("BUG: cannot build shares_total"),
 
@@ -90,11 +93,11 @@ impl Metrics {
     }
 
     pub fn account_accepted_share(&self, target: Option<U256>) {
-        self.account_share(target, &["accepted"]);
+        self.account_share(target, &["downstream", "accepted"]);
     }
 
     pub fn account_rejected_share(&self, target: Option<U256>) {
-        self.account_share(target, &["rejected"]);
+        self.account_share(target, &["downstream", "rejected"]);
     }
 
     pub fn account_opened_connection(&self) {
