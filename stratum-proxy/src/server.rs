@@ -456,6 +456,7 @@ where
     /// have info/error reporting in a single place
     async fn handle(mut self) {
         let metrics = self.metrics.clone();
+        let timer = self.metrics.tcp_connection_duration_seconds.start_timer();
         self.metrics.account_opened_connection();
         // TODO report full address info here once ProxyConnection has internal information about
         // (possible provide full 'ProxyInfo')
@@ -464,6 +465,7 @@ where
             Err(err) => debug!("Connection error: {}, peer: {}", err, "N/A"),
         };
         metrics.account_closed_connection();
+        timer.observe_duration();
     }
 }
 

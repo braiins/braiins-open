@@ -21,6 +21,8 @@ pub struct Metrics {
     tcp_connection_open_total: IntCounter,
     /// TCP connection close events
     tcp_connection_close_total: IntCounter,
+    /// Histogram of how long each connection has lived for
+    pub tcp_connection_duration_seconds: Histogram,
     /// Aggregate of submitted shares, labels:
     /// - type = (downstream, upstream)
     /// - status = (accepted, rejected)
@@ -58,6 +60,12 @@ impl Metrics {
                 const_labels.clone()
             ))
             .expect("BUG: cannot build tcp_connection_close_total"),
+
+            tcp_connection_duration_seconds: register_histogram!(
+                "tcp_connection_duration_seconds",
+                "Histogram of how long each connection has lived for"
+            )
+            .expect("BUG: cannot build tcp_connection_duration_seconds"),
 
             shares_total: register_int_counter_vec!(
                 opts!(
