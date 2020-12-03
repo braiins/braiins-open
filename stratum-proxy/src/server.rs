@@ -553,11 +553,17 @@ where
 
     /// Helper method for accepting incoming connections
     async fn accept(&self, connection_result: std::io::Result<TcpStream>) -> Result<SocketAddr> {
-        let connection = connection_result?;
-        // TODO this is suboptimal as ultrashort connection attempts will get un-noticed, we don't
-        //  need to extract the peer address here (extracting the address fails when connection is
-        //  dropped!)
-        let peer_addr = connection.peer_addr()?;
+        let connection = connection_result.map_err(|e| {
+            self.metrics.tcp_connection_early_close_total.inc();
+            e
+        })?;
+
+        // When the TCP connection is dropped early we won't spawn the handling task. We will only
+        // account for this early termination
+        let peer_addr = connection.peer_addr().map_err(|e| {
+            self.metrics.tcp_connection_early_close_total.inc();
+            e
+        })?;
         trace!("stratum proxy: Handling connection from: {:?}", peer_addr);
         // Fully secured connection has been established
         tokio::spawn(

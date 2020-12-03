@@ -21,6 +21,9 @@ pub struct Metrics {
     tcp_connection_open_total: IntCounter,
     /// TCP connection close events
     tcp_connection_close_total: IntCounter,
+    /// Dedicated counter for early termination that happens before even the connection handling
+    /// task is started
+    pub tcp_connection_early_close_total: IntCounter,
     /// Histogram of how long each connection has lived for
     pub tcp_connection_duration_seconds: Histogram,
     /// Aggregate of submitted shares, labels:
@@ -60,6 +63,12 @@ impl Metrics {
                 const_labels.clone()
             ))
             .expect("BUG: cannot build tcp_connection_close_total"),
+
+            tcp_connection_early_close_total: register_int_counter!(opts!(
+                "tcp_connection_early_close_total",
+                "Number of connections terminated early before spawning the handling task"
+            ))
+            .expect("BUG: cannot build tcp_connection_early_close_total"),
 
             tcp_connection_duration_seconds: register_histogram!(
                 "tcp_connection_duration_seconds",
