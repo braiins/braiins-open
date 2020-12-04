@@ -45,7 +45,7 @@ use ii_unvariant::handler;
 
 use ii_logging::macros::*;
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ProtocolError, Result};
 use crate::metrics::Metrics;
 use crate::util;
 use std::sync::Arc;
@@ -1290,9 +1290,11 @@ impl V2ToV1Translation {
                 flags: msg.flags, // TODO Flags indicating features causing an error
             };
 
-            if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg) {
+            if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg)
+                .map_err(ProtocolError::setup_connection)
+            {
                 info!("Cannot submit SetupConnectionError: {:?}", submit_err);
-                return Err(submit_err);
+                Err(submit_err)?;
             }
         }
 
@@ -1310,9 +1312,11 @@ impl V2ToV1Translation {
             Self::handle_configure_result,
             Self::handle_configure_error,
         );
-        if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_configure_message) {
+        if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_configure_message)
+            .map_err(ProtocolError::setup_connection)
+        {
             info!("Cannot submit mining.configure: {:?}", submit_err);
-            return Err(submit_err);
+            Err(submit_err)?;
         }
         self.state = V2ToV1TranslationState::V1Configure;
         Ok(())
@@ -1349,12 +1353,14 @@ impl V2ToV1Translation {
                     .expect("BUG: incorrect error message"),
             };
 
-            if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg) {
+            if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg)
+                .map_err(ProtocolError::open_mining_channel)
+            {
                 info!(
                     "Cannot send OpenMiningChannelError message: {:?}",
                     submit_err
                 );
-                return Err(submit_err);
+                Err(submit_err)?;
             }
         }
         // Connection details are present by now
@@ -1382,9 +1388,11 @@ impl V2ToV1Translation {
                 Self::handle_authorize_or_subscribe_error,
             );
 
-            if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_subscribe_message) {
+            if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_subscribe_message)
+                .map_err(ProtocolError::open_mining_channel)
+            {
                 info!("Cannot send V1 mining.subscribe: {:?}", submit_err);
-                return Err(submit_err);
+                Err(submit_err)?;
             }
 
             if self.options.try_enable_xnsub {
@@ -1396,12 +1404,13 @@ impl V2ToV1Translation {
                 );
                 if let Err(submit_err) =
                     util::submit_message(&mut self.v1_tx, v1_extranonce_subscribe)
+                        .map_err(ProtocolError::open_mining_channel)
                 {
                     info!(
                         "Cannot send V1 mining.extranonce_subscribe: {:?}",
                         submit_err
                     );
-                    return Err(submit_err);
+                    Err(submit_err)?;
                 }
             }
 
@@ -1414,9 +1423,11 @@ impl V2ToV1Translation {
                 Self::handle_authorize_result,
                 Self::handle_authorize_or_subscribe_error,
             );
-            if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_authorize_message) {
+            if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_authorize_message)
+                .map_err(ProtocolError::open_mining_channel)
+            {
                 info!("Cannot send V1 mining.authorized: {:?}", submit_err);
-                return Err(submit_err);
+                Err(submit_err)?;
             }
         }
         Ok(())
@@ -1530,10 +1541,10 @@ impl V2ToV1Translation {
                 warn!("Unknown stratum v2 message received: {:?}", v2_frame);
                 Ok(())
             }
-            Err(e) => Err(Error::General(format!(
+            Err(e) => Err(ProtocolError::Other(format!(
                 "Broken stratum v2 frame received: {:?}",
                 e
-            ))),
+            )))?,
         }
     }
 }

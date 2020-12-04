@@ -22,11 +22,112 @@
 
 //! Module that represents custom stratum proxy errors
 
-use std;
+use std::error::Error as StdError;
 use std::io;
 use thiserror::Error;
 
+use crate::metrics::ErrorLabeling;
 use ii_wire::proxy::error::Error as ProxyError;
+
+#[derive(Error, Debug)]
+pub enum GeneralNetworkError {
+    #[error("Early network error: {0}")]
+    Early(String),
+    #[error("During PROXY protocol setup error: {0}")]
+    Haproxy(String),
+    #[error("Other non-specified Error: {0}")]
+    Other(String),
+    #[error("IO error")]
+    Io(std::io::ErrorKind),
+}
+
+impl From<std::io::Error> for GeneralNetworkError {
+    fn from(val: std::io::Error) -> Self {
+        Self::Io(val.kind())
+    }
+}
+
+impl GeneralNetworkError {
+    pub fn early<T: StdError>(val: T) -> Self {
+        Self::Early(val.to_string())
+    }
+    pub fn haproxy<T: StdError>(val: T) -> Self {
+        Self::Haproxy(val.to_string())
+    }
+    pub fn other<T: StdError>(val: T) -> Self {
+        Self::Other(val.to_string())
+    }
+}
+
+impl ErrorLabeling for GeneralNetworkError {
+    fn label(&self) -> String {
+        match self {
+            Self::Early(_) => "early".to_string(),
+            Self::Haproxy(_) => "haproxy".to_string(),
+            Self::Other(_) => "network_other".to_string(),
+            Self::Io(x) => format!("io_{:?}", x),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum ProtocolError {
+    #[error("Early network error: {0}")]
+    SetupConnection(String),
+    #[error("During PROXY protocol setup error: {0}")]
+    OpenMiningChannel(String),
+    #[error("Other non-specified Error: {0}")]
+    Other(String),
+}
+
+impl ProtocolError {
+    pub fn setup_connection<T: StdError>(val: T) -> Self {
+        Self::SetupConnection(val.to_string())
+    }
+    pub fn open_mining_channel<T: StdError>(val: T) -> Self {
+        Self::OpenMiningChannel(val.to_string())
+    }
+    pub fn other<T: StdError>(val: T) -> Self {
+        Self::Other(val.to_string())
+    }
+}
+
+impl ErrorLabeling for ProtocolError {
+    fn label(&self) -> String {
+        match self {
+            Self::SetupConnection(_) => "setup_connection".to_string(),
+            Self::OpenMiningChannel(_) => "open_mining_channel".to_string(),
+            Self::Other(_) => "protocol_other".to_string(),
+        }
+    }
+}
+
+impl ErrorLabeling for Error {
+    fn label(&self) -> String {
+        use crate::error::Error::*;
+        use ii_stratum::error::Error as StratumError;
+        match self {
+            General(_) => "general".to_string(),
+            Stratum(s) => match s {
+                StratumError::Noise(_) => "noise",
+                StratumError::NoiseEncoding(_) => "noise",
+                StratumError::NoiseProtocol(_) => "noise",
+                StratumError::V2(_) => "stratum_v2",
+                StratumError::V1(_) => "stratum_v1",
+                StratumError::NoiseSignature(_) => "noise",
+                _ => "stratum_other",
+            }
+            .to_string(),
+            ProtocolError(p) => p.label(),
+            GeneralNetworkError(n) => n.label(),
+            Timeout(_) => "timeout".to_string(),
+            Utf8(_) => "utf8".to_string(),
+            Json(_) => "json".to_string(),
+            Label(s, _) => s.clone(),
+            _ => "other".to_string(),
+        }
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -41,10 +142,6 @@ pub enum Error {
     /// Bitcoin Hashes error.
     #[error("Bitcoin Hashes error: {0}")]
     BitcoinHashes(#[from] bitcoin_hashes::error::Error),
-
-    /// Input/Output error.
-    #[error("I/O error: {0}")]
-    Io(#[from] io::Error),
 
     /// Timeout error.
     #[error("Timeout error: {0}")]
@@ -73,6 +170,30 @@ pub enum Error {
     /// Prometheus metrics error.
     #[error("Metrics error: {0}")]
     Metrics(#[from] prometheus::Error),
+
+    /// General network errors
+    #[error("General network error: {0}")]
+    GeneralNetworkError(GeneralNetworkError),
+
+    /// Stratum protocol state error
+    #[error("Stratum protocol state related error: {0}")]
+    ProtocolError(ProtocolError),
+
+    /// Generic error given by label
+    #[error("Generic error: {1} with label: {0}")]
+    Label(String, String),
+}
+
+impl From<GeneralNetworkError> for Error {
+    fn from(val: GeneralNetworkError) -> Self {
+        Self::GeneralNetworkError(val)
+    }
+}
+
+impl From<ProtocolError> for Error {
+    fn from(val: ProtocolError) -> Self {
+        Self::ProtocolError(val)
+    }
 }
 
 impl<T> From<futures::channel::mpsc::TrySendError<T>> for Error
@@ -80,7 +201,7 @@ where
     T: Send + Sync + 'static,
 {
     fn from(e: futures::channel::mpsc::TrySendError<T>) -> Self {
-        Error::Io(io::Error::new(io::ErrorKind::Other, e))
+        GeneralNetworkError::from(io::Error::new(io::ErrorKind::Other, e)).into()
     }
 }
 
