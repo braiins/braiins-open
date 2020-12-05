@@ -22,7 +22,6 @@
 
 use bytes::Bytes;
 use std::convert::TryFrom;
-use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time;
@@ -44,7 +43,7 @@ use ii_wire::{
     Address, Client, Connection, Server,
 };
 
-use crate::error::{GeneralNetworkError, Result};
+use crate::error::{Error, GeneralNetworkError, Result};
 use crate::metrics::Metrics;
 use crate::translation::V2ToV1Translation;
 
@@ -140,13 +139,10 @@ impl ConnTranslation {
     {
         let status = match frame {
             Some(v2_translated_frame) => connection.send(v2_translated_frame).await,
-            None => Err(GeneralNetworkError::from(io::Error::new(
-                io::ErrorKind::Other,
-                "No more frames".to_string(),
-            )))?,
+            None => Err(Error::General("No more V2 frames to send".to_string()))?,
         };
         status.map_err(|e| {
-            info!("Send error: {} for (peer: {:?})", e, peer_addr);
+            debug!("Send error: {} for (peer: {:?})", e, peer_addr);
             e.into()
         })
     }
@@ -209,9 +205,13 @@ impl ConnTranslation {
                 // Receive V1 frame and translate it to V2 message
                 v1_frame = v1_conn_rx.next().timeout(Self::V1_UPSTREAM_TIMEOUT).fuse()=> {
                     // Unwrap the potentially elapsed timeout
-                    match v1_frame? {
+                    match v1_frame.map_err(|e| GeneralNetworkError::UpstreamTimeout(e))? {
                         Some(v1_frame) => {
-                            Self::v1_handle_frame(&mut translation, v1_frame?).await?;
+                            Self::v1_handle_frame(
+                                &mut translation,
+                                v1_frame.map_err(|e| GeneralNetworkError::UpstreamStratum(e))?,
+                            )
+                            .await?;
                         }
                         None => {
                             Err(format!(
@@ -223,9 +223,13 @@ impl ConnTranslation {
                 },
                 // Receive V2 frame and translate it to V1 message
                 v2_frame = v2_conn_rx.next().timeout(Self::V2_DOWNSTREAM_TIMEOUT).fuse() => {
-                    match v2_frame? {
+                    match v2_frame.map_err(|e| GeneralNetworkError::DownstreamTimeout(e))? {
                         Some(v2_frame) => {
-                            Self::v2_handle_frame(&mut translation, v2_frame?).await?;
+                            Self::v2_handle_frame(
+                                &mut translation,
+                                v2_frame.map_err(|e| GeneralNetworkError::DownstreamStratum(e))?,
+                            )
+                            .await?;
                         }
                         None => {
                             Err(format!("V2 client disconnected ({:?})", self.v2_peer_addr))?;
@@ -360,15 +364,13 @@ where
             .proxy_protocol_acceptor
             .take()
             .expect("BUG: proxy protocol acceptor has already been used");
-        let proxy_stream = proxy_protocol_acceptor
-            .await
-            .map_err(GeneralNetworkError::haproxy)?;
+        let proxy_stream = proxy_protocol_acceptor.await?;
         let peer_addr = proxy_stream
             .peer_addr()
-            .map_err(GeneralNetworkError::haproxy)?;
+            .map_err(|e| Error::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
         let local_addr = proxy_stream
             .local_addr()
-            .map_err(GeneralNetworkError::haproxy)?;
+            .map_err(|e| Error::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
 
         self.generic_context.accept(&proxy_stream);
         debug!(
@@ -385,7 +387,10 @@ where
         // failing. Also
         // Use the connection only to build the Framed object with V1 framing and to extract the
         // peer address
-        let mut v1_conn = v1_client.next().await.map_err(GeneralNetworkError::early)?;
+        let mut v1_conn = v1_client.next().await?;
+        let v1_peer_addr = v1_conn
+            .peer_addr()
+            .map_err(|e| GeneralNetworkError::UpstreamIo(e))?;
 
         if let Some(version) = self.proxy_protocol_upstream_version {
             let (src, dst) = if let (Some(src), Some(dst)) = (
@@ -403,9 +408,8 @@ where
             Connector::new(version)
                 .write_proxy_header(&mut v1_conn, src, dst)
                 .await
-                .map_err(GeneralNetworkError::haproxy)?;
+                .map_err(|e| GeneralNetworkError::UpstreamProxyProtocol(e))?;
         }
-        let v1_peer_addr = v1_conn.peer_addr().map_err(GeneralNetworkError::early)?;
         let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
         debug!(
             "Established translation connection with upstream V1 {} for V2 peer: {:?}",
@@ -528,7 +532,8 @@ where
         proxy_protocol_config: ProxyProtocolConfig,
         metrics: Arc<Metrics>,
     ) -> Result<ProxyServer<FN, T>> {
-        let server = Server::bind(&listen_addr).map_err(GeneralNetworkError::early)?;
+        let server =
+            Server::bind(&listen_addr).map_err(|e| GeneralNetworkError::DownstreamEarlyIo(e))?;
 
         let (quit_tx, quit_rx) = mpsc::channel(1);
 
@@ -565,24 +570,24 @@ where
     /// Helper method for accepting incoming connections
     async fn accept(&self, connection_result: std::io::Result<TcpStream>) -> Result<SocketAddr> {
         self.metrics.account_opened_connection();
-        let connection = connection_result
-            .map_err(GeneralNetworkError::early)
-            .map_err(|e| {
-                let e = e.into();
-                self.metrics.tcp_connection_close_stage.inc_by_error(&e);
-                e
-            })?;
+        let connection = connection_result.map_err(|err| {
+            let new_err = GeneralNetworkError::DownstreamEarlyIo(err).into();
+            self.metrics
+                .tcp_connection_close_stage
+                .inc_by_error(&new_err);
+            new_err
+        })?;
 
         // When the TCP connection is dropped early we won't spawn the handling task. We will only
         // account for this early termination
-        let peer_addr = connection
-            .peer_addr()
-            .map_err(GeneralNetworkError::early)
-            .map_err(|e| {
-                let e = e.into();
-                self.metrics.tcp_connection_close_stage.inc_by_error(&e);
-                e
-            })?;
+        let peer_addr = connection.peer_addr().map_err(|err| {
+            let new_err = GeneralNetworkError::DownstreamEarlyIo(err).into();
+            self.metrics
+                .tcp_connection_close_stage
+                .inc_by_error(&new_err);
+            new_err
+        })?;
+
         trace!("stratum proxy: Handling connection from: {:?}", peer_addr);
         // Fully secured connection has been established
         tokio::spawn(

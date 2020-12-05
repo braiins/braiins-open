@@ -45,7 +45,7 @@ use ii_unvariant::handler;
 
 use ii_logging::macros::*;
 
-use crate::error::{Error, ProtocolError, Result};
+use crate::error::{Error, Result, V2ProtocolError};
 use crate::metrics::Metrics;
 use crate::util;
 use std::sync::Arc;
@@ -1291,7 +1291,7 @@ impl V2ToV1Translation {
             };
 
             if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg)
-                .map_err(ProtocolError::setup_connection)
+                .map_err(V2ProtocolError::setup_connection)
             {
                 info!("Cannot submit SetupConnectionError: {:?}", submit_err);
                 Err(submit_err)?;
@@ -1313,9 +1313,9 @@ impl V2ToV1Translation {
             Self::handle_configure_error,
         );
         if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_configure_message)
-            .map_err(ProtocolError::setup_connection)
+            .map_err(V2ProtocolError::setup_connection)
         {
-            info!("Cannot submit mining.configure: {:?}", submit_err);
+            debug!("Cannot submit mining.configure: {:?}", submit_err);
             Err(submit_err)?;
         }
         self.state = V2ToV1TranslationState::V1Configure;
@@ -1354,7 +1354,7 @@ impl V2ToV1Translation {
             };
 
             if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg)
-                .map_err(ProtocolError::open_mining_channel)
+                .map_err(V2ProtocolError::open_mining_channel)
             {
                 info!(
                     "Cannot send OpenMiningChannelError message: {:?}",
@@ -1389,7 +1389,7 @@ impl V2ToV1Translation {
             );
 
             if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_subscribe_message)
-                .map_err(ProtocolError::open_mining_channel)
+                .map_err(V2ProtocolError::open_mining_channel)
             {
                 info!("Cannot send V1 mining.subscribe: {:?}", submit_err);
                 Err(submit_err)?;
@@ -1404,7 +1404,7 @@ impl V2ToV1Translation {
                 );
                 if let Err(submit_err) =
                     util::submit_message(&mut self.v1_tx, v1_extranonce_subscribe)
-                        .map_err(ProtocolError::open_mining_channel)
+                        .map_err(V2ProtocolError::open_mining_channel)
                 {
                     info!(
                         "Cannot send V1 mining.extranonce_subscribe: {:?}",
@@ -1424,7 +1424,7 @@ impl V2ToV1Translation {
                 Self::handle_authorize_or_subscribe_error,
             );
             if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_authorize_message)
-                .map_err(ProtocolError::open_mining_channel)
+                .map_err(V2ProtocolError::open_mining_channel)
             {
                 info!("Cannot send V1 mining.authorized: {:?}", submit_err);
                 Err(submit_err)?;
@@ -1541,7 +1541,7 @@ impl V2ToV1Translation {
                 warn!("Unknown stratum v2 message received: {:?}", v2_frame);
                 Ok(())
             }
-            Err(e) => Err(ProtocolError::Other(format!(
+            Err(e) => Err(V2ProtocolError::Other(format!(
                 "Broken stratum v2 frame received: {:?}",
                 e
             )))?,

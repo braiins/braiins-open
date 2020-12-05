@@ -29,58 +29,36 @@ use thiserror::Error;
 use crate::metrics::ErrorLabeling;
 use ii_wire::proxy::error::Error as ProxyError;
 
+/// TODO split into upstream/downstream to eliminate repetitive naming
 #[derive(Error, Debug)]
 pub enum GeneralNetworkError {
-    #[error("Early network error: {0}")]
-    Early(String),
-    #[error("During PROXY protocol setup error: {0}")]
-    Haproxy(String),
-    #[error("Other non-specified Error: {0}")]
-    Other(String),
-    #[error("IO error")]
-    Io(std::io::ErrorKind),
-}
-
-impl From<std::io::Error> for GeneralNetworkError {
-    fn from(val: std::io::Error) -> Self {
-        Self::Io(val.kind())
-    }
-}
-
-impl GeneralNetworkError {
-    pub fn early<T: StdError>(val: T) -> Self {
-        Self::Early(val.to_string())
-    }
-    pub fn haproxy<T: StdError>(val: T) -> Self {
-        Self::Haproxy(val.to_string())
-    }
-    pub fn other<T: StdError>(val: T) -> Self {
-        Self::Other(val.to_string())
-    }
-}
-
-impl ErrorLabeling for GeneralNetworkError {
-    fn label(&self) -> String {
-        match self {
-            Self::Early(_) => "early".to_string(),
-            Self::Haproxy(_) => "haproxy".to_string(),
-            Self::Other(_) => "network_other".to_string(),
-            Self::Io(x) => format!("io_{:?}", x),
-        }
-    }
+    #[error("Early network error before any protocol communication started")]
+    DownstreamEarlyIo(std::io::Error),
+    #[error("Downstream stratum error: {0}")]
+    DownstreamStratum(ii_stratum::error::Error),
+    #[error("Downstream timeout error: {0}")]
+    DownstreamTimeout(tokio::time::error::Elapsed),
+    #[error("Upstream IO error: {0}")]
+    UpstreamIo(std::io::Error),
+    #[error("Upstream PROXY protocol error: {0}")]
+    UpstreamProxyProtocol(ProxyError),
+    #[error("Upstream stratum error: {0}")]
+    UpstreamStratum(ii_stratum::error::Error),
+    #[error("Upstream timeout error: {0}")]
+    UpstreamTimeout(tokio::time::error::Elapsed),
 }
 
 #[derive(Error, Debug)]
-pub enum ProtocolError {
-    #[error("Early network error: {0}")]
+pub enum V2ProtocolError {
+    #[error("V2 Setup Connection error: {0}")]
     SetupConnection(String),
-    #[error("During PROXY protocol setup error: {0}")]
+    #[error("V2 Open Mining Channel error: {0}")]
     OpenMiningChannel(String),
-    #[error("Other non-specified Error: {0}")]
+    #[error("V2 Other non-specified Error: {0}")]
     Other(String),
 }
 
-impl ProtocolError {
+impl V2ProtocolError {
     pub fn setup_connection<T: StdError>(val: T) -> Self {
         Self::SetupConnection(val.to_string())
     }
@@ -92,7 +70,7 @@ impl ProtocolError {
     }
 }
 
-impl ErrorLabeling for ProtocolError {
+impl ErrorLabeling for V2ProtocolError {
     fn label(&self) -> String {
         match self {
             Self::SetupConnection(_) => "setup_connection".to_string(),
@@ -107,20 +85,29 @@ impl ErrorLabeling for Error {
         use crate::error::Error::*;
         use ii_stratum::error::Error as StratumError;
         match self {
-            General(_) => "general".to_string(),
+            General(_) => "other".to_string(),
             Stratum(s) => match s {
                 StratumError::Noise(_) => "noise",
                 StratumError::NoiseEncoding(_) => "noise",
                 StratumError::NoiseProtocol(_) => "noise",
-                StratumError::V2(_) => "stratum_v2",
-                StratumError::V1(_) => "stratum_v1",
+                StratumError::V2(_) => "downstream",
+                StratumError::V1(_) => "upstream",
                 StratumError::NoiseSignature(_) => "noise",
                 _ => "stratum_other",
             }
             .to_string(),
-            ProtocolError(p) => p.label(),
-            GeneralNetworkError(n) => n.label(),
-            Timeout(_) => "timeout".to_string(),
+            Protocol(p) => p.label(),
+            GeneralNetwork(err) => match err {
+                GeneralNetworkError::DownstreamEarlyIo(_) => "early",
+                GeneralNetworkError::UpstreamIo(_)
+                | GeneralNetworkError::UpstreamProxyProtocol(_)
+                | GeneralNetworkError::UpstreamStratum(_)
+                | GeneralNetworkError::UpstreamTimeout(_) => "upstream",
+                GeneralNetworkError::DownstreamStratum(_)
+                | GeneralNetworkError::DownstreamTimeout(_) => "downstream",
+            }
+            .to_string(),
+            ProxyProtocol(_) => "haproxy".to_string(),
             Utf8(_) => "utf8".to_string(),
             Json(_) => "json".to_string(),
             Label(s, _) => s.clone(),
@@ -173,26 +160,29 @@ pub enum Error {
 
     /// General network errors
     #[error("General network error: {0}")]
-    GeneralNetworkError(GeneralNetworkError),
+    GeneralNetwork(GeneralNetworkError),
 
     /// Stratum protocol state error
     #[error("Stratum protocol state related error: {0}")]
-    ProtocolError(ProtocolError),
+    Protocol(V2ProtocolError),
 
     /// Generic error given by label
     #[error("Generic error: {1} with label: {0}")]
     Label(String, String),
+
+    #[error("I/O error: {0}")]
+    Io(std::io::Error),
 }
 
 impl From<GeneralNetworkError> for Error {
     fn from(val: GeneralNetworkError) -> Self {
-        Self::GeneralNetworkError(val)
+        Self::GeneralNetwork(val)
     }
 }
 
-impl From<ProtocolError> for Error {
-    fn from(val: ProtocolError) -> Self {
-        Self::ProtocolError(val)
+impl From<V2ProtocolError> for Error {
+    fn from(val: V2ProtocolError) -> Self {
+        Self::Protocol(val)
     }
 }
 
@@ -201,7 +191,7 @@ where
     T: Send + Sync + 'static,
 {
     fn from(e: futures::channel::mpsc::TrySendError<T>) -> Self {
-        GeneralNetworkError::from(io::Error::new(io::ErrorKind::Other, e)).into()
+        Error::Io(io::Error::new(io::ErrorKind::Other, e))
     }
 }
 
