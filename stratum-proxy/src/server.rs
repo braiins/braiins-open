@@ -20,6 +20,8 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+pub mod controller;
+
 use bytes::Bytes;
 use std::convert::TryFrom;
 use std::net::SocketAddr;
@@ -325,6 +327,13 @@ struct ProxyConnection<FN, T> {
     /// Server will use this version for talking to upstream server (if any)
     proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
     metrics: Arc<Metrics>,
+    client_counter: controller::ClientCounter,
+}
+
+impl<FN, T> Drop for ProxyConnection<FN, T> {
+    fn drop(&mut self) {
+        self.client_counter.decrease()
+    }
 }
 
 impl<FN, FT, T> ProxyConnection<FN, T>
@@ -341,6 +350,7 @@ where
         proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
         proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
         metrics: Arc<Metrics>,
+        _counter: controller::ClientCounter,
     ) -> Self {
         Self {
             v1_upstream_addr,
@@ -350,6 +360,7 @@ where
             proxy_protocol_acceptor: Some(proxy_protocol_acceptor),
             proxy_protocol_upstream_version,
             metrics,
+            client_counter: _counter,
         }
     }
 
@@ -495,6 +506,7 @@ pub struct ProxyServer<FN, T> {
     server: Server,
     listen_addr: Address,
     v1_upstream_addr: Address,
+    controller: controller::Controller,
     quit_tx: mpsc::Sender<()>,
     quit_rx: Option<mpsc::Receiver<()>>,
     /// Closure that generates a handler in the form of a Future that will be passed to the
@@ -557,6 +569,7 @@ where
                 proxy_protocol_config.downstream_config,
             ),
             proxy_protocol_upstream_version: proxy_protocol_config.upstream_version,
+            controller: Default::default(),
         })
     }
 
@@ -602,10 +615,10 @@ where
                 self.proxy_protocol_acceptor_builder.build(connection),
                 self.proxy_protocol_upstream_version.clone(),
                 self.metrics.clone(),
+                self.controller.client_counter(),
             )
             .handle(),
         );
-
         Ok(peer_addr)
     }
 
@@ -628,6 +641,7 @@ where
                         // The quit_rx channel has been closed / quit_tx dropped,
                         // and so we can't poll the quit_rx any more (otherwise it panics)
                         self.quit_rx = None;
+                        self.controller.request_immediate_termination();
                         None
                     }
                     _ => return None, // Quit notification on quit_rx or socket closed
@@ -670,6 +684,7 @@ where
                 }
             }
         }
+        self.controller.wait_for_termination(None).await;
 
         info!("Stratum proxy service terminated");
     }
