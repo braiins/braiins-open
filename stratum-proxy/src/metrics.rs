@@ -132,7 +132,7 @@ impl Metrics {
     pub fn spawn_stats(self: Arc<Self>) {
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
                 match to_text() {
                     Ok((stats_buf, _)) => {
                         match std::str::from_utf8(&stats_buf) {

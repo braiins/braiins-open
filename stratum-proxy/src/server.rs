@@ -43,7 +43,7 @@ use ii_wire::{
     Address, Client, Connection, Server,
 };
 
-use crate::error::{Error, GeneralNetworkError, Result};
+use crate::error::{DownstreamError, Error, Result, UpstreamError};
 use crate::metrics::Metrics;
 use crate::translation::V2ToV1Translation;
 
@@ -205,11 +205,11 @@ impl ConnTranslation {
                 // Receive V1 frame and translate it to V2 message
                 v1_frame = v1_conn_rx.next().timeout(Self::V1_UPSTREAM_TIMEOUT).fuse()=> {
                     // Unwrap the potentially elapsed timeout
-                    match v1_frame.map_err(|e| GeneralNetworkError::UpstreamTimeout(e))? {
+                    match v1_frame.map_err(|e| UpstreamError::Timeout(e))? {
                         Some(v1_frame) => {
                             Self::v1_handle_frame(
                                 &mut translation,
-                                v1_frame.map_err(|e| GeneralNetworkError::UpstreamStratum(e))?,
+                                v1_frame.map_err(|e| UpstreamError::Stratum(e))?,
                             )
                             .await?;
                         }
@@ -223,11 +223,11 @@ impl ConnTranslation {
                 },
                 // Receive V2 frame and translate it to V1 message
                 v2_frame = v2_conn_rx.next().timeout(Self::V2_DOWNSTREAM_TIMEOUT).fuse() => {
-                    match v2_frame.map_err(|e| GeneralNetworkError::DownstreamTimeout(e))? {
+                    match v2_frame.map_err(|e| DownstreamError::Timeout(e))? {
                         Some(v2_frame) => {
                             Self::v2_handle_frame(
                                 &mut translation,
-                                v2_frame.map_err(|e| GeneralNetworkError::DownstreamStratum(e))?,
+                                v2_frame.map_err(|e| DownstreamError::Stratum(e))?,
                             )
                             .await?;
                         }
@@ -364,13 +364,15 @@ where
             .proxy_protocol_acceptor
             .take()
             .expect("BUG: proxy protocol acceptor has already been used");
-        let proxy_stream = proxy_protocol_acceptor.await?;
+        let proxy_stream = proxy_protocol_acceptor
+            .await
+            .map_err(|e| DownstreamError::ProxyProtocol(e))?;
         let peer_addr = proxy_stream
             .peer_addr()
-            .map_err(|e| Error::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
+            .map_err(|e| DownstreamError::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
         let local_addr = proxy_stream
             .local_addr()
-            .map_err(|e| Error::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
+            .map_err(|e| DownstreamError::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
 
         self.generic_context.accept(&proxy_stream);
         debug!(
@@ -388,9 +390,7 @@ where
         // Use the connection only to build the Framed object with V1 framing and to extract the
         // peer address
         let mut v1_conn = v1_client.next().await?;
-        let v1_peer_addr = v1_conn
-            .peer_addr()
-            .map_err(|e| GeneralNetworkError::UpstreamIo(e))?;
+        let v1_peer_addr = v1_conn.peer_addr().map_err(|e| UpstreamError::Io(e))?;
 
         if let Some(version) = self.proxy_protocol_upstream_version {
             let (src, dst) = if let (Some(src), Some(dst)) = (
@@ -408,7 +408,7 @@ where
             Connector::new(version)
                 .write_proxy_header(&mut v1_conn, src, dst)
                 .await
-                .map_err(|e| GeneralNetworkError::UpstreamProxyProtocol(e))?;
+                .map_err(|e| UpstreamError::ProxyProtocol(e))?;
         }
         let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
         debug!(
@@ -532,8 +532,7 @@ where
         proxy_protocol_config: ProxyProtocolConfig,
         metrics: Arc<Metrics>,
     ) -> Result<ProxyServer<FN, T>> {
-        let server =
-            Server::bind(&listen_addr).map_err(|e| GeneralNetworkError::DownstreamEarlyIo(e))?;
+        let server = Server::bind(&listen_addr).map_err(|e| DownstreamError::EarlyIo(e))?;
 
         let (quit_tx, quit_rx) = mpsc::channel(1);
 
@@ -570,8 +569,10 @@ where
     /// Helper method for accepting incoming connections
     async fn accept(&self, connection_result: std::io::Result<TcpStream>) -> Result<SocketAddr> {
         self.metrics.account_opened_connection();
+        // TODO eliminate duplicate code for metrics accounting, consider moving the inc_by_error
+        //  to the caller. The problem is that it would not be as transparent due to
         let connection = connection_result.map_err(|err| {
-            let new_err = GeneralNetworkError::DownstreamEarlyIo(err).into();
+            let new_err = DownstreamError::EarlyIo(err).into();
             self.metrics
                 .tcp_connection_close_stage
                 .inc_by_error(&new_err);
@@ -581,7 +582,7 @@ where
         // When the TCP connection is dropped early we won't spawn the handling task. We will only
         // account for this early termination
         let peer_addr = connection.peer_addr().map_err(|err| {
-            let new_err = GeneralNetworkError::DownstreamEarlyIo(err).into();
+            let new_err = DownstreamError::EarlyIo(err).into();
             self.metrics
                 .tcp_connection_close_stage
                 .inc_by_error(&new_err);
