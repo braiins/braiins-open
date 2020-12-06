@@ -579,6 +579,10 @@ where
         self.quit_tx.clone()
     }
 
+    pub fn termination_notifier(&self) -> Arc<tokio::sync::Notify> {
+        self.controller.termination_notifier()
+    }
+
     /// Helper method for accepting incoming connections
     fn accept(&self, connection_result: std::io::Result<TcpStream>) -> Result<SocketAddr> {
         self.metrics.account_opened_connection();

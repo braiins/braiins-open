@@ -29,6 +29,7 @@ use std::task::{Context, Poll, Waker};
 use ii_async_utils::FutureExt;
 use ii_logging::macros::*;
 use tokio::time::Duration;
+use tokio::sync::Notify;
 
 #[derive(Default)]
 pub struct ClientCounter {
@@ -104,6 +105,7 @@ impl Default for TerminationMethod {
 pub struct Controller {
     client_counter: ClientCounter,
     termination_method: TerminationMethod,
+    termination_notifier: Arc<Notify>,
 }
 
 impl Controller {
@@ -123,6 +125,14 @@ impl Controller {
                 info!("Terminating proxy");
             }
         }
+    }
+
+    pub fn termination_notifier(&self) -> Arc<Notify> {
+        self.termination_notifier.clone()
+    }
+
+    pub async fn wait_for_notification(&self) {
+        self.termination_notifier.notified().await;
     }
 
     pub fn request_immediate_termination(&mut self) {
