@@ -107,12 +107,12 @@ impl ErrorLabeling for Error {
         match self {
             Self::GeneralWithMetricsLabel(_, label) => label,
             Self::Stratum(s) => match s {
-                StratumError::Noise(_) => "noise",
-                StratumError::NoiseEncoding(_) => "noise",
-                StratumError::NoiseProtocol(_) => "noise",
+                StratumError::Noise(_)
+                | StratumError::NoiseEncoding(_)
+                | StratumError::NoiseProtocol(_)
+                | StratumError::NoiseSignature(_) => "noise",
                 StratumError::V2(_) => "downstream",
                 StratumError::V1(_) => "upstream",
-                StratumError::NoiseSignature(_) => "noise",
                 _ => "stratum_other",
             },
             Self::Downstream(err) => err.label(),
@@ -180,12 +180,6 @@ pub enum Error {
     #[error("I/O error: {0}")]
     Io(std::io::Error),
 }
-
-// impl From<UpstreamError> for Error {
-//     fn from(val: UpstreamError) -> Self {
-//         Self::GeneralNetwork(val)
-//     }
-// }
 
 impl From<V2ProtocolError> for Error {
     fn from(val: V2ProtocolError) -> Self {
