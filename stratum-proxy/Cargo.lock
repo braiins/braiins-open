@@ -718,6 +718,7 @@ dependencies = [
  "lazy_static",
  "slog",
  "slog-async",
+ "slog-atomic",
  "slog-envlogger",
  "slog-term",
 ]
@@ -1488,6 +1489,16 @@ dependencies = [
  "slog",
  "take_mut",
  "thread_local",
+]
+
+[[package]]
+name = "slog-atomic"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87803759296346553aabece939e9ff174e7fc7ce2406c1fbd235b0c0a322523a"
+dependencies = [
+ "arc-swap",
+ "slog",
 ]
 
 [[package]]

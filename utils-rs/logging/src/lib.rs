@@ -283,11 +283,46 @@ pub struct FlushGuard(Option<AsyncGuard>);
 /// Use `take_guard()` to obtain the `FlushGuard`.
 pub struct GuardedLogger {
     pub logger: Logger,
+    /// Controller for atomic switching of the current drain for a new one build from a new
+    /// configuration
+    drain_switch_ctrl: Option<slog_atomic::AtomicSwitchCtrl>,
     guard: Mutex<FlushGuard>,
 }
 
 impl GuardedLogger {
-    fn new(config: &LoggingConfig) -> GuardedLogger {
+    #[inline]
+    fn drain_switch_ctrl(&mut self) -> &slog_atomic::AtomicSwitchCtrl {
+        self.drain_switch_ctrl
+            .as_ref()
+            .expect("BUG: drain switch not present!")
+    }
+
+    /// Sets a new drain and configures the log level specified by `config`
+    pub fn set_drain_and_config<D, E>(&mut self, config: &LoggingConfig, drain: D) -> FlushGuard
+    where
+        D: Drain<Ok = (), Err = E> + Send + 'static,
+        E: fmt::Debug,
+    {
+        let (drain, guard) = Async::new(drain.fuse())
+            .chan_size(config.drain_channel_size)
+            .build_with_guard();
+        let filtered_drain = drain.filter_level(config.level);
+        self.drain_switch_ctrl().set(filtered_drain.fuse());
+        FlushGuard(Some(guard))
+    }
+
+    pub fn set_config(&mut self, config: LoggingConfig) -> FlushGuard {
+        use LoggingTarget::*;
+
+        match &config.target {
+            None => self.set_drain_and_config(&config, Discard),
+            Stderr => self.set_drain_and_config(&config, get_terminal_drain(true)),
+            Stdout => self.set_drain_and_config(&config, get_terminal_drain(false)),
+            File(path) => self.set_drain_and_config(&config, get_file_drain(path)),
+        }
+    }
+
+    fn new(config: &LoggingConfig) -> Self {
         use LoggingTarget::*;
 
         match &config.target {
@@ -300,15 +335,18 @@ impl GuardedLogger {
 
     fn with_drain<D, E>(config: &LoggingConfig, drain: D) -> Self
     where
-        E: fmt::Debug,
         D: Drain<Ok = (), Err = E> + Send + 'static,
+        E: fmt::Debug,
     {
         let drain = get_envlogger_drain(drain, config.level);
         let (drain, guard) = Async::new(drain.fuse())
             .chan_size(config.drain_channel_size)
             .build_with_guard();
+        let drain_switch = slog_atomic::AtomicSwitch::new(drain.fuse());
+        let drain_switch_ctrl = Some(drain_switch.ctrl());
         Self {
-            logger: Logger::root(drain.fuse(), o!()),
+            logger: Logger::root(drain_switch, o!()),
+            drain_switch_ctrl,
             guard: Mutex::new(FlushGuard(Some(guard))),
         }
     }
@@ -316,6 +354,7 @@ impl GuardedLogger {
     fn with_discard() -> Self {
         Self {
             logger: Logger::root(Discard, o!()),
+            drain_switch_ctrl: None,
             guard: Mutex::new(FlushGuard(None)),
         }
     }
