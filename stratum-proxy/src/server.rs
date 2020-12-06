@@ -653,6 +653,7 @@ where
                         }
                     }
                     _ = self.controller.wait_for_notification() => {
+                        self.server.shutdown();
                         return None
                     }
                 }
@@ -679,6 +680,7 @@ where
     /// The default handling simply logs all
     /// connection errors via the logging crate.
     pub async fn run(mut self) {
+        use futures::future::FutureExt;
         info!(
             "Stratum proxy service starting @ {} -> {}",
             self.listen_addr, self.v1_upstream_addr
@@ -694,7 +696,15 @@ where
                 }
             }
         }
-        self.controller.wait_for_termination(None).await;
+        if let Some(mut quit_rx) = self.quit_rx {
+            future::select(
+                quit_rx.next(),
+                self.controller.wait_for_termination(None).boxed(),
+            )
+            .await;
+        } else {
+            self.controller.wait_for_termination(None).await;
+        }
 
         info!("Stratum proxy service terminated");
     }
