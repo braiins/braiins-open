@@ -567,7 +567,7 @@ where
     }
 
     /// Helper method for accepting incoming connections
-    async fn accept(&self, connection_result: std::io::Result<TcpStream>) -> Result<SocketAddr> {
+    fn accept(&self, connection_result: std::io::Result<TcpStream>) -> Result<SocketAddr> {
         self.metrics.account_opened_connection();
         // TODO eliminate duplicate code for metrics accounting, consider moving the inc_by_error
         //  to the caller. The problem is that it would not be as transparent due to
@@ -647,7 +647,7 @@ where
         };
 
         // Remap the connection stratum error into stratum proxy local error
-        Some(self.accept(conn).await)
+        Some(self.accept(conn))
     }
 
     /// Creates a proxy server task that calls `.next()`
