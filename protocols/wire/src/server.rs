@@ -33,16 +33,20 @@ use tokio::net::{TcpListener, TcpStream};
 
 #[derive(Debug)]
 pub struct Server {
-    tcp: TcpListener,
+    tcp: Option<TcpListener>,
 }
 
 impl Server {
     pub fn bind<A: StdToSocketAddrs>(addr: A) -> std::io::Result<Self> {
         let tcp = StdTcpListener::bind(addr)?;
         tcp.set_nonblocking(true)?;
-        let tcp = TcpListener::from_std(tcp)?;
+        let tcp = Some(TcpListener::from_std(tcp)?);
 
         Ok(Server { tcp })
+    }
+
+    pub fn shutdown(&mut self) {
+        self.tcp = None;
     }
 }
 
@@ -54,7 +58,11 @@ impl Stream for Server {
         #[allow(unused_mut)] mut self: Pin<&mut Self>,
         cx: &mut Context,
     ) -> Poll<Option<Self::Item>> {
-        let (socket, _) = ready!(self.tcp.poll_accept(cx))?;
-        Poll::Ready(Some(Ok(socket)))
+        if let Some(tcp) = self.tcp.as_mut() {
+            let (socket, _) = ready!(tcp.poll_accept(cx))?;
+            Poll::Ready(Some(Ok(socket)))
+        } else {
+            Poll::Ready(None)
+        }
     }
 }
