@@ -696,6 +696,8 @@ where
                 }
             }
         }
+        // The proxy still might potentially be killed with ctrl-c
+        // Note if the quit has already been called, [`wait_for_termination`] returns immediately
         if let Some(mut quit_rx) = self.quit_rx {
             future::select(
                 quit_rx.next(),
