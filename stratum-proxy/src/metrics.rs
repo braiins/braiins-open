@@ -132,11 +132,11 @@ impl Metrics {
     pub fn spawn_stats(self: Arc<Self>) {
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                tokio::time::sleep(Duration::from_secs(15)).await;
                 match to_text() {
                     Ok((stats_buf, _)) => {
                         match std::str::from_utf8(&stats_buf) {
-                            Ok(metrics_str) => info!("Metrics:\n {}", metrics_str),
+                            Ok(metrics_str) => info!("{}", metrics_str.replace("\n", ";")),
                             Err(e) => error!("Cannot convert metrics to string: {:?}", e),
                         };
                     }
