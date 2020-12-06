@@ -20,6 +20,9 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+//! This module implements server controller that controls the way new connections are accepted
+//! and graceful shutdown
+
 use std::sync::{
     atomic::{AtomicUsize, Ordering::Relaxed},
     Arc, Mutex,
@@ -48,6 +51,8 @@ impl Clone for ClientCounter {
     }
 }
 
+/// Future completes as soon as client counter is decreased to 0, signalling that there are no
+/// clients connected to the server
 impl std::future::Future for ClientCounter {
     type Output = ();
 
@@ -63,6 +68,7 @@ impl std::future::Future for ClientCounter {
 }
 
 impl ClientCounter {
+    /// Decreases internal client counter and wakes its future if it hits 0
     pub fn decrease(&mut self) {
         assert_ne!(
             self.client_counter.fetch_sub(1, Relaxed),
@@ -83,6 +89,8 @@ impl ClientCounter {
     }
 }
 
+/// Tells whether controller should wait until all clients disconnects or whether the
+/// wait_for_termination method should return immediately
 #[derive(Copy, Clone)]
 pub enum TerminationMethod {
     LazyTermination,
@@ -111,7 +119,6 @@ pub struct Controller {
 impl Controller {
     pub async fn wait_for_termination(self, timeout: Option<Duration>) {
         use TerminationMethod::*;
-        // use ii_async_utils::FutureExt;
         match self.termination_method {
             ImmediateTermination => {}
             LazyTermination => {
@@ -127,6 +134,7 @@ impl Controller {
         }
     }
 
+    /// Returns notifier that may be used to release  [`wait_for_notification`] method
     pub fn termination_notifier(&self) -> Arc<Notify> {
         self.termination_notifier.clone()
     }
@@ -139,6 +147,7 @@ impl Controller {
         self.termination_method = TerminationMethod::ImmediateTermination;
     }
 
+    /// Returns ClientCounter structure and increments
     pub fn counter_for_new_client(&self) -> ClientCounter {
         self.client_counter.clone()
     }
