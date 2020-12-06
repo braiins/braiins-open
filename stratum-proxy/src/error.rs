@@ -119,7 +119,14 @@ impl ErrorLabeling for Error {
             Self::Upstream(err) => err.label(),
             Self::Utf8(_) => "utf8",
             Self::Json(_) => "json",
-            _ => "other",
+            Self::Protocol(e) => e.label(),
+            Self::General(_) => "general",
+            Self::Timeout(_) => "timeout",
+            Self::ClientAttempt(_) => "client_attempt",
+            Self::BitcoinHashes(_) => "bitcoin_hashes",
+            Self::InvalidFile(_) => "invalid_file",
+            Self::Metrics(_) => "metrics",
+            Self::Io(_) => "io",
         }
     }
 }
