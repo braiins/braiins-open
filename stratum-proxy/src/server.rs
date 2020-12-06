@@ -29,7 +29,6 @@ use std::sync::Arc;
 use std::time;
 
 use futures::channel::mpsc;
-use futures::future::{self, Either};
 use futures::prelude::*;
 use futures::select;
 use serde::Deserialize;
@@ -619,7 +618,7 @@ where
                 self.proxy_protocol_acceptor_builder.build(connection),
                 self.proxy_protocol_upstream_version.clone(),
                 self.metrics.clone(),
-                self.controller.client_counter(),
+                self.controller.counter_for_new_client(),
             )
             .handle(),
         );
@@ -639,16 +638,23 @@ where
         // unfortunately you can't await in map() et al.
         let conn = match self.quit_rx {
             Some(ref mut quit_rx) => {
-                match future::select(self.server.next(), quit_rx.next()).await {
-                    Either::Left((Some(conn), _)) => Some(conn),
-                    Either::Right((None, _)) => {
-                        // The quit_rx channel has been closed / quit_tx dropped,
-                        // and so we can't poll the quit_rx any more (otherwise it panics)
-                        self.quit_rx = None;
-                        self.controller.request_immediate_termination();
-                        None
+                tokio::select! {
+                    conn = self.server.next() => conn,
+                    quit_opt = quit_rx.next() => {
+                        if quit_opt.is_some() {
+                            // received quit signal
+                            self.controller.request_immediate_termination();
+                            return None;
+                        } else {
+                            // The quit_rx channel has been closed / quit_tx dropped,
+                            // and so we can't poll the quit_rx any more (otherwise it panics)
+                            self.quit_rx = None;
+                            None
+                        }
                     }
-                    _ => return None, // Quit notification on quit_rx or socket closed
+                    _ = self.controller.wait_for_notification() => {
+                        return None
+                    }
                 }
             }
             None => None,

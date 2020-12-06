@@ -28,8 +28,8 @@ use std::task::{Context, Poll, Waker};
 
 use ii_async_utils::FutureExt;
 use ii_logging::macros::*;
-use tokio::time::Duration;
 use tokio::sync::Notify;
+use tokio::time::Duration;
 
 #[derive(Default)]
 pub struct ClientCounter {
@@ -139,7 +139,7 @@ impl Controller {
         self.termination_method = TerminationMethod::ImmediateTermination;
     }
 
-    pub fn client_counter(&self) -> ClientCounter {
+    pub fn counter_for_new_client(&self) -> ClientCounter {
         self.client_counter.clone()
     }
 }
