@@ -42,13 +42,12 @@ pub enum DownstreamError {
 }
 
 impl ErrorLabeling for DownstreamError {
-    fn label(&self) -> String {
+    fn label(&self) -> &str {
         match self {
             Self::EarlyIo(_) => "early",
             Self::ProxyProtocol(_) => "haproxy",
             _ => "downstream",
         }
-        .to_string()
     }
 }
 
@@ -65,8 +64,8 @@ pub enum UpstreamError {
 }
 
 impl ErrorLabeling for UpstreamError {
-    fn label(&self) -> String {
-        "upstream".to_string()
+    fn label(&self) -> &str {
+        "upstream"
     }
 }
 
@@ -93,20 +92,20 @@ impl V2ProtocolError {
 }
 
 impl ErrorLabeling for V2ProtocolError {
-    fn label(&self) -> String {
+    fn label(&self) -> &str {
         match self {
-            Self::SetupConnection(_) => "setup_connection".to_string(),
-            Self::OpenMiningChannel(_) => "open_mining_channel".to_string(),
-            Self::Other(_) => "protocol_other".to_string(),
+            Self::SetupConnection(_) => "setup_connection",
+            Self::OpenMiningChannel(_) => "open_mining_channel",
+            Self::Other(_) => "protocol_other",
         }
     }
 }
 
 impl ErrorLabeling for Error {
-    fn label(&self) -> String {
+    fn label(&self) -> &str {
         use ii_stratum::error::Error as StratumError;
         match self {
-            Self::General(_) => "other".to_string(),
+            Self::GeneralWithMetricsLabel(_, label) => label,
             Self::Stratum(s) => match s {
                 StratumError::Noise(_) => "noise",
                 StratumError::NoiseEncoding(_) => "noise",
@@ -115,14 +114,12 @@ impl ErrorLabeling for Error {
                 StratumError::V1(_) => "upstream",
                 StratumError::NoiseSignature(_) => "noise",
                 _ => "stratum_other",
-            }
-            .to_string(),
+            },
             Self::Downstream(err) => err.label(),
             Self::Upstream(err) => err.label(),
-            Self::Utf8(_) => "utf8".to_string(),
-            Self::Json(_) => "json".to_string(),
-            Self::Label(s, _) => s.clone(),
-            _ => "other".to_string(),
+            Self::Utf8(_) => "utf8",
+            Self::Json(_) => "json",
+            _ => "other",
         }
     }
 }
@@ -132,6 +129,9 @@ pub enum Error {
     /// General error used for more specific errors.
     #[error("General error: {0}")]
     General(String),
+
+    #[error("General error: {0} with metrics label: {1}")]
+    GeneralWithMetricsLabel(String, &'static str),
 
     /// Stratum protocol error.
     #[error("Stratum error: {0}")]
@@ -176,10 +176,6 @@ pub enum Error {
     /// Stratum protocol state error
     #[error("Stratum V2 protocol state related error: {0}")]
     Protocol(V2ProtocolError),
-
-    /// Generic error given by label
-    #[error("Generic error: {1} with label: {0}")]
-    Label(String, String),
 
     #[error("I/O error: {0}")]
     Io(std::io::Error),
