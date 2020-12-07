@@ -35,6 +35,9 @@ mod halthandle02;
 #[cfg(feature = "tokio02")]
 pub use halthandle02::*;
 
+mod maybe_future;
+pub use maybe_future::MaybeFuture;
+
 use std::panic::{self, PanicInfo};
 use std::process;
 use std::sync::Once;
