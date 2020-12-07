@@ -343,7 +343,7 @@ impl GuardedLogger {
     }
 
     /// Reconfigure logger with specified filters
-    pub fn set_filters(&mut self, filters: String) -> FlushGuard {
+    pub fn set_filters(&self, filters: String) -> FlushGuard {
         self.switch_target(Some(filters))
     }
 

@@ -20,8 +20,8 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-//! This module implements server controller that controls the way new connections are accepted
-//! and graceful shutdown
+//! This module implements server controller that controls the way new connections are accepted,
+//! way server is terminated and logging.
 
 use std::sync::{
     atomic::{AtomicUsize, Ordering::Relaxed},
@@ -31,7 +31,8 @@ use std::task::{Context, Poll, Waker};
 
 use ii_async_utils::FutureExt;
 use ii_logging::macros::*;
-use tokio::sync::Notify;
+use ii_logging::FlushGuard;
+use tokio::sync::{mpsc, Notify};
 use tokio::time::Duration;
 
 #[derive(Default)]
@@ -150,5 +151,33 @@ impl Controller {
     /// Returns ClientCounter structure and increments
     pub fn counter_for_new_client(&self) -> ClientCounter {
         self.client_counter.clone()
+    }
+}
+
+pub struct LoggingController {
+    _flush_guard: Arc<Mutex<FlushGuard>>,
+}
+
+impl LoggingController {
+    pub fn new(filter_receiver: Option<mpsc::Receiver<String>>) -> Self {
+        let flush_guard = Arc::new(Mutex::new(ii_logging::setup_for_app(
+            ii_logging::LoggingConfig::ASYNC_LOGGER_DRAIN_CHANNEL_SIZE,
+        )));
+        if let Some(mut filter_rx) = filter_receiver {
+            let flush_guard_clone = flush_guard.clone();
+            tokio::spawn(async move {
+                while let Some(filter) = filter_rx.recv().await {
+                    warn!("Changing logging filter to: {}", filter);
+                    *flush_guard_clone
+                        .lock()
+                        .expect("BUG: Poisoned logging guard") =
+                        ii_logging::LOGGER.set_filters(filter);
+                }
+            });
+        }
+
+        Self {
+            _flush_guard: flush_guard,
+        }
     }
 }
