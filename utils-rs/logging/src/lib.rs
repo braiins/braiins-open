@@ -62,7 +62,7 @@ use std::sync::{
 };
 
 use lazy_static::lazy_static;
-use slog::{o, Discard, Drain, FilterLevel, Logger};
+use slog::{o, Discard, Drain, Logger};
 use slog_async::{Async, AsyncGuard};
 use slog_envlogger::EnvLogger;
 use slog_term;
@@ -213,25 +213,24 @@ pub fn init_test_logging() -> Option<FlushGuard> {
     }
 }
 
-/// Sets up envlogger filter for a drain, with proper default settings
-fn get_envlogger_drain<D: Drain>(drain: D, default_level: Level) -> EnvLogger<D> {
+/// Prepare EnvLogger (parses specified `filters` string)
+fn build_envlogger_from_filters<D: Drain>(drain: D, filters: &str) -> EnvLogger<D> {
     let builder = slog_envlogger::LogBuilder::new(drain);
-    match env::var("RUST_LOG") {
+    builder.parse(filters).build()
+}
+
+/// Setup EnvLogger filter for a drain based on `RUST_LOG` environment, `default_level` will be
+/// used when RUST_LOG is not defined or is empty
+fn build_envlogger<D: Drain>(drain: D, default_level: Level) -> EnvLogger<D> {
+    let rust_log_result = env::var("RUST_LOG");
+    let filters: &str = match rust_log_result {
         Ok(ref rust_log) if !rust_log.is_empty() => {
             // Use the RUST_LOG env var
-            builder.parse(rust_log).build()
+            rust_log.as_str()
         }
-        _ => {
-            // No RUST_LOG env var or empty, use the default level
-
-            // For some reason there's no impl From<Level> for FilterLevel,
-            // so we have go through usize here :-/
-            let filter_level = FilterLevel::from_usize(default_level.as_usize())
-                .expect("BUG: Internal error: Could not convert slog::Level to slog::FilterLevel");
-
-            builder.filter(None, filter_level).build()
-        }
-    }
+        _ => default_level.as_short_str(),
+    };
+    build_envlogger_from_filters(drain, filters)
 }
 
 /// Create terminal drain for logger, logging to either stderr or stdout
@@ -338,7 +337,7 @@ impl GuardedLogger {
         D: Drain<Ok = (), Err = E> + Send + 'static,
         E: fmt::Debug,
     {
-        let drain = get_envlogger_drain(drain, config.level);
+        let drain = build_envlogger(drain, config.level);
         let (drain, guard) = Async::new(drain.fuse())
             .chan_size(config.drain_channel_size)
             .build_with_guard();
