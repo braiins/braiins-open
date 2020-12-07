@@ -62,7 +62,7 @@ use std::sync::{
 };
 
 use lazy_static::lazy_static;
-use slog::{o, Discard, Drain, Logger};
+use slog::{o, Discard, Drain, FilterLevel, Logger};
 use slog_async::{Async, AsyncGuard};
 use slog_envlogger::EnvLogger;
 use slog_term;
@@ -286,38 +286,77 @@ pub struct GuardedLogger {
     /// configuration
     drain_switch_ctrl: Option<slog_atomic::AtomicSwitchCtrl>,
     guard: Mutex<FlushGuard>,
+    /// Existing configuration that can be replaced
+    current_config: LoggingConfig,
 }
 
 impl GuardedLogger {
     #[inline]
-    fn drain_switch_ctrl(&mut self) -> &slog_atomic::AtomicSwitchCtrl {
+    fn drain_switch_ctrl(&self) -> &slog_atomic::AtomicSwitchCtrl {
         self.drain_switch_ctrl
             .as_ref()
             .expect("BUG: drain switch not present!")
     }
 
-    /// Sets a new drain and configures the log level specified by `config`
-    pub fn set_drain_and_config<D, E>(&mut self, config: &LoggingConfig, drain: D) -> FlushGuard
+    /// Sets a new drain and configures the log filter based on `filters` or just uses the log level
+    /// from the current configuration
+    fn switch_drain<D, E>(&self, drain: D, filters: Option<String>) -> FlushGuard
     where
         D: Drain<Ok = (), Err = E> + Send + 'static,
         E: fmt::Debug,
     {
         let (drain, guard) = Async::new(drain.fuse())
-            .chan_size(config.drain_channel_size)
+            .chan_size(self.current_config.drain_channel_size)
             .build_with_guard();
-        let filtered_drain = drain.filter_level(config.level);
-        self.drain_switch_ctrl().set(filtered_drain.fuse());
+        match filters {
+            Some(filters) => {
+                let filtered_drain = build_envlogger_from_filters(drain, filters.as_str());
+                self.drain_switch_ctrl()
+                    .set(Mutex::new(filtered_drain.fuse()).fuse())
+            }
+            None => {
+                let filtered_drain = drain.filter_level(self.current_config.level);
+                self.drain_switch_ctrl().set(filtered_drain.fuse());
+            }
+        };
+
         FlushGuard(Some(guard))
     }
 
     pub fn set_config(&mut self, config: LoggingConfig) -> FlushGuard {
+        self.current_config = config;
+        self.switch_target(None)
+    }
+
+    /// Adjust current configuration to use the specified `filter_level` and adjust target
+    /// so that `FilterLevel::Off` causes all logging to be discarded completely.
+    pub fn set_filter_level(&mut self, filter_level: FilterLevel) -> FlushGuard {
+        match filter_level {
+            FilterLevel::Off => self.current_config.target = LoggingTarget::None,
+            filter_level @ _ => {
+                self.current_config.level = Level::from_usize(filter_level.as_usize()).expect(
+                    "BUG: Internal error: Could not convert slog::FilterLevel to slog::Level",
+                )
+            }
+        };
+        self.switch_target(None)
+    }
+
+    /// Reconfigure logger with specified filters
+    pub fn set_filters(&mut self, filters: String) -> FlushGuard {
+        self.switch_target(Some(filters))
+    }
+
+    /// Helper to switch the drain based on the target in the existing configuration. Optionally,
+    /// it is possible to specify `filters`
+    fn switch_target(&self, filters: Option<String>) -> FlushGuard {
         use LoggingTarget::*;
 
-        match &config.target {
-            None => self.set_drain_and_config(&config, Discard),
-            Stderr => self.set_drain_and_config(&config, get_terminal_drain(true)),
-            Stdout => self.set_drain_and_config(&config, get_terminal_drain(false)),
-            File(path) => self.set_drain_and_config(&config, get_file_drain(path)),
+        match &self.current_config.target {
+            None => self.switch_drain(Discard, filters),
+            Stderr => self.switch_drain(get_terminal_drain(true), filters),
+            Stdout => self.switch_drain(get_terminal_drain(false), filters),
+            File(path) => self.switch_drain(get_file_drain(path), filters),
         }
     }
 
@@ -347,6 +386,7 @@ impl GuardedLogger {
             logger: Logger::root(drain_switch, o!()),
             drain_switch_ctrl,
             guard: Mutex::new(FlushGuard(Some(guard))),
+            current_config: config.clone(),
         }
     }
 
@@ -355,6 +395,7 @@ impl GuardedLogger {
             logger: Logger::root(Discard, o!()),
             drain_switch_ctrl: None,
             guard: Mutex::new(FlushGuard(None)),
+            current_config: LoggingConfig::no_logging(),
         }
     }
 
