@@ -318,7 +318,8 @@ async fn test_v2server_full_no_proxy_protocol() {
     tokio::spawn(v1server_task(addr_v1.clone(), None));
 
     // TODO review whether an Arc is needed
-    let metrics = std::sync::Arc::new(ii_stratum_proxy::metrics::Metrics::new());
+    let metrics_registry = ii_stratum_proxy::metrics::MetricsRegistry::default();
+    let metrics = metrics_registry.get_metrics_collector();
     let v2server = server::ProxyServer::listen(
         addr_v2.clone(),
         addr_v1,
@@ -356,7 +357,8 @@ async fn test_v2server_full_with_proxy_protocol() {
     tokio::spawn(v1server_task(addr_v1.clone(), Some(proxy_info.clone())));
 
     // TODO review whether an Arc is needed
-    let metrics = std::sync::Arc::new(ii_stratum_proxy::metrics::Metrics::new());
+    let metrics_registry = ii_stratum_proxy::metrics::MetricsRegistry::default();
+    let metrics = metrics_registry.get_metrics_collector();
     let v2server = server::ProxyServer::listen(
         addr_v2.clone(),
         addr_v1,

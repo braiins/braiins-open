@@ -45,7 +45,7 @@ use ii_wire::{
 };
 
 use crate::error::{DownstreamError, Error, Result, UpstreamError};
-use crate::metrics::Metrics;
+use crate::metrics::MetricsCollector;
 use crate::translation::V2ToV1Translation;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
@@ -78,7 +78,7 @@ impl ConnTranslation {
         v2_peer_addr: SocketAddr,
         v1_conn: v1::Framed,
         v1_peer_addr: SocketAddr,
-        metrics: Option<Arc<Metrics>>,
+        metrics: Option<Arc<MetricsCollector>>,
     ) -> Self {
         let (v1_translation_tx, v1_translation_rx) =
             mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
@@ -248,7 +248,7 @@ pub async fn handle_connection<T: Send + Sync>(
     v1_conn: v1::Framed,
     v1_peer_addr: SocketAddr,
     _generic_context: T,
-    metrics: Arc<Metrics>,
+    metrics: Arc<MetricsCollector>,
 ) -> Result<()> {
     let translation =
         ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn, v1_peer_addr, Some(metrics));
@@ -325,7 +325,7 @@ struct ProxyConnection<FN, T> {
     proxy_protocol_acceptor: Option<proxy::AcceptorFuture<TcpStream>>,
     /// Server will use this version for talking to upstream server (if any)
     proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
-    metrics: Arc<Metrics>,
+    metrics: Arc<MetricsCollector>,
     client_counter: controller::ClientCounter,
 }
 
@@ -338,7 +338,7 @@ impl<FN, T> Drop for ProxyConnection<FN, T> {
 impl<FN, FT, T> ProxyConnection<FN, T>
 where
     FT: Future<Output = Result<()>>,
-    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T, Arc<Metrics>) -> FT,
+    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T, Arc<MetricsCollector>) -> FT,
     T: Send + Sync + Clone + ProxyInfoExtractor,
 {
     fn new(
@@ -348,7 +348,7 @@ where
         generic_context: T,
         proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
         proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
-        metrics: Arc<Metrics>,
+        metrics: Arc<MetricsCollector>,
         client_counter: controller::ClientCounter,
     ) -> Self {
         Self {
@@ -512,7 +512,7 @@ pub struct ProxyServer<FN, T> {
     get_connection_handler: Arc<FN>,
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
-    metrics: Arc<Metrics>,
+    metrics: Arc<MetricsCollector>,
     generic_context: T,
     /// Builds PROXY protocol acceptor for a specified configuration
     proxy_protocol_acceptor_builder: proxy::AcceptorBuilder<TcpStream>,
@@ -523,7 +523,7 @@ pub struct ProxyServer<FN, T> {
 impl<FN, FT, T> ProxyServer<FN, T>
 where
     FT: Future<Output = Result<()>> + Send + 'static,
-    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T, Arc<Metrics>) -> FT
+    FN: Fn(v2::Framed, SocketAddr, v1::Framed, SocketAddr, T, Arc<MetricsCollector>) -> FT
         + Send
         + Sync
         + 'static,
@@ -541,7 +541,7 @@ where
         )>,
         generic_context: T,
         proxy_protocol_config: ProxyProtocolConfig,
-        metrics: Arc<Metrics>,
+        metrics: Arc<MetricsCollector>,
     ) -> Result<ProxyServer<FN, T>> {
         let server = Server::bind(&listen_addr).map_err(|e| DownstreamError::EarlyIo(e))?;
 

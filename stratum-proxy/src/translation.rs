@@ -46,7 +46,7 @@ use ii_unvariant::handler;
 use ii_logging::macros::*;
 
 use crate::error::{Error, Result, V2ProtocolError};
-use crate::metrics::Metrics;
+use crate::metrics::MetricsCollector;
 use crate::util;
 use std::sync::Arc;
 use tokio::time::{Duration, Instant};
@@ -250,7 +250,7 @@ pub struct V2ToV1Translation {
     /// Options for translation
     options: V2ToV1TranslationOptions,
     v1_password: String,
-    metrics: Option<Arc<Metrics>>,
+    metrics: Option<Arc<MetricsCollector>>,
 }
 
 impl V2ToV1Translation {
@@ -289,7 +289,7 @@ impl V2ToV1Translation {
         v1_tx: mpsc::Sender<v1::Frame>,
         v2_tx: mpsc::Sender<v2::Frame>,
         options: V2ToV1TranslationOptions,
-        metrics: Option<Arc<Metrics>>,
+        metrics: Option<Arc<MetricsCollector>>,
     ) -> Self {
         let v1_password = options.password.to_string();
         Self {

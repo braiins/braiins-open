@@ -30,10 +30,11 @@ use structopt::StructOpt;
 
 use ii_logging::macros::*;
 use ii_scm::global::Version;
-use ii_stratum_proxy::frontend::{Args, Config};
-use ii_stratum_proxy::server;
-use ii_stratum_proxy::server::controller::LoggingController;
-use ii_stratum_proxy::server::ProxyProtocolConfig;
+use ii_stratum_proxy::{
+    frontend::{Args, Config},
+    metrics,
+    server::{self, controller::LoggingController, ProxyProtocolConfig},
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -52,8 +53,11 @@ async fn main() -> Result<()> {
     info!("Config: {:#?}", config);
 
     // TODO review whether an Arc is needed
-    let metrics = std::sync::Arc::new(ii_stratum_proxy::metrics::Metrics::new());
-    metrics.clone().spawn_stats();
+
+    let metrics_register = metrics::MetricsRegistry::default();
+
+    let metrics_collector = metrics_register.get_metrics_collector();
+    metrics_collector.clone().spawn_stats();
 
     let server = server::ProxyServer::listen(
         config.listen_address.clone(),
@@ -64,7 +68,7 @@ async fn main() -> Result<()> {
         config
             .proxy_protocol_config
             .unwrap_or_else(ProxyProtocolConfig::default),
-        metrics,
+        metrics_collector,
     )
     .context("Cannot bind the server")?;
 
