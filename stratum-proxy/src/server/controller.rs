@@ -60,7 +60,7 @@ impl std::future::Future for ClientCounter {
         if self.client_counter.load(Relaxed) == 0 {
             Poll::Ready(())
         } else {
-            let mut waker_grd = self.waker.lock().expect("BUG: Poisonned client counter");
+            let mut waker_grd = self.waker.lock().expect("BUG: Poisoned client counter");
             waker_grd.replace(cx.waker().clone());
             Poll::Pending
         }
