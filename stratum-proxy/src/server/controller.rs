@@ -159,10 +159,17 @@ pub struct LoggingController {
 }
 
 impl LoggingController {
+    pub const ASYNC_LOGGER_DRAIN_CHANNEL_SIZE: usize = 4096;
+
     pub fn new(filter_receiver: Option<mpsc::Receiver<String>>) -> Self {
-        let flush_guard = Arc::new(Mutex::new(ii_logging::setup_for_app(
-            ii_logging::LoggingConfig::ASYNC_LOGGER_DRAIN_CHANNEL_SIZE,
-        )));
+        Self::with_drain_channel_size(filter_receiver, Self::ASYNC_LOGGER_DRAIN_CHANNEL_SIZE)
+    }
+
+    pub fn with_drain_channel_size(
+        filter_receiver: Option<mpsc::Receiver<String>>,
+        drain_channel_size: usize,
+    ) -> Self {
+        let flush_guard = Arc::new(Mutex::new(ii_logging::setup_for_app(drain_channel_size)));
         if let Some(mut filter_rx) = filter_receiver {
             let flush_guard_clone = flush_guard.clone();
             tokio::spawn(async move {
