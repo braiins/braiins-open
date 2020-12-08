@@ -502,7 +502,7 @@ where
 /// the `run()` method turns the `ProxyServer`
 /// into an asynchronous task (which internally calls `next()` in a loop).
 pub struct ProxyServer<FN, T> {
-    server: Server,
+    server: Server, // TODO get rid of ii-wire::server::Server and use TcpListener
     listen_addr: Address,
     v1_upstream_addr: Address,
     controller: controller::Controller,
