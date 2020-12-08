@@ -7,6 +7,7 @@ edition = "2018"
 
 [dependencies]
 futures = "0.3.7"
+pin-project-lite = "0.2.0"
 tokio = { version = "0.3.2", features = ["full"], optional = true }
 tokio02 = { package = "tokio", version = "0.2.22", features = ["full"], optional = true }
 

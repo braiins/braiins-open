@@ -1,41 +1,63 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::task::{Context, Poll};
 
-/// Object representing a possible future with `Output=T` or a result directly.
-/// Internally a boxed future is used to seal the returning future type.
-///
-/// The main intention is to use this future in async trait context when
-/// a called function can but mustn't have to need to be async.
-/// Traditionally a user has to pay for the async call by boxing the result
-/// future for all calls. `MaybeFuture` allows to pay the allocation price
-/// only when it is needed.
-#[must_use = "this `MaybeFuture` may represent a future, it must be awaited!"]
-pub struct MaybeFuture<T>(MaybeFutureInner<T>);
+use pin_project_lite::pin_project;
 
-/// Internal implementation of `MaybeFuture`. This is non-public type,
-/// preventing invalid construction.
-enum MaybeFutureInner<T> {
-    Future(Pin<Box<dyn Future<Output = T> + Send>>),
-    Ready(Option<T>),
+pin_project! {
+    #[doc = "Object representing a possible future with `Output=T` or a result directly.
+Internally a boxed future is used to seal the returning future type.
+
+The main intention is to use this future in async trait context when
+a called function can but mustn't have to need to be async.
+Traditionally a user has to pay for the async call by boxing the result
+future for all calls. `MaybeFuture` allows to pay the allocation price
+only when it is needed."]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+    pub struct MaybeFuture<T> {
+        #[pin]
+        inner: MaybeFutureInner<T>
+    }
 }
 
-// TODO: Replace by a proper implementation of `std::futures::Future`
-impl<T> MaybeFuture<T> {
-    /// This must be called exactly once.
-    pub async fn value(&mut self) -> T {
-        match &mut self.0 {
-            MaybeFutureInner::Ready(val) => val.take().expect("BUG: Internal consistency breached"),
-            MaybeFutureInner::Future(bx) => bx.await,
-        }
+pin_project! {
+    #[doc = "Internal implementation of `MaybeFuture`. This is non-public type,
+preventing invalid construction."]
+    #[project = InnerProjection]
+    enum MaybeFutureInner<T> {
+        Future { #[pin] future: Pin<Box<dyn Future<Output = T> + Send>> },
+        Ready { value: Option<T> },
     }
 }
 
 impl<T> MaybeFuture<T> {
     pub fn future<F: Future<Output = T> + Send + 'static>(fut: F) -> Self {
-        Self(MaybeFutureInner::Future(Box::pin(fut)))
+        let inner = MaybeFutureInner::Future {
+            future: Box::pin(fut),
+        };
+        Self { inner }
     }
     pub fn result(val: T) -> Self {
-        Self(MaybeFutureInner::Ready(Some(val)))
+        let inner = MaybeFutureInner::Ready { value: Some(val) };
+        Self { inner }
+    }
+}
+
+impl<T> Future for MaybeFuture<T> {
+    type Output = T;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // Peel off the Pin layers:
+        let proj = self.project().inner.project();
+
+        // Forward to future or yield value immediately:
+        match proj {
+            InnerProjection::Future { future } => future.poll(cx),
+            InnerProjection::Ready { value } => value
+                .take()
+                .expect("BUG: MaybeFuture polled after yielding Ready")
+                .into(),
+        }
     }
 }
 
@@ -49,4 +71,33 @@ macro_rules! maybe {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use futures::future;
+
+    #[tokio::test]
+    async fn maybe_future() {
+        // Test with a Future:
+        let mut i = 0u32;
+        let ft = future::poll_fn(move |cx| {
+            if i < 42 {
+                i += 1;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            } else {
+                Poll::Ready(i)
+            }
+        });
+
+        let maybe = MaybeFuture::future(ft);
+        assert_eq!(maybe.await, 42);
+
+        // Test with an immediate value:
+        let maybe = MaybeFuture::result(42);
+        assert_eq!(maybe.await, 42);
+    }
 }
