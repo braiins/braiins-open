@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
     Version::set("StratumProxy", ii_scm::version_full!().as_str());
     ii_async_utils::setup_panic_handling();
 
-    let _logging_guard = LoggingController::new(None);
+    let _logging_controller = LoggingController::new(None);
 
     let args = Args::from_args();
 
