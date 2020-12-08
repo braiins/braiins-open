@@ -349,7 +349,7 @@ where
         proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
         proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
         metrics: Arc<Metrics>,
-        _counter: controller::ClientCounter,
+        client_counter: controller::ClientCounter,
     ) -> Self {
         Self {
             v1_upstream_addr,
@@ -359,7 +359,7 @@ where
             proxy_protocol_acceptor: Some(proxy_protocol_acceptor),
             proxy_protocol_upstream_version,
             metrics,
-            client_counter: _counter,
+            client_counter,
         }
     }
 
