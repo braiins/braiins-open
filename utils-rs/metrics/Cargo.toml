@@ -1,0 +1,15 @@
+[package]
+name = "ii-metrics"
+version = "0.1.0"
+authors = ["Jakub Trnka <jakub.trnka@braiins.cz>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+prometheus = { version = "0.11", features = ["process"], optional = true }
+thiserror = { version = "1.0" }
+
+[features]
+default = []
+prometheus_metrics = ["prometheus"]
