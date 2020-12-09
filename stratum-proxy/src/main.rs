@@ -29,10 +29,10 @@ use std::cell::RefCell;
 use structopt::StructOpt;
 
 use ii_logging::macros::*;
+use ii_metrics::MetricsCollectorBuilder;
 use ii_scm::global::Version;
 use ii_stratum_proxy::{
     frontend::{Args, Config},
-    metrics,
     server::{self, controller::LoggingController, ProxyProtocolConfig},
 };
 
@@ -54,10 +54,10 @@ async fn main() -> Result<()> {
 
     // TODO review whether an Arc is needed
 
-    let metrics_register = metrics::MetricsRegistry::default();
+    let metrics_register = ii_stratum_proxy::metrics::ProxyCollectorBuilder::default();
 
-    let metrics_collector = metrics_register.get_metrics_collector();
-    metrics_collector.clone().spawn_stats();
+    let metrics_collector = metrics_register.build_metrics_collector();
+    metrics_register.stats_log_task();
 
     let server = server::ProxyServer::listen(
         config.listen_address.clone(),

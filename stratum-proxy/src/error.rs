@@ -170,7 +170,7 @@ pub enum Error {
 
     /// Prometheus metrics error.
     #[error("Metrics error: {0}")]
-    Metrics(#[from] prometheus::Error),
+    Metrics(#[from] ii_metrics::Error),
 
     /// Errors when communicatin with downstream node
     #[error("Downstream error: {0}")]

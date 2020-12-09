@@ -10,6 +10,7 @@ ii-stratum = { path = "../protocols/stratum" }
 ii-wire = { path = "../protocols/wire", features = ["serde"]}
 ii-async-utils = { path = "../utils-rs/async-utils" }
 ii-logging = { path = "../utils-rs/logging" }
+ii-metrics = { path = "../utils-rs/metrics", features = ["prometheus_metrics"] }
 ii-unvariant = { path = "../utils-rs/unvariant/unvariant" }
 ii-scm = { path = "../utils-rs/scm/scm" }
 futures = "0.3.7"
@@ -28,7 +29,6 @@ serde = "1.0.117"
 serde_json = "1.0.59"
 structopt = "0.3.20"
 toml = "0.5.7"
-prometheus = { version = "0.11.0", features = ["process"] }
 
 [features]
 v2json = ["ii-stratum/v2json"]
