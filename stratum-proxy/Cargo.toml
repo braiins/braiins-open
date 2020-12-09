@@ -10,7 +10,7 @@ ii-stratum = { path = "../protocols/stratum" }
 ii-wire = { path = "../protocols/wire", features = ["serde"]}
 ii-async-utils = { path = "../utils-rs/async-utils" }
 ii-logging = { path = "../utils-rs/logging" }
-ii-metrics = { path = "../utils-rs/metrics", features = ["prometheus_metrics"] }
+ii-metrics = { path = "../utils-rs/metrics" , features = ["prometheus_metrics"] }
 ii-unvariant = { path = "../utils-rs/unvariant/unvariant" }
 ii-scm = { path = "../utils-rs/scm/scm" }
 futures = "0.3.7"
