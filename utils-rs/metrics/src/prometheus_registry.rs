@@ -30,11 +30,11 @@ use prometheus::Registry;
 
 /// Operates with Arc<prometheus::Registry>.
 #[derive(Default, Clone)]
-pub struct PrometheusRegistry {
+pub struct MetricsRegistry {
     registry: std::sync::Arc<Registry>,
 }
 
-impl PrometheusRegistry {
+impl MetricsRegistry {
     pub fn register_generic_counter<T: Atomic + 'static>(
         &self,
         name: &str,

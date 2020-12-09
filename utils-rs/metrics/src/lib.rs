@@ -22,13 +22,10 @@
 
 use std::sync::Arc;
 
-// #[cfg_attr(feature = "prometheus_metrics", path = "prometheus_registry.rs")]
-// #[cfg_attr(not(feature = "prometheus_metrics"), path = "dummy_registry.rs")]
 #[cfg_attr(not(feature = "prometheus_metrics"), path = "dummy.rs")]
 mod prometheus_registry;
 
 /// Reexport primitives necessary for implementing Collector
-// #[cfg(feature = "prometheus_metrics")]
 pub use prometheus_registry::*;
 
 /// Generic interface for Collector instantiation
@@ -36,22 +33,6 @@ pub trait MetricsCollectorBuilder {
     type Collector;
     fn build_metrics_collector(&self) -> Arc<Self::Collector>;
     fn to_text(&self) -> Result<(Vec<u8>, String)>;
-}
-
-/// DummyRegistry is available regardless of feature chosen
-pub struct DummyRegistry;
-pub struct DummyCollector;
-
-impl MetricsCollectorBuilder for DummyRegistry {
-    type Collector = DummyCollector;
-
-    fn build_metrics_collector(&self) -> Arc<Self::Collector> {
-        Arc::new(DummyCollector)
-    }
-
-    fn to_text(&self) -> Result<(Vec<u8>, String)> {
-        Ok((Vec::new(), String::new()))
-    }
 }
 
 #[derive(thiserror::Error, Debug)]
