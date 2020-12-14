@@ -32,7 +32,7 @@ use primitive_types::U256;
 
 use bitcoin_hashes::{sha256, HashEngine};
 // reexport Bitcoin hash to remove dependency on bitcoin_hashes in other modules
-pub use bitcoin_hashes::{hex::FromHex, sha256d::Hash as DHash, Hash as HashTrait};
+pub use bitcoin_hashes::{hex::FromHex, hex::ToHex, sha256d::Hash as DHash, Hash as HashTrait};
 
 use std::convert::TryInto;
 use std::fmt;

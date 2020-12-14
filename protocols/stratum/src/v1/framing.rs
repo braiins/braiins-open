@@ -60,7 +60,7 @@ impl Frame {
 
     /// Serializes a frame into a specified `dst` buffer. The method either copies the already
     /// serialized payload into the buffer or runs the on-demand serializer of the payload.
-    pub(crate) fn serialize(&self, dst: &mut BytesMut) -> Result<()> {
+    pub fn serialize(&self, dst: &mut BytesMut) -> Result<()> {
         // TODO reserve a reasonable chunk in the buffer - make it a constant
         dst.reserve(128);
         let mut payload_writer = dst.split().writer();
