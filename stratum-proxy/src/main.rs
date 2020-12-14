@@ -58,16 +58,17 @@ async fn main() -> Result<()> {
 
     let metrics_collector = metrics_register.build_metrics_collector();
     metrics_register.stats_log_task();
+    let metrics = Some(metrics_collector);
 
     let server = server::ProxyServer::listen(
         config.listen_address.clone(),
         config.upstream_address.clone(),
-        server::TranslationHandler::new(metrics_collector.clone()),
+        server::TranslationHandler::new(metrics.clone()),
         config.read_certificate_secret_key_pair().await?,
         config
             .proxy_protocol_config
             .unwrap_or_else(ProxyProtocolConfig::default),
-        metrics_collector,
+        metrics.clone(),
     )
     .context("Cannot bind the server")?;
 

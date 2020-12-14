@@ -255,13 +255,13 @@ pub trait ConnectionHandler: Clone + Send + Sync + 'static {
     fn extract_proxy_proxy_info<T: WithProxyInfo>(&mut self, _connection_context: &T) {}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TranslationHandler {
-    metrics: Arc<ProxyMetrics>,
+    metrics: Option<Arc<ProxyMetrics>>,
 }
 
 impl TranslationHandler {
-    pub fn new(metrics: Arc<ProxyMetrics>) -> Self {
+    pub fn new(metrics: Option<Arc<ProxyMetrics>>) -> Self {
         Self { metrics }
     }
 }
@@ -279,7 +279,7 @@ impl ConnectionHandler for TranslationHandler {
             v2_peer_addr,
             v1_conn,
             v1_peer_addr,
-            Some(self.metrics.clone()),
+            self.metrics.clone(),
         );
 
         translation.run().boxed()
@@ -354,7 +354,7 @@ struct ProxyConnection<H> {
     proxy_protocol_acceptor: Option<proxy::AcceptorFuture<TcpStream>>,
     /// Server will use this version for talking to upstream server (if any)
     proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
-    metrics: Arc<ProxyMetrics>,
+    metrics: Option<Arc<ProxyMetrics>>,
     client_counter: controller::ClientCounter,
 }
 
@@ -374,7 +374,7 @@ where
         connection_handler: H,
         proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
         proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
-        metrics: Arc<ProxyMetrics>,
+        metrics: Option<Arc<ProxyMetrics>>,
         client_counter: controller::ClientCounter,
     ) -> Self {
         Self {
@@ -507,15 +507,19 @@ where
         // (possible provide full 'ProxyInfo')
         match self.do_handle().await {
             Ok(()) => {
-                metrics.tcp_connection_close_ok();
+                metrics.as_ref().map(|x| x.tcp_connection_close_ok());
                 debug!("Closing connection from {} ...", "N/A")
             }
             Err(err) => {
-                metrics.tcp_connection_close_with_error(&err);
+                metrics
+                    .as_ref()
+                    .map(|x| x.tcp_connection_close_with_error(&err));
                 debug!("Connection error: {}, peer: {}", err, "N/A")
             }
         };
-        self.metrics.tcp_connection_timer_observe(timer);
+        self.metrics
+            .as_ref()
+            .map(|x| x.tcp_connection_timer_observe(timer));
     }
 }
 
@@ -537,7 +541,7 @@ pub struct ProxyServer<H> {
     connection_handler: H,
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
-    metrics: Arc<ProxyMetrics>,
+    metrics: Option<Arc<ProxyMetrics>>,
     /// Builds PROXY protocol acceptor for a specified configuration
     proxy_protocol_acceptor_builder: proxy::AcceptorBuilder<TcpStream>,
     /// Server will use this version for talking to upstream server (when defined)
@@ -559,7 +563,7 @@ where
             v2::noise::auth::StaticSecretKeyFormat,
         )>,
         proxy_protocol_config: ProxyProtocolConfig,
-        metrics: Arc<ProxyMetrics>,
+        metrics: Option<Arc<ProxyMetrics>>,
     ) -> Result<ProxyServer<H>> {
         let server = Server::bind(&listen_addr).map_err(|e| DownstreamError::EarlyIo(e))?;
 
@@ -601,12 +605,14 @@ where
 
     /// Helper method for accepting incoming connections
     fn accept(&self, connection_result: std::io::Result<TcpStream>) -> Result<SocketAddr> {
-        self.metrics.account_opened_connection();
+        self.metrics.as_ref().map(|x| x.account_opened_connection());
         // TODO eliminate duplicate code for metrics accounting, consider moving the inc_by_error
         //  to the caller. The problem is that it would not be as transparent due to
         let connection = connection_result.map_err(|err| {
             let new_err = DownstreamError::EarlyIo(err).into();
-            self.metrics.tcp_connection_close_with_error(&new_err);
+            self.metrics
+                .as_ref()
+                .map(|x| x.tcp_connection_close_with_error(&new_err));
             new_err
         })?;
 
@@ -614,7 +620,9 @@ where
         // account for this early termination
         let peer_addr = connection.peer_addr().map_err(|err| {
             let new_err = DownstreamError::EarlyIo(err).into();
-            self.metrics.tcp_connection_close_with_error(&new_err);
+            self.metrics
+                .as_ref()
+                .map(|x| x.tcp_connection_close_with_error(&new_err));
             new_err
         })?;
 

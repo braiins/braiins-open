@@ -317,18 +317,16 @@ async fn test_v2server_full_no_proxy_protocol() {
     // dummy pool server
     tokio::spawn(v1server_task(addr_v1.clone(), None));
 
-    let metrics = std::sync::Arc::new(ii_metrics::DummyCollector);
     let v2server = server::ProxyServer::listen(
         addr_v2.clone(),
         addr_v1,
-        server::TranslationHandler::new(metrics.clone()),
+        server::TranslationHandler::new(None),
         None,
-        (),
         server::ProxyProtocolConfig {
             downstream_config: proxy::ProtocolConfig::new(false, vec![]),
             upstream_version: None,
         },
-        metrics,
+        None,
     )
     .expect("BUG: Could not bind v2server");
     let mut v2server_quit = v2server.quit_channel();
@@ -354,13 +352,11 @@ async fn test_v2server_full_with_proxy_protocol() {
     // Dummy pool server
     tokio::spawn(v1server_task(addr_v1.clone(), Some(proxy_info.clone())));
 
-    let metrics = std::sync::Arc::new(ii_metrics::DummyCollector);
     let v2server = server::ProxyServer::listen(
         addr_v2.clone(),
         addr_v1,
-        server::TranslationHandler::new(metrics.clone()),
+        server::TranslationHandler::new(None),
         None,
-        (),
         server::ProxyProtocolConfig {
             downstream_config: proxy::ProtocolConfig::new(
                 false,
@@ -368,7 +364,7 @@ async fn test_v2server_full_with_proxy_protocol() {
             ),
             upstream_version: Some(proxy::ProtocolVersion::V2),
         },
-        metrics,
+        None,
     )
     .expect("BUG: Could not bind v2server");
     let mut v2server_quit = v2server.quit_channel();
