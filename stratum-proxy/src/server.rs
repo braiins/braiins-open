@@ -46,7 +46,7 @@ use ii_wire::{
 };
 
 use crate::error::{DownstreamError, Error, Result, UpstreamError};
-use crate::metrics::ProxyCollector;
+use crate::metrics::ProxyMetrics;
 use crate::translation::V2ToV1Translation;
 
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
@@ -79,7 +79,7 @@ impl ConnTranslation {
         v2_peer_addr: SocketAddr,
         v1_conn: v1::Framed,
         v1_peer_addr: SocketAddr,
-        metrics: Option<Arc<dyn ProxyCollector + Send + Sync>>,
+        metrics: Option<Arc<ProxyMetrics>>,
     ) -> Self {
         let (v1_translation_tx, v1_translation_rx) =
             mpsc::channel(Self::MAX_TRANSLATION_CHANNEL_SIZE);
@@ -257,11 +257,11 @@ pub trait ConnectionHandler: Clone + Send + Sync + 'static {
 
 #[derive(Clone)]
 pub struct TranslationHandler {
-    metrics: Arc<dyn ProxyCollector + Send + Sync>,
+    metrics: Arc<ProxyMetrics>,
 }
 
 impl TranslationHandler {
-    pub fn new(metrics: Arc<dyn ProxyCollector + Send + Sync>) -> Self {
+    pub fn new(metrics: Arc<ProxyMetrics>) -> Self {
         Self { metrics }
     }
 }
@@ -354,7 +354,7 @@ struct ProxyConnection<H> {
     proxy_protocol_acceptor: Option<proxy::AcceptorFuture<TcpStream>>,
     /// Server will use this version for talking to upstream server (if any)
     proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
-    metrics: Arc<dyn ProxyCollector + Send + Sync>,
+    metrics: Arc<ProxyMetrics>,
     client_counter: controller::ClientCounter,
 }
 
@@ -374,7 +374,7 @@ where
         connection_handler: H,
         proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
         proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
-        metrics: Arc<dyn ProxyCollector + Send + Sync>,
+        metrics: Arc<ProxyMetrics>,
         client_counter: controller::ClientCounter,
     ) -> Self {
         Self {
@@ -537,7 +537,7 @@ pub struct ProxyServer<H> {
     connection_handler: H,
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
-    metrics: Arc<dyn ProxyCollector + Send + Sync>,
+    metrics: Arc<ProxyMetrics>,
     /// Builds PROXY protocol acceptor for a specified configuration
     proxy_protocol_acceptor_builder: proxy::AcceptorBuilder<TcpStream>,
     /// Server will use this version for talking to upstream server (when defined)
@@ -559,7 +559,7 @@ where
             v2::noise::auth::StaticSecretKeyFormat,
         )>,
         proxy_protocol_config: ProxyProtocolConfig,
-        metrics: Arc<dyn ProxyCollector + Send + Sync>,
+        metrics: Arc<ProxyMetrics>,
     ) -> Result<ProxyServer<H>> {
         let server = Server::bind(&listen_addr).map_err(|e| DownstreamError::EarlyIo(e))?;
 
