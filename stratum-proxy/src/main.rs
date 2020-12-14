@@ -62,9 +62,8 @@ async fn main() -> Result<()> {
     let server = server::ProxyServer::listen(
         config.listen_address.clone(),
         config.upstream_address.clone(),
-        server::handle_connection,
+        server::TranslationHandler::new(metrics_collector.clone()),
         config.read_certificate_secret_key_pair().await?,
-        (),
         config
             .proxy_protocol_config
             .unwrap_or_else(ProxyProtocolConfig::default),

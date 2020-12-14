@@ -321,7 +321,7 @@ async fn test_v2server_full_no_proxy_protocol() {
     let v2server = server::ProxyServer::listen(
         addr_v2.clone(),
         addr_v1,
-        server::handle_connection,
+        server::TranslationHandler::new(metrics.clone()),
         None,
         (),
         server::ProxyProtocolConfig {
@@ -358,7 +358,7 @@ async fn test_v2server_full_with_proxy_protocol() {
     let v2server = server::ProxyServer::listen(
         addr_v2.clone(),
         addr_v1,
-        server::handle_connection,
+        server::TranslationHandler::new(metrics.clone()),
         None,
         (),
         server::ProxyProtocolConfig {

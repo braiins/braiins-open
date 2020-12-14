@@ -25,6 +25,7 @@ pub mod controller;
 use bytes::Bytes;
 use std::convert::TryFrom;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time;
 
@@ -40,7 +41,7 @@ use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_wire::{
-    proxy::{self, Connector, ProxyInfoExtractor, WithProxyInfo as _},
+    proxy::{self, Connector, WithProxyInfo},
     Address, Client, Connection, Server,
 };
 
@@ -242,18 +243,47 @@ impl ConnTranslation {
     }
 }
 
-pub async fn handle_connection<T: Send + Sync>(
-    v2_conn: v2::Framed,
-    v2_peer_addr: SocketAddr,
-    v1_conn: v1::Framed,
-    v1_peer_addr: SocketAddr,
-    _generic_context: T,
-    metrics: Arc<dyn ProxyCollector + Send + Sync>,
-) -> Result<()> {
-    let translation =
-        ConnTranslation::new(v2_conn, v2_peer_addr, v1_conn, v1_peer_addr, Some(metrics));
+pub trait ConnectionHandler: Clone + Send + Sync + 'static {
+    fn handle_connection(
+        &self,
+        v2_conn: v2::Framed,
+        v2_peer_addr: SocketAddr,
+        v1_conn: v1::Framed,
+        v1_peer_addr: SocketAddr,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 
-    translation.run().await
+    fn extract_proxy_proxy_info<T: WithProxyInfo>(&mut self, _connection_context: &T) {}
+}
+
+#[derive(Clone)]
+pub struct TranslationHandler {
+    metrics: Arc<dyn ProxyCollector + Send + Sync>,
+}
+
+impl TranslationHandler {
+    pub fn new(metrics: Arc<dyn ProxyCollector + Send + Sync>) -> Self {
+        Self { metrics }
+    }
+}
+
+impl ConnectionHandler for TranslationHandler {
+    fn handle_connection(
+        &self,
+        v2_conn: v2::Framed,
+        v2_peer_addr: SocketAddr,
+        v1_conn: v1::Framed,
+        v1_peer_addr: SocketAddr,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        let translation = ConnTranslation::new(
+            v2_conn,
+            v2_peer_addr,
+            v1_conn,
+            v1_peer_addr,
+            Some(self.metrics.clone()),
+        );
+
+        translation.run().boxed()
+    }
 }
 
 /// Security context is held by the server and provided to each (noise secured) connection so
@@ -310,14 +340,13 @@ impl Default for ProxyProtocolConfig {
     }
 }
 
-struct ProxyConnection<FN, T> {
+struct ProxyConnection<H> {
     /// Upstream server that we should try to connect to
     v1_upstream_addr: Address,
     /// See ProxyServer
-    get_connection_handler: Arc<FN>,
+    connection_handler: H,
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
-    generic_context: T,
     /// Builds PROXY protocol acceptor for a specified configuration and clones it into
     /// It is intentionally optional so that the do_handle() method can take it while working with
     /// a mutable reference of Self instance. At the same time it introduces a state into the
@@ -329,30 +358,20 @@ struct ProxyConnection<FN, T> {
     client_counter: controller::ClientCounter,
 }
 
-impl<FN, T> Drop for ProxyConnection<FN, T> {
+impl<FN> Drop for ProxyConnection<FN> {
     fn drop(&mut self) {
         self.client_counter.decrease()
     }
 }
 
-impl<FN, FT, T> ProxyConnection<FN, T>
+impl<H> ProxyConnection<H>
 where
-    FT: Future<Output = Result<()>>,
-    FN: Fn(
-        v2::Framed,
-        SocketAddr,
-        v1::Framed,
-        SocketAddr,
-        T,
-        Arc<dyn ProxyCollector + Send + Sync>,
-    ) -> FT,
-    T: Send + Sync + Clone + ProxyInfoExtractor,
+    H: ConnectionHandler,
 {
     fn new(
         v1_upstream_addr: Address,
         security_context: Option<Arc<SecurityContext>>,
-        get_connection_handler: Arc<FN>,
-        generic_context: T,
+        connection_handler: H,
         proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
         proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
         metrics: Arc<dyn ProxyCollector + Send + Sync>,
@@ -360,9 +379,8 @@ where
     ) -> Self {
         Self {
             v1_upstream_addr,
-            get_connection_handler,
+            connection_handler,
             security_context,
-            generic_context,
             proxy_protocol_acceptor: Some(proxy_protocol_acceptor),
             proxy_protocol_upstream_version,
             metrics,
@@ -391,7 +409,8 @@ where
             .local_addr()
             .map_err(|e| DownstreamError::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
 
-        self.generic_context.accept(&proxy_stream);
+        self.connection_handler
+            .extract_proxy_proxy_info(&proxy_stream);
         debug!(
             "Received connection from downstream - source: {:?}, destination: {:?}, original \
             source: {:?}, original destination: {:?}",
@@ -467,17 +486,16 @@ where
 
         // Start processing of both ends
         // TODO adjust connection handler to return a Result
-        (self.get_connection_handler)(
-            v2_framed_stream,
-            // TODO: provide connection info instead of a pure peer address, for now we just
-            //  clone v1_addr
-            v1_peer_addr.clone(),
-            v1_framed_stream,
-            v1_peer_addr,
-            self.generic_context.clone(),
-            self.metrics.clone(),
-        )
-        .await
+        self.connection_handler
+            .handle_connection(
+                v2_framed_stream,
+                // TODO: provide connection info instead of a pure peer address, for now we just
+                //  clone v1_addr
+                v1_peer_addr.clone(),
+                v1_framed_stream,
+                v1_peer_addr,
+            )
+            .await
     }
 
     /// Handle connection by delegating it to a method that is able to handle a Result so that we
@@ -508,7 +526,7 @@ where
 /// (a stream-like interface) or, as a higher-level interface,
 /// the `run()` method turns the `ProxyServer`
 /// into an asynchronous task (which internally calls `next()` in a loop).
-pub struct ProxyServer<FN, T> {
+pub struct ProxyServer<H> {
     server: Server, // TODO get rid of ii-wire::server::Server and use TcpListener
     listen_addr: Address,
     v1_upstream_addr: Address,
@@ -516,47 +534,33 @@ pub struct ProxyServer<FN, T> {
     quit_tx: mpsc::Sender<()>,
     quit_rx: Option<mpsc::Receiver<()>>,
     /// Closure that generates a handler in the form of a Future that will be passed to the
-    get_connection_handler: Arc<FN>,
+    connection_handler: H,
     /// Security context for noise handshake
     security_context: Option<Arc<SecurityContext>>,
     metrics: Arc<dyn ProxyCollector + Send + Sync>,
-    generic_context: T,
     /// Builds PROXY protocol acceptor for a specified configuration
     proxy_protocol_acceptor_builder: proxy::AcceptorBuilder<TcpStream>,
     /// Server will use this version for talking to upstream server (when defined)
     proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
 }
 
-impl<FN, FT, T> ProxyServer<FN, T>
+impl<H> ProxyServer<H>
 where
-    FT: Future<Output = Result<()>> + Send + 'static,
-    FN: Fn(
-            v2::Framed,
-            SocketAddr,
-            v1::Framed,
-            SocketAddr,
-            T,
-            Arc<dyn ProxyCollector + Send + Sync>,
-        ) -> FT
-        + Send
-        + Sync
-        + 'static,
-    T: Send + Sync + Clone + ProxyInfoExtractor + 'static,
+    H: ConnectionHandler,
 {
     /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
     /// specified `get_connection_handler` that builds the connection handler `Future` on demand
     pub fn listen(
         listen_addr: Address,
         stratum_addr: Address,
-        get_connection_handler: FN,
+        connection_handler: H,
         certificate_secret_key_pair: Option<(
             v2::noise::auth::Certificate,
             v2::noise::auth::StaticSecretKeyFormat,
         )>,
-        generic_context: T,
         proxy_protocol_config: ProxyProtocolConfig,
         metrics: Arc<dyn ProxyCollector + Send + Sync>,
-    ) -> Result<ProxyServer<FN, T>> {
+    ) -> Result<ProxyServer<H>> {
         let server = Server::bind(&listen_addr).map_err(|e| DownstreamError::EarlyIo(e))?;
 
         let (quit_tx, quit_rx) = mpsc::channel(1);
@@ -574,10 +578,9 @@ where
             v1_upstream_addr: stratum_addr,
             quit_rx: Some(quit_rx),
             quit_tx,
-            get_connection_handler: Arc::new(get_connection_handler),
+            connection_handler,
             security_context,
             metrics,
-            generic_context,
             proxy_protocol_acceptor_builder: proxy::AcceptorBuilder::new(
                 proxy_protocol_config.downstream_config,
             ),
@@ -623,8 +626,7 @@ where
                 self.security_context
                     .as_ref()
                     .map(|context| context.clone()),
-                self.get_connection_handler.clone(),
-                self.generic_context.clone(),
+                self.connection_handler.clone(),
                 self.proxy_protocol_acceptor_builder.build(connection),
                 self.proxy_protocol_upstream_version.clone(),
                 self.metrics.clone(),
