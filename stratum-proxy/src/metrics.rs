@@ -30,6 +30,11 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::time::Duration;
 
+pub use prometheus::{
+    histogram_opts, opts, Encoder, Histogram, HistogramTimer, HistogramVec, IntCounter,
+    IntCounterVec, TextEncoder,
+};
+
 /// Combines all metrics and provides additional tooling for accounting shares/submits
 ///
 /// All metrics have the following constant labels:
@@ -69,13 +74,7 @@ impl TcpConnectionCloseTotal {
             &["stage"],
         ))
     }
-}
 
-pub trait ErrorLabeling {
-    fn label(&self) -> &str;
-}
-
-impl TcpConnectionCloseTotal {
     pub fn inc_by_error(&self, error: &crate::error::Error) {
         let stage_label = error.label();
         self.0.with_label_values(&[stage_label]).inc();
@@ -85,19 +84,19 @@ impl TcpConnectionCloseTotal {
     }
 }
 
+pub trait ErrorLabeling {
+    fn label(&self) -> &str;
+}
+
 #[derive(Default, Clone)]
 pub struct ProxyCollectorBuilder(MetricsRegistry);
 
-impl From<MetricsRegistry> for ProxyCollectorBuilder {
-    fn from(metrics_registry: MetricsRegistry) -> Self {
-        Self(metrics_registry)
+impl ProxyCollectorBuilder {
+    pub fn new(registry: MetricsRegistry) -> Self {
+        Self(registry)
     }
-}
 
-impl MetricsCollectorBuilder for ProxyCollectorBuilder {
-    type Collector = ProxyMetrics;
-
-    fn build_metrics_collector(&self) -> Arc<ProxyMetrics> {
+    pub fn build_metrics_collector(&self) -> Arc<ProxyMetrics> {
         let variable_label_names = &["direction", "status"];
 
         Arc::new(ProxyMetrics {
@@ -128,12 +127,6 @@ impl MetricsCollectorBuilder for ProxyCollectorBuilder {
         })
     }
 
-    fn to_text(&self) -> ii_metrics::Result<(Vec<u8>, String)> {
-        self.0.to_text()
-    }
-}
-
-impl ProxyCollectorBuilder {
     pub fn stats_log_task(&self) {
         let cloned_registry = self.0.clone();
         tokio::spawn(async move {

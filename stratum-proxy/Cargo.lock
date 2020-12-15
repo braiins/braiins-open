@@ -801,6 +801,7 @@ dependencies = [
  "ii-unvariant",
  "ii-wire",
  "primitive-types",
+ "prometheus",
  "serde",
  "serde_json",
  "structopt",

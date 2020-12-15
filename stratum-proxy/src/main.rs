@@ -29,7 +29,7 @@ use std::cell::RefCell;
 use structopt::StructOpt;
 
 use ii_logging::macros::*;
-use ii_metrics::MetricsCollectorBuilder;
+
 use ii_scm::global::Version;
 use ii_stratum_proxy::{
     frontend::{Args, Config},
@@ -52,23 +52,15 @@ async fn main() -> Result<()> {
     info!("Starting {}: {}", Version::signature(), Version::full(),);
     info!("Config: {:#?}", config);
 
-    // TODO review whether an Arc is needed
-
-    let metrics_register = ii_stratum_proxy::metrics::ProxyCollectorBuilder::default();
-
-    let metrics_collector = metrics_register.build_metrics_collector();
-    metrics_register.stats_log_task();
-    let metrics = Some(metrics_collector);
-
     let server = server::ProxyServer::listen(
         config.listen_address.clone(),
         config.upstream_address.clone(),
-        server::TranslationHandler::new(metrics.clone()),
+        server::TranslationHandler::new(None),
         config.read_certificate_secret_key_pair().await?,
         config
             .proxy_protocol_config
             .unwrap_or_else(ProxyProtocolConfig::default),
-        metrics.clone(),
+        None,
     )
     .context("Cannot bind the server")?;
 

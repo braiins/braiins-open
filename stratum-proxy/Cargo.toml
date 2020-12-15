@@ -29,7 +29,8 @@ serde = "1.0.117"
 serde_json = "1.0.59"
 structopt = "0.3.20"
 toml = "0.5.7"
+prometheus = { version = "0.11", features = ["process"], optional = true }
 
 [features]
 v2json = ["ii-stratum/v2json"]
-prometheus_metrics = ["ii-metrics/prometheus_metrics"]
+prometheus_metrics = ["prometheus", "ii-metrics/prometheus_metrics"]

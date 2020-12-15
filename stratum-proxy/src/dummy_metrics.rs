@@ -19,18 +19,34 @@
 // under a proprietary license. For more information on the terms and conditions
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
+//! Empty metrics for the case when stratum proxy is compiled with prometheus metrics disabled
 
-//! Stratum proxy library provides functionality for proxying any combination of Stratum V1 and V2
-//! protocol version
+use ii_stratum::v1::rpc::Method;
+pub use primitive_types::U256;
+use std::time::Instant;
+use tokio::time::Duration;
 
-// Increase recursion limit as e.g. `select!` macro  and other complex macros quickly run out of
-// the default recursion limit if more complex statements are used
-#![recursion_limit = "256"]
+/// TODO remove this duplicate once the error to label mappings are moved to metrics module
+pub trait ErrorLabeling {
+    fn label(&self) -> &str;
+}
 
-pub mod error;
-pub mod frontend;
-#[cfg_attr(not(feature = "prometheus_metrics"), path = "dummy_metrics.rs")]
-pub mod metrics;
-pub mod server;
-pub mod translation;
-pub mod util;
+pub struct ProxyMetrics;
+
+impl ProxyMetrics {
+    pub fn account_accepted_share(&self, _target: Option<U256>) {}
+
+    pub fn account_rejected_share(&self, _target: Option<U256>) {}
+
+    pub fn account_opened_connection(&self) {}
+
+    pub fn observe_v1_request_success(&self, _request_method: Method, _duration: Duration) {}
+
+    pub fn observe_v1_request_error(&self, _request_method: Method, _duration: Duration) {}
+
+    pub fn tcp_connection_timer_observe(&self, _timer: Instant) {}
+
+    pub fn tcp_connection_close_ok(&self) {}
+
+    pub fn tcp_connection_close_with_error(&self, _error: &crate::error::Error) {}
+}
