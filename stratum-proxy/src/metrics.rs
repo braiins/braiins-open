@@ -22,7 +22,6 @@
 
 use crate::error;
 use crate::translation::V2ToV1Translation;
-use ii_logging::macros::*;
 use ii_metrics::MetricsRegistry;
 use ii_stratum::v1::rpc::Method;
 pub use primitive_types::U256;
@@ -94,24 +93,6 @@ impl ProxyCollectorBuilder {
                 &["type", "status"],
             ),
         })
-    }
-
-    pub fn stats_log_task(&self) {
-        let cloned_registry = self.0.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(60)).await;
-                match cloned_registry.to_text() {
-                    Ok((stats_buf, _)) => {
-                        match std::str::from_utf8(&stats_buf) {
-                            Ok(metrics_str) => info!("{}", metrics_str.replace("\n", ";")),
-                            Err(e) => error!("Cannot convert metrics to string: {:?}", e),
-                        };
-                    }
-                    Err(e) => error!("Cannot dump metrics into log: {}", e),
-                }
-            }
-        });
     }
 }
 
