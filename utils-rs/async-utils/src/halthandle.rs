@@ -32,8 +32,7 @@ use futures::prelude::*;
 use tokio::signal::unix::{self, SignalKind};
 use tokio::sync::{mpsc, watch, Notify};
 use tokio::task::{JoinError, JoinHandle};
-
-use super::FutureExt;
+use tokio::time;
 
 pub trait Spawnable {
     fn run(self, tripwire: Tripwire) -> JoinHandle<()>;
@@ -333,7 +332,10 @@ impl HaltHandle {
         }
     }
 
-    /// Wait for all associated tasks to finish once `ready()` and `halt()` are called.
+    /// Wait for all associated tasks to finish.
+    /// Call this function once `ready()` was called on the handle.
+    /// It will collect task results once they are stopped with `halt()` or once
+    /// they finish by themselves.
     ///
     /// An optional `timeout` may be provided, this is the maximum time
     /// to wait **after** `halt()` has been called.
@@ -345,44 +347,50 @@ impl HaltHandle {
     /// # Panics
     /// `join()` panics if you call it multiple times. It must only be called once.
     pub async fn join(&self, timeout: Option<Duration>) -> Result<(), HaltError> {
-        let mut tasks = self
+        let tasks = self
             .tasks
             .lock()
             .expect("BUG: HaltHandle: Poisoned mutex")
             .take()
             .expect("BUG: HaltHandle: join() called multiple times");
 
-        let _ = tasks.notify_join.notified().await;
+        let Tasks {
+            tasks_rx,
+            notify_join,
+        } = tasks;
 
-        // Collect join handles. Join handles are added to the
-        // tasks channel by Self::spawn(). After the user decides all
-        // relevant tasks were added, they call ready().
-        // ready() pushes a ready message, TaskMsg::Ready, to this channel.
-        // Here we collect all the task join handles until we reach the ready message.
-        let mut handles = vec![];
-        while let Some(task_msg) = tasks.tasks_rx.next().await {
-            match task_msg {
-                TaskMsg::Task(handle) => handles.push(handle),
-                TaskMsg::Ready => break,
-            }
-        }
+        // Map the incomming handles stream (up to the Ready mesage) into a future
+        // that awaits them and fails fast if there's a join error.
+        let handles = tasks_rx
+            .take_while(|task_msg| future::ready(!matches!(task_msg, TaskMsg::Ready)))
+            .map(|msg| match msg {
+                TaskMsg::Task(handle) => handle,
+                TaskMsg::Ready => unreachable!("BUG: Unexpected Ready message"),
+            })
+            .fold(Ok(()), |res, handle| async {
+                if res.is_ok() {
+                    handle.await.map_err(HaltError::Join)
+                } else {
+                    res
+                }
+            });
 
-        // Join all the spawned tasks, wait for them to finalize
-        let ft = future::join_all(handles.drain(..));
-        // If there's a timeout, only wait so much
-        let mut res = if let Some(timeout) = timeout {
-            match ft.timeout(timeout).await {
-                Ok(res) => res,
-                Err(_) => return Err(HaltError::Timeout),
+        // Waits for notify_join and then starts to apply the timeout, if any
+        let notify = async move {
+            let _ = notify_join.notified().await;
+            // At this point halt() is confirmed to have been called...
+            if let Some(timeout) = timeout {
+                time::sleep(timeout).await;
+                Err(HaltError::Timeout)
+            } else {
+                future::pending().await
             }
-        } else {
-            ft.await
         };
 
-        // Map errors, return the first one encountered (if any)
-        res.drain(..)
-            .fold(Ok(()), Result::and)
-            .map_err(HaltError::Join)
+        tokio::select! {
+            res = handles => res,
+            timeout = notify => timeout,
+        }
     }
 }
 
@@ -424,7 +432,7 @@ mod test {
     // Test that Tripwire won't abort a task right away
     // without halt() being called (this was a bug).
     #[tokio::test]
-    async fn halthandle_nohalt() {
+    async fn halthandle_tripwire_bug() {
         let handle = HaltHandle::new();
 
         let task_done = Arc::new(AtomicBool::new(false));
@@ -538,11 +546,28 @@ mod test {
         }
     }
 
+    // Test that join() resolves when tasks finish by themselves,
+    // ie. without halt() being called
+    #[tokio::test]
+    async fn halthandle_no_halt() {
+        let handle = HaltHandle::new();
+
+        // Spawn a few tasks which are ready right away
+        for _ in 0..10 {
+            handle.spawn(|_| future::ready(()));
+        }
+
+        // Signal ready and join tasks
+        handle.ready();
+        handle.join(None).await.expect("BUG: join() failed");
+    }
+
     // Verify panicking works
     #[tokio::test]
     async fn halthandle_panic() {
         let handle = HaltHandle::new();
 
+        // Spawn a panicking task
         handle.spawn(|_| async {
             panic!("Things aren't going well");
         });
