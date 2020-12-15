@@ -32,6 +32,7 @@ use futures::prelude::*;
 use std::convert::{TryFrom, TryInto};
 use std::net::{SocketAddr, ToSocketAddrs};
 
+use ii_async_utils::HaltHandle;
 use ii_stratum::error::Error;
 use ii_stratum::test_utils;
 use ii_stratum::test_utils::v1::TestFrameReceiver as _;
@@ -329,13 +330,13 @@ async fn test_v2server_full_no_proxy_protocol() {
         None,
     )
     .expect("BUG: Could not bind v2server");
-    let mut v2server_quit = v2server.quit_channel();
-
-    tokio::spawn(v2server.run());
+    let halt_handle = HaltHandle::arc();
+    halt_handle.spawn_object(v2server);
+    halt_handle.ready();
     test_v2_client(&addr_v2, &None).await;
 
     // Signal the server to shut down
-    let _ = v2server_quit.try_send(());
+    halt_handle.halt();
 }
 
 #[tokio::test]
@@ -367,11 +368,11 @@ async fn test_v2server_full_with_proxy_protocol() {
         None,
     )
     .expect("BUG: Could not bind v2server");
-    let mut v2server_quit = v2server.quit_channel();
-    tokio::spawn(v2server.run());
-
+    let halt_handle = HaltHandle::arc();
+    halt_handle.spawn_object(v2server);
+    halt_handle.ready();
     test_v2_client(&addr_v2, &Some(proxy_info)).await;
 
     // Signal the server to shut down
-    let _ = v2server_quit.try_send(());
+    halt_handle.halt();
 }

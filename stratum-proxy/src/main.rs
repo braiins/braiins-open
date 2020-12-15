@@ -24,12 +24,10 @@
 //! requested pool
 
 use anyhow::{Context, Result};
-use ctrlc;
-use std::cell::RefCell;
 use structopt::StructOpt;
 
+use ii_async_utils::HaltHandle;
 use ii_logging::macros::*;
-
 use ii_scm::global::Version;
 use ii_stratum_proxy::{
     frontend::{Args, Config},
@@ -64,13 +62,12 @@ async fn main() -> Result<()> {
     )
     .context("Cannot bind the server")?;
 
-    let quit = RefCell::new(server.quit_channel());
-    ctrlc::set_handler(move || {
-        // Received SIGINT, tell the server task to shut down:
-        let _ = quit.try_borrow_mut().map(|mut quit| quit.try_send(()));
-    })
-    .expect("BUG: Could not set SIGINT handler");
-
-    server.run().await;
-    Ok(())
+    let halt_handle = HaltHandle::arc();
+    halt_handle.spawn_object(server);
+    halt_handle.ready();
+    halt_handle.halt_on_signal();
+    halt_handle
+        .join(Some(std::time::Duration::from_secs(5)))
+        .await
+        .map_err(Into::into)
 }

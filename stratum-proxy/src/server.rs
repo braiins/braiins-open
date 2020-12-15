@@ -36,7 +36,7 @@ use serde::Deserialize;
 use tokio::net::TcpStream;
 use tokio_util::codec::FramedParts;
 
-use ii_async_utils::FutureExt;
+use ii_async_utils::{FutureExt, Spawnable, Tripwire};
 use ii_logging::macros::*;
 use ii_stratum::v1;
 use ii_stratum::v2;
@@ -531,12 +531,10 @@ where
 /// the `run()` method turns the `ProxyServer`
 /// into an asynchronous task (which internally calls `next()` in a loop).
 pub struct ProxyServer<H> {
-    server: Server, // TODO get rid of ii-wire::server::Server and use TcpListener
+    server: Option<Server>, // TODO get rid of ii-wire::server::Server and use TcpListener
     listen_addr: Address,
     v1_upstream_addr: Address,
     controller: controller::Controller,
-    quit_tx: mpsc::Sender<()>,
-    quit_rx: Option<mpsc::Receiver<()>>,
     /// Closure that generates a handler in the form of a Future that will be passed to the
     connection_handler: H,
     /// Security context for noise handshake
@@ -565,9 +563,7 @@ where
         proxy_protocol_config: ProxyProtocolConfig,
         metrics: Option<Arc<ProxyMetrics>>,
     ) -> Result<ProxyServer<H>> {
-        let server = Server::bind(&listen_addr).map_err(|e| DownstreamError::EarlyIo(e))?;
-
-        let (quit_tx, quit_rx) = mpsc::channel(1);
+        let server = Some(Server::bind(&listen_addr).map_err(|e| DownstreamError::EarlyIo(e))?);
 
         let security_context = match certificate_secret_key_pair {
             Some((certificate, secret_key)) => Some(Arc::new(
@@ -580,8 +576,6 @@ where
             server,
             listen_addr,
             v1_upstream_addr: stratum_addr,
-            quit_rx: Some(quit_rx),
-            quit_tx,
             connection_handler,
             security_context,
             metrics,
@@ -591,12 +585,6 @@ where
             proxy_protocol_upstream_version: proxy_protocol_config.upstream_version,
             controller: Default::default(),
         })
-    }
-
-    /// Obtain the quit channel transmit end,
-    /// which can be used to terminate the server task.
-    pub fn quit_channel(&self) -> mpsc::Sender<()> {
-        self.quit_tx.clone()
     }
 
     pub fn termination_notifier(&self) -> Arc<tokio::sync::Notify> {
@@ -645,89 +633,62 @@ where
         Ok(peer_addr)
     }
 
-    /// Handle a connection. Call this in a loop to make the `ProxyServer`
-    /// perform its job while being able to handle individual connection errors.
-    ///
-    /// This is a Stream-like interface but not actually implemented using a Stream
-    /// because Stream doesn't get on very well with async.
-    pub async fn next(&mut self) -> Option<Result<SocketAddr>> {
-        // Select over the incoming connections stream and the quit channel
-        // In case quit_rx is closed (by quit_tx being dropped),
-        // we drop quit_rx as well and switch to only awaiting the socket.
-        // Note that functional style can't really be used here because
-        // unfortunately you can't await in map() et al.
-        let conn = match self.quit_rx {
-            Some(ref mut quit_rx) => {
-                tokio::select! {
-                    conn = self.server.next() => conn,
-                    quit_opt = quit_rx.next() => {
-                        if quit_opt.is_some() {
-                            // received quit signal
-                            self.controller.request_immediate_termination();
-                            return None;
-                        } else {
-                            // The quit_rx channel has been closed / quit_tx dropped,
-                            // and so we can't poll the quit_rx any more (otherwise it panics)
-                            self.quit_rx = None;
-                            None
-                        }
-                    }
-                    _ = self.controller.wait_for_notification() => {
-                        self.server.shutdown();
-                        return None
-                    }
-                }
-            }
-            None => None,
-        };
-
-        // If conn is None at this point, the quit_rx is no longer open
-        // and we can just await the socket
-        let conn = match conn {
-            Some(conn) => conn,
-            None => match self.server.next().await {
-                Some(conn) => conn,
-                None => return None, // Socket closed
-            },
-        };
-
-        // Remap the connection stratum error into stratum proxy local error
-        Some(self.accept(conn))
-    }
-
     /// Creates a proxy server task that calls `.next()`
     /// in a loop with the default error handling.
     /// The default handling simply logs all
     /// connection errors via the logging crate.
-    pub async fn run(mut self) {
-        use futures::future::FutureExt;
+    pub async fn main_loop(mut self, tripwire: Tripwire) {
         info!(
             "Stratum proxy service starting @ {} -> {}",
             self.listen_addr, self.v1_upstream_addr
         );
+        let mut inbound_conections = self
+            .server
+            .take()
+            .expect("BUG: Missing wire::Server instance")
+            .take_until(tripwire);
 
-        while let Some(result) = self.next().await {
-            match result {
-                Ok(peer) => {
-                    debug!("Connection accepted from {}", peer);
+        loop {
+            // Three situations can happen:
+            // 1. Next connection is either yielded
+            // 2. Listening is terminated by tripwire (results in immediate termination)
+            // 3. Listening is terminated from shutdown api call (results in slow termination)
+            let connection_result = tokio::select! {
+                conn = inbound_conections.next() => {
+                    match conn {
+                        // Tripwire has terminated the stream of new connections,
+                        // proceed to immediate termination
+                        None => {
+                            self.controller.request_immediate_termination();
+                            break
+                        }
+                        // Regular new connection
+                        Some(connection_result) => connection_result,
+                    }
+                },
+                // Termination has been requested via shutdown api
+                _ = self.controller.wait_for_notification() => {
+                    break
                 }
-                Err(err) => {
-                    debug!("Connection error: {}", err);
-                }
+            };
+            match self.accept(connection_result) {
+                Ok(peer) => debug!("Connection accepted from {}", peer),
+                Err(err) => debug!("Connection error: {}", err),
             }
         }
-        // The proxy still might potentially be killed with ctrl-c
-        // Note if the quit has already been called, [`wait_for_termination`] returns immediately
-        if let Some(mut quit_rx) = self.quit_rx {
-            future::select(
-                quit_rx.next(),
-                self.controller.wait_for_termination(None).boxed(),
-            )
-            .await;
-        } else {
-            self.controller.wait_for_termination(None).await;
-        }
+
+        drop(inbound_conections);
+        self.controller.wait_for_termination(None).await;
 
         info!("Stratum proxy service terminated");
+    }
+}
+
+impl<H> Spawnable for ProxyServer<H>
+where
+    H: ConnectionHandler,
+{
+    fn run(self, tripwire: Tripwire) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(self.main_loop(tripwire))
     }
 }
