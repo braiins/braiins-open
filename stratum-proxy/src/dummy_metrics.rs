@@ -26,11 +26,6 @@ pub use primitive_types::U256;
 use std::time::Instant;
 use tokio::time::Duration;
 
-/// TODO remove this duplicate once the error to label mappings are moved to metrics module
-pub trait ErrorLabeling {
-    fn label(&self) -> &str;
-}
-
 pub struct ProxyMetrics;
 
 impl ProxyMetrics {

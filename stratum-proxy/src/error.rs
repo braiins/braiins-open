@@ -26,7 +26,6 @@ use std::error::Error as StdError;
 use std::io;
 use thiserror::Error;
 
-use crate::metrics::ErrorLabeling;
 use ii_wire::proxy::error::Error as ProxyError;
 
 #[derive(Error, Debug)]
@@ -41,16 +40,6 @@ pub enum DownstreamError {
     Timeout(tokio::time::error::Elapsed),
 }
 
-impl ErrorLabeling for DownstreamError {
-    fn label(&self) -> &str {
-        match self {
-            Self::EarlyIo(_) => "early",
-            Self::ProxyProtocol(_) => "haproxy",
-            _ => "downstream",
-        }
-    }
-}
-
 #[derive(Error, Debug)]
 pub enum UpstreamError {
     #[error("IO error: {0}")]
@@ -61,12 +50,6 @@ pub enum UpstreamError {
     Stratum(ii_stratum::error::Error),
     #[error("Timeout error: {0}")]
     Timeout(tokio::time::error::Elapsed),
-}
-
-impl ErrorLabeling for UpstreamError {
-    fn label(&self) -> &str {
-        "upstream"
-    }
 }
 
 #[derive(Error, Debug)]
@@ -88,46 +71,6 @@ impl V2ProtocolError {
     }
     pub fn other<T: StdError>(val: T) -> Self {
         Self::Other(val.to_string())
-    }
-}
-
-impl ErrorLabeling for V2ProtocolError {
-    fn label(&self) -> &str {
-        match self {
-            Self::SetupConnection(_) => "setup_connection",
-            Self::OpenMiningChannel(_) => "open_mining_channel",
-            Self::Other(_) => "protocol_other",
-        }
-    }
-}
-
-impl ErrorLabeling for Error {
-    fn label(&self) -> &str {
-        use ii_stratum::error::Error as StratumError;
-        match self {
-            Self::GeneralWithMetricsLabel(_, label) => label,
-            Self::Stratum(s) => match s {
-                StratumError::Noise(_)
-                | StratumError::NoiseEncoding(_)
-                | StratumError::NoiseProtocol(_)
-                | StratumError::NoiseSignature(_) => "noise",
-                StratumError::V2(_) => "downstream",
-                StratumError::V1(_) => "upstream",
-                _ => "stratum_other",
-            },
-            Self::Downstream(err) => err.label(),
-            Self::Upstream(err) => err.label(),
-            Self::Utf8(_) => "utf8",
-            Self::Json(_) => "json",
-            Self::Protocol(e) => e.label(),
-            Self::General(_) => "general",
-            Self::Timeout(_) => "timeout",
-            Self::ClientAttempt(_) => "client_attempt",
-            Self::BitcoinHashes(_) => "bitcoin_hashes",
-            Self::InvalidFile(_) => "invalid_file",
-            Self::Metrics(_) => "metrics",
-            Self::Io(_) => "io",
-        }
     }
 }
 

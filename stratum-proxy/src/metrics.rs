@@ -20,9 +20,10 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use crate::error;
 use crate::translation::V2ToV1Translation;
 use ii_logging::macros::*;
-use ii_metrics::*;
+use ii_metrics::MetricsRegistry;
 use ii_stratum::v1::rpc::Method;
 pub use primitive_types::U256;
 use std::convert::TryInto;
@@ -54,10 +55,6 @@ impl TcpConnectionCloseTotal {
     pub fn inc_as_ok(&self) {
         self.0.with_label_values(&["ok"]);
     }
-}
-
-pub trait ErrorLabeling {
-    fn label(&self) -> &str;
 }
 
 #[derive(Default, Clone)]
@@ -205,7 +202,67 @@ impl ProxyMetrics {
     pub fn tcp_connection_close_ok(&self) {
         self.tcp_connection_close_stage.inc_as_ok()
     }
-    pub fn tcp_connection_close_with_error(&self, error: &crate::error::Error) {
+    pub fn tcp_connection_close_with_error(&self, error: &error::Error) {
         self.tcp_connection_close_stage.inc_by_error(error)
+    }
+}
+
+pub trait ErrorLabeling {
+    fn label(&self) -> &str;
+}
+
+impl ErrorLabeling for error::DownstreamError {
+    fn label(&self) -> &str {
+        match self {
+            Self::EarlyIo(_) => "early",
+            Self::ProxyProtocol(_) => "haproxy",
+            _ => "downstream",
+        }
+    }
+}
+
+impl ErrorLabeling for error::UpstreamError {
+    fn label(&self) -> &str {
+        "upstream"
+    }
+}
+
+impl ErrorLabeling for error::V2ProtocolError {
+    fn label(&self) -> &str {
+        match self {
+            Self::SetupConnection(_) => "setup_connection",
+            Self::OpenMiningChannel(_) => "open_mining_channel",
+            Self::Other(_) => "protocol_other",
+        }
+    }
+}
+
+impl ErrorLabeling for error::Error {
+    fn label(&self) -> &str {
+        use ii_stratum::error::Error as StratumError;
+        match self {
+            Self::GeneralWithMetricsLabel(_, label) => label,
+            Self::Stratum(s) => match s {
+                StratumError::Noise(_)
+                | StratumError::NoiseEncoding(_)
+                | StratumError::NoiseProtocol(_)
+                | StratumError::NoiseSignature(_) => "noise",
+                StratumError::V2(_) => "downstream",
+                StratumError::V1(_) => "upstream",
+                _ => "stratum_other",
+            },
+            Self::Downstream(err) => err.label(),
+            Self::Upstream(err) => err.label(),
+            Self::Utf8(_) => "utf8",
+            Self::Json(_) => "json",
+            Self::Protocol(e) => e.label(),
+            Self::General(_) => "general",
+            Self::Timeout(_) => "timeout",
+            Self::ClientAttempt(_) => "client_attempt",
+            Self::BitcoinHashes(_) => "bitcoin_hashes",
+            Self::InvalidFile(_) => "invalid_file",
+            Self::Metrics(_) => "metrics",
+            Self::Io(_) => "io",
+        }
     }
 }
