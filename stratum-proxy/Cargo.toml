@@ -33,4 +33,4 @@ prometheus = { version = "0.11", features = ["process"], optional = true }
 
 [features]
 v2json = ["ii-stratum/v2json"]
-prometheus_metrics = ["prometheus", "ii-metrics/prometheus_metrics"]
+prometheus_metrics = ["prometheus"]

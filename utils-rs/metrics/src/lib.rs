@@ -20,24 +20,12 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use std::sync::Arc;
-
-#[cfg_attr(not(feature = "prometheus_metrics"), path = "dummy.rs")]
 mod prometheus_registry;
-
-/// Reexport primitives necessary for implementing Collector
+/// Reexport primitives
 pub use prometheus_registry::*;
-
-/// Generic interface for Collector instantiation
-pub trait MetricsCollectorBuilder {
-    type Collector;
-    fn build_metrics_collector(&self) -> Arc<Self::Collector>;
-    fn to_text(&self) -> Result<(Vec<u8>, String)>;
-}
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[cfg(feature = "prometheus_metrics")]
     #[error("Prometheus metric processing related error: {0}")]
     PrometheusError(#[from] prometheus::Error),
 }
