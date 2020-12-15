@@ -35,34 +35,6 @@ pub use prometheus::{
     IntCounterVec, TextEncoder,
 };
 
-/// Combines all metrics and provides additional tooling for accounting shares/submits
-///
-/// All metrics have the following constant labels:
-/// region - which area the software operates in
-/// hostname - name of the machine where the metrics are being taken
-#[derive(Debug)]
-pub struct MetricsCollector {
-    /// TCP connection open events
-    tcp_connection_open_total: IntCounter,
-    /// TCP connection close events
-    pub tcp_connection_close_stage: TcpConnectionCloseTotal,
-    /// Histogram of how long each connection has lived for
-    pub tcp_connection_duration_seconds: Histogram,
-    /// Aggregate of submitted shares, labels:
-    /// - type = (downstream, upstream)
-    /// - status = (accepted, rejected)
-    shares_total: IntCounterVec,
-    /// Aggregate of submits => 1 submit = DIFF shares, labels:
-    /// - type = (downstream, upstream)
-    /// - status = (accepted, rejected)
-    submits_total: IntCounterVec,
-
-    /// V1 request duration histogram that distinguishes between individual request types
-    /// - type (subscribe, authorize, submit, other)
-    /// - status (success, error)
-    v1_request_duration_seconds: HistogramVec,
-}
-
 #[derive(Debug)]
 pub struct TcpConnectionCloseTotal(IntCounterVec);
 
