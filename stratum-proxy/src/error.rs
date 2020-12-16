@@ -112,6 +112,7 @@ pub enum Error {
     InvalidFile(String),
 
     /// Prometheus metrics error.
+    #[cfg(feature = "prometheus_metrics")]
     #[error("Metrics error: {0}")]
     Metrics(#[from] ii_metrics::Error),
 
