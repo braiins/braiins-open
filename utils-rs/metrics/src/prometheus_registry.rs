@@ -86,7 +86,11 @@ impl MetricsRegistry {
     }
     pub fn to_text(&self) -> crate::Result<(Vec<u8>, String)> {
         let mut buffer = vec![];
-        let metric_families = self.registry.gather();
+        let mut metric_families = self.registry.gather();
+        // Collect also default metric families results in appending 'process' related metrics that
+        // are provided by the default registry.
+        let mut default_metric_families = prometheus::gather();
+        metric_families.append(&mut default_metric_families);
         let encoder = TextEncoder::new();
         encoder.encode(&metric_families, &mut buffer)?;
         Ok((buffer, String::from(encoder.format_type())))
