@@ -1,4 +1,0 @@
-listen_address = "0.0.0.0:3336"
-upstream_address = "stratum.slushpool.com:3333"
-certificate_file = "server.cert"
-secret_key_file = "server-secret.key"
