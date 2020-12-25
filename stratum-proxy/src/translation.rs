@@ -794,16 +794,9 @@ impl V2ToV1Translation {
             let cb_tx_hash = sha256d::Hash::from_engine(engine);
             trace!("Coinbase TX hash: {:x?} {:x?}", cb_tx_hash, coin_base);
 
-            let merkle_root =
-                payload
-                    .merkle_branch()
-                    .iter()
-                    .fold(cb_tx_hash, |curr_merkle_root, tx_hash| {
-                        let mut engine = sha256d::Hash::engine();
-                        engine.input(&curr_merkle_root.into_inner());
-                        engine.input(tx_hash.as_ref().as_slice());
-                        sha256d::Hash::from_engine(engine)
-                    });
+            let merkle_root = payload
+                .merkle_branch()
+                .fold_branch_into_merkle_root(cb_tx_hash);
             trace!("Merkle root calculated: {:x?}", merkle_root);
             Ok(merkle_root)
         } else {

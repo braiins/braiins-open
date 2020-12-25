@@ -25,6 +25,7 @@
 use std::convert::{TryFrom, TryInto};
 use std::result::Result as StdResult;
 
+use bitcoin_hashes::{sha256d, Hash, HashEngine};
 use serde::de::Deserializer;
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
@@ -35,6 +36,7 @@ use super::error::Error;
 use super::rpc::{self, Method, Rpc};
 use super::{ExtraNonce1, HexBytes, HexU32Be, MessageId, PrevHash};
 use crate::error::Result;
+use crate::v2;
 
 #[cfg(test)]
 pub mod test;
@@ -416,6 +418,26 @@ declare_request!(
     }
 );
 
+impl MerkleBranch {
+    pub fn fold_branch_into_merkle_root(&self, cb_tx_hash: sha256d::Hash) -> sha256d::Hash {
+        self.0.iter().fold(cb_tx_hash, |curr_merkle_root, tx_hash| {
+            let mut engine = sha256d::Hash::engine();
+            engine.input(&curr_merkle_root.into_inner());
+            engine.input(tx_hash.as_ref().as_slice());
+            sha256d::Hash::from_engine(engine)
+        })
+    }
+
+    pub fn v2_encode(&self) -> Result<v2::types::Seq0_255<v2::types::Uint256Bytes>> {
+        use v2::types::{Seq0_255, Uint256Bytes};
+        let mut branch = Vec::with_capacity(self.0.len());
+        for leaf in self.0.iter() {
+            branch.push(Uint256Bytes::try_from(leaf.clone())?);
+        }
+        Ok(Seq0_255::from_vec(branch))
+    }
+}
+
 // TODO consider making the attributes return new type references, it would be less prone to typos
 impl Notify {
     pub fn job_id(&self) -> &str {
@@ -434,8 +456,25 @@ impl Notify {
         &((self.coin_base_2).0).0
     }
 
-    pub fn merkle_branch(&self) -> &Vec<HexBytes> {
-        &(self.merkle_branch).0
+    pub fn merkle_branch(&self) -> &MerkleBranch {
+        &(self.merkle_branch)
+    }
+
+    pub fn merkle_root(&self, extranonce1: &[u8], extranonce2: &[u8]) -> sha256d::Hash {
+        let mut coin_base = Vec::with_capacity(
+            self.coin_base_1().len()
+                + extranonce1.len()
+                + extranonce2.len()
+                + self.coin_base_2().len(),
+        );
+        coin_base.extend_from_slice(self.coin_base_1());
+        coin_base.extend_from_slice(extranonce1);
+        coin_base.extend_from_slice(extranonce2);
+        coin_base.extend_from_slice(self.coin_base_2());
+
+        let cb_tx_hash = sha256d::Hash::hash(&coin_base);
+        self.merkle_branch()
+            .fold_branch_into_merkle_root(cb_tx_hash)
     }
 
     pub fn version(&self) -> u32 {

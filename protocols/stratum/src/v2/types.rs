@@ -28,6 +28,7 @@ use std::ops::Deref;
 
 use serde::{Deserialize, Serialize};
 
+use crate::v1::HexBytes;
 use primitive_types::U256;
 
 // TODO consolidate the u8;32 copied all over the place into an alias
@@ -73,6 +74,21 @@ impl From<Uint256Bytes> for ii_bitcoin::Target {
 impl From<ii_bitcoin::Target> for Uint256Bytes {
     fn from(target: ii_bitcoin::Target) -> Self {
         target.into_inner().into()
+    }
+}
+
+impl TryFrom<crate::v1::HexBytes> for Uint256Bytes {
+    type Error = super::error::Error;
+
+    fn try_from(value: HexBytes) -> Result<Self, Self::Error> {
+        let inner = value.as_ref();
+        if inner.len() == 32 {
+            let mut output = Uint256Bytes([0; 32]);
+            output.0.clone_from_slice(inner);
+            Ok(output)
+        } else {
+            Err(Self::Error::DataTypeOverflow(32, 32))
+        }
     }
 }
 
