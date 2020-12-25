@@ -85,10 +85,64 @@ pub struct ChannelEndpointChanged {
 #[id(0x10u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OpenStandardMiningChannel {
+    /// Client-specified identifier for matching responses from upstream server.
+    /// The value MUST be connection-wide unique and is not interpreted by the server.
     pub req_id: u32,
+    /// Unconstrained sequence of bytes. Whatever is needed by upstream node to
+    /// identify/authenticate the client, e.g. “braiinstest.worker1”.
+    /// Additional restrictions can be imposed by the upstream node (e.g. a pool).
+    /// It is highly recommended that UTF-8 encoding is used.
     pub user: Str0_255,
+    /// [h/s] Expected hash rate of the device (or cumulative hashrate on the channel if multiple
+    /// devices are connected downstream) in h/s. Depending on server’s target setting policy,
+    /// this value can be used for setting a reasonable target for the channel.
+    /// Proxy MUST send 0.0f when there are no mining devices connected yet.
     pub nominal_hashrate: f32,
+    /// Maximum target which can be accepted by the connected device or devices.
+    /// Server MUST accept the target or respond by sending [`OpenMiningChannelError`] message.
     pub max_target: Uint256Bytes,
+}
+
+/// Similar to [`OpenStandardMiningChannel`] but requests to open an extended channel instead of
+/// standard channel.
+#[id(0x13u8)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct OpenExtendedMiningChannel {
+    /// Client-specified identifier for matching responses from upstream server.
+    /// The value MUST be connection-wide unique and is not interpreted by the server.
+    pub req_id: u32,
+    /// Unconstrained sequence of bytes. Whatever is needed by upstream node to
+    /// identify/authenticate the client, e.g. “braiinstest.worker1”.
+    /// Additional restrictions can be imposed by the upstream node (e.g. a pool).
+    /// It is highly recommended that UTF-8 encoding is used.
+    pub user: Str0_255,
+    /// [h/s] Expected hash rate of the device (or cumulative hashrate on the channel if multiple
+    /// devices are connected downstream) in h/s. Depending on server’s target setting policy,
+    /// this value can be used for setting a reasonable target for the channel.
+    /// Proxy MUST send 0.0f when there are no mining devices connected yet.
+    pub nominal_hashrate: f32,
+    /// Maximum target which can be accepted by the connected device or devices.
+    /// Server MUST accept the target or respond by sending [`OpenMiningChannelError`] message.
+    pub max_target: Uint256Bytes,
+    /// Minimum size of extranonce needed by the device/node.
+    pub min_extranonce_size: u16,
+}
+
+#[id(0x14u8)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct OpenExtendedMiningChannelSuccess {
+    /// Client-specified request ID from [`OpenExtendedMiningChannel`] message, so that the client can
+    /// pair responses with open channel requests.
+    pub request_id: u32,
+    /// Newly assigned identifier of the channel, stable for the whole lifetime of the connection.
+    /// E.g. it is used for broadcasting new jobs by [`NewExtendedMiningJob`].
+    pub channel_id: u32,
+    /// Initial target for the mining channel.
+    pub target: Uint256Bytes,
+    /// Extranonce size (in bytes) set for the channel.
+    pub extranonce_size: u16,
+    /// Bytes used as implicit first part of extranonce.
+    pub extranonce_prefix: Bytes0_32,
 }
 
 #[id(0x11u8)]
@@ -135,12 +189,44 @@ pub struct CloseChannel {
 #[id(0x1au8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitSharesStandard {
+    /// Channel identification.
     pub channel_id: u32,
+    /// Unique sequential identifier of the submit within the channel.
     pub seq_num: u32,
+    /// Identifier of the job as provided by NewMiningJob or NewExtendedMiningJob message.
     pub job_id: u32,
+    /// Nonce leading to the hash being submitted.
     pub nonce: u32,
+    /// The nTime field in the block header. This MUST be greater than or equal to the
+    /// header_timestamp field in the latest SetNewPrevHash message and lower than or equal to
+    /// that value plus the number of seconds since the receipt of that message.
     pub ntime: u32,
+    /// Full nVersion field.
     pub version: u32,
+}
+
+#[id(0x1bu8)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct SubmitSharesExtended {
+    /// Channel identification.
+    pub channel_id: u32,
+    /// Unique sequential identifier of the submit within the channel.
+    pub seq_num: u32,
+    /// Identifier of the job as provided by NewMiningJob or NewExtendedMiningJob message.
+    pub job_id: u32,
+    /// Nonce leading to the hash being submitted.
+    pub nonce: u32,
+    /// The nTime field in the block header. This MUST be greater than or equal to the
+    /// header_timestamp field in the latest SetNewPrevHash message and lower than or equal to
+    /// that value plus the number of seconds since the receipt of that message.
+    pub ntime: u32,
+    /// Full nVersion field.
+    pub version: u32,
+    /// Extranonce bytes which need to be added to coinbase to form a fully valid submission
+    /// (full coinbase = coinbase_tx_prefix + extranonce_prefix + extranonce + coinbase_tx_suffix).
+    /// The size of the provided extranonce MUST be equal to the negotiated extranonce size from
+    /// channel opening
+    pub extranonce: Bytes0_32,
 }
 
 /// Response to SubmitShares or SubmitSharesExtended, accepting results from the miner.
@@ -187,13 +273,27 @@ pub struct NewMiningJob {
 #[id(0x1fu8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct NewExtendedMiningJob {
+    /// For a group channel, the message is broadcasted to all standard channels belonging to the
+    /// group. Otherwise, it is addressed to the specified extended channel.
     pub channel_id: u32,
+    /// Server’s identification of the mining job.
     pub job_id: u32,
+    /// True if the job is intended for a future SetNewPrevHash message sent on the channel.  If
+    /// False, the job relates to the last sent SetNewPrevHash message on the channel and the miner
+    /// should start to work on the job immediately.
     pub future_job: bool,
+    /// Valid version field that reflects the current network consensus.
     pub version: u32,
+    /// If set to True, the general purpose bits of version (as specified in BIP320) can be freely
+    /// manipulated by the downstream node. The downstream node MUST NOT rely on the upstream node
+    /// to set the BIP320 bits to any particular value. If set to False, the downstream node MUST
+    /// use version as it is defined by this message.
     pub version_rolling_allowed: bool,
+    /// Merkle path hashes ordered from deepest.
     pub merkle_path: Seq0_255<Uint256Bytes>,
+    /// Prefix part of the coinbase transaction*.
     pub coinbase_tx_prefix: Bytes0_64k,
+    /// Suffix part of the coinbase transaction.
     pub coinbase_tx_suffix: Bytes0_64k,
 }
 
@@ -231,13 +331,16 @@ impl_base_message_conversion!(SetupConnectionSuccess, false);
 impl_base_message_conversion!(SetupConnectionError, false);
 impl_base_message_conversion!(ChannelEndpointChanged, false);
 impl_base_message_conversion!(OpenStandardMiningChannel, false);
+impl_base_message_conversion!(OpenExtendedMiningChannel, false);
 impl_base_message_conversion!(OpenStandardMiningChannelSuccess, false);
+impl_base_message_conversion!(OpenExtendedMiningChannelSuccess, false);
 impl_base_message_conversion!(OpenMiningChannelError, false);
 
 impl_base_message_conversion!(UpdateChannel, true);
 impl_base_message_conversion!(UpdateChannelError, true);
 impl_base_message_conversion!(CloseChannel, true);
 impl_base_message_conversion!(SubmitSharesStandard, true);
+impl_base_message_conversion!(SubmitSharesExtended, true);
 impl_base_message_conversion!(SubmitSharesSuccess, true);
 impl_base_message_conversion!(SubmitSharesError, true);
 impl_base_message_conversion!(NewMiningJob, true);
