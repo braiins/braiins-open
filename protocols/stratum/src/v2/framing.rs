@@ -78,7 +78,7 @@ impl Header {
         );
         Self {
             is_channel_message,
-            extension_type: extension_type.into(),
+            extension_type,
             msg_type,
             msg_length,
         }

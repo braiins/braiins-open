@@ -104,9 +104,7 @@ where
             .await?
             // Convert optional frame into an error, unwrap it, and unwrap the
             // payload, too
-            .ok_or(Error::Handshake(
-                "Noise handshake Connection shutdown".to_string(),
-            ))??;
+            .ok_or_else(|| Error::Handshake("Noise handshake Connection shutdown".to_string()))??;
         Ok(Message::new(handshake_frame))
     }
 
@@ -162,6 +160,6 @@ where
             .into_handshake_state()
             .into_transport_mode()
             .map_err(Into::into)
-            .map(|t| super::TransportMode::new(t))
+            .map(super::TransportMode::new)
     }
 }

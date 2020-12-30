@@ -22,7 +22,6 @@
 
 //! All stratum V2 protocol messages
 
-use serde;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 

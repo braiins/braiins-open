@@ -73,15 +73,13 @@ impl SignedPartHeader {
             return Err(Error::Noise(format!(
                 "Certificate not yet valid, valid from: {:?}, now: {:?}",
                 self.valid_from, now
-            ))
-            .into());
+            )));
         }
         if now_timestamp > self.not_valid_after {
             return Err(Error::Noise(format!(
                 "Certificate expired, not valid after: {:?}, now: {:?}",
                 self.valid_from, now
-            ))
-            .into());
+            )));
         }
         Ok(())
     }
@@ -94,23 +92,18 @@ impl SignedPartHeader {
                     "Cannot convert system time to unix timestamp: {}",
                     e
                 ))
-                .into()
             })
     }
 
     fn unix_time_u32_to_system_time(unix_timestamp: u32) -> Result<SystemTime> {
         SystemTime::UNIX_EPOCH
             .checked_add(Duration::from_secs(unix_timestamp.into()))
-            .ok_or(
-                Error::Noise(
-                    format!(
-                        "Cannot convert unix timestamp ({}) to system time",
-                        unix_timestamp
-                    )
-                    .to_string(),
-                )
-                .into(),
-            )
+            .ok_or_else(|| {
+                Error::Noise(format!(
+                    "Cannot convert unix timestamp ({}) to system time",
+                    unix_timestamp
+                ))
+            })
     }
 }
 
@@ -199,7 +192,7 @@ impl TryFrom<&[u8]> for SignatureNoiseMessage {
 
     fn try_from(data: &[u8]) -> Result<Self> {
         v2::serialization::from_slice(data)
-            .map_err(|e| Error::from(e))
+            .map_err(Error::from)
             .map_err(Into::into)
     }
 }

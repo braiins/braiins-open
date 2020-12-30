@@ -67,6 +67,10 @@ impl HexBytes {
     pub fn len(&self) -> usize {
         self.0.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Referencing the internal part of hex bytes
@@ -119,6 +123,10 @@ pub struct PrevHash(Vec<u8>);
 impl PrevHash {
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 

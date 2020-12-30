@@ -26,7 +26,6 @@ pub use std::convert::{TryFrom, TryInto};
 use std::fmt::{self, Debug};
 use std::ops::Deref;
 
-use serde;
 use serde::{Deserialize, Serialize};
 
 use primitive_types::U256;
@@ -82,6 +81,7 @@ macro_rules! sized_string_type {
         #[derive(PartialEq, Eq, Serialize, Deserialize, Default, Clone, Debug)]
         pub struct $name(String);
 
+        #[allow(clippy::should_implement_trait)]
         impl $name {
             const MIN_LEN: usize = $min_len;
             const MAX_LEN: usize = $max_len;
@@ -266,6 +266,7 @@ macro_rules! sized_seq_type {
         where
             T: Serialize + for<'dx> Deserialize<'dx>;
 
+        #[allow(clippy::new_without_default)]
         impl<T> $name<T>
         where
             T: Serialize + for<'dx> Deserialize<'dx>,
@@ -425,7 +426,7 @@ pub struct DeviceInfo {
 /// PubKey for authenticating some protocol messages
 /// TODO: Preliminary as exact signing algorithm has not been chosen, we may even have this as
 /// dynamic field Bytes0_255
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct PubKey([u8; 0]);
 
 impl PubKey {

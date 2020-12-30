@@ -48,6 +48,7 @@ pub enum Payload<P> {
 
 impl<P: Protocol> Payload<P> {
     /// Helper associated method that converts `serializable_payload` to `BytesMut`
+    #[allow(clippy::borrowed_box)]
     fn serializable_payload_to_bytes_mut(payload: &Box<dyn AnyPayload<P>>) -> Result<BytesMut> {
         // TODO: use some default capacity
         let payload_bytes = BytesMut::new();

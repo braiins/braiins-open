@@ -72,16 +72,12 @@ impl Parse for GitHashInput {
 }
 
 fn get_git_hash(input: GitHashInput) -> std::io::Result<String> {
-    let object = input
-        .object
-        .as_ref()
-        .map(|value| value.as_str())
-        .unwrap_or("HEAD");
+    let object = input.object.as_deref().unwrap_or("HEAD");
     let output = Command::new("git").arg("rev-parse").arg(object).output()?;
     if !output.status.success() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::Other,
-            format!("command 'git rev-parse' failed"),
+            "command 'git rev-parse' failed".to_string(),
         ));
     }
 

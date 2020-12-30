@@ -63,6 +63,7 @@ impl Encoder<Frame> for Codec {
 impl Default for Codec {
     fn default() -> Self {
         // TODO: limit line length with new_with_max_length() ?
+        // !!!! MUST BE LIMITED!!! 16kB seems about right
         Codec(LinesCodec::new())
     }
 }

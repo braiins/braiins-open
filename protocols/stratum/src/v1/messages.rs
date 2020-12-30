@@ -226,6 +226,7 @@ declare_request!(
     }
 );
 
+#[allow(clippy::new_without_default)]
 impl Configure {
     /// Constructs an empty configuration
     pub fn new() -> Self {
@@ -368,6 +369,7 @@ impl From<f32> for SetDifficulty {
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct JobId(String);
 
+#[allow(clippy::should_implement_trait)]
 impl JobId {
     pub fn from_str(job_id: &str) -> Self {
         Self(String::from(job_id))
@@ -504,7 +506,7 @@ impl Submit {
     ) -> Self {
         Self {
             user_name: UserName(user_name),
-            job_id: job_id,
+            job_id,
             extra_nonce_2: ExtraNonce2(HexBytes(extra_nonce2.into())),
             time: Time(HexU32Be(time)),
             nonce: Nonce(HexU32Be(nonce)),

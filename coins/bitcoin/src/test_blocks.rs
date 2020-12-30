@@ -46,6 +46,7 @@ pub struct TestBlock {
 }
 
 impl TestBlock {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         hash: &'static str,
         midstate: &'static str,

@@ -62,10 +62,7 @@ impl Codec {
     }
 
     pub fn is_in_transport_mode(&self) -> bool {
-        match self.state {
-            State::Transport(_) => true,
-            _ => false,
-        }
+        matches!(self.state, State::Transport(_))
     }
 }
 

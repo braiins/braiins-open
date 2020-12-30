@@ -27,7 +27,6 @@ use crate::{
     v2::{extensions, framing, types::*, Protocol},
     AnyPayload,
 };
-use serde;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 

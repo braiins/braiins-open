@@ -303,6 +303,7 @@ pub trait TestFrameReceiver {
         U: TryFrom<TestMessage, Error = ()>,
     {
         let msg = self.next_v2().await;
+        #[allow(clippy::expect_fun_call)]
         f(U::try_from(msg.clone()).expect(
             format!(
                 "BUG: expected '{}', received: {:?}",
@@ -377,10 +378,10 @@ impl TestIdentityHandler {
 }
 
 #[cfg(not(feature = "v2json"))]
-pub const SETUP_CONNECTION_SERIALIZED: &'static [u8] =
+pub const SETUP_CONNECTION_SERIALIZED: &[u8] =
     b"\x00\x02\x00\x02\x00\x00\x00\x00\x00\x15stratum.slushpool.com\x05\x0d\x07Braiins\x011\x15Braiins OS 2019-06-05\x03xyz";
 #[cfg(feature = "v2json")]
-pub const SETUP_CONNECTION_SERIALIZED: &'static [u8] =
+pub const SETUP_CONNECTION_SERIALIZED: &[u8] =
     br#"{"max_version":2,"min_version":2,"flags":0,"expected_pubkey":[],"endpoint_host":"stratum.slushpool.com","endpoint_port":3333,"device":{"vendor":"Braiins","hw_rev":"1","fw_ver":"Braiins OS 2019-06-05","dev_id":"xyz"}}"#;
 
 pub fn build_setup_connection() -> SetupConnection {
@@ -400,7 +401,7 @@ pub fn build_setup_connection() -> SetupConnection {
     }
 }
 
-pub const SETUP_CONNECTION_SUCCESS_SERIALIZED: &'static [u8] =
+pub const SETUP_CONNECTION_SUCCESS_SERIALIZED: &[u8] =
     br#"{"protocol_version":0,"connection_url":"stratum.slushpool.com","required_extranonce_size":0}"#;
 
 pub fn build_setup_connection_success() -> SetupConnectionSuccess {

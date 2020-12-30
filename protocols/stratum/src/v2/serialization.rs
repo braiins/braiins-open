@@ -8,7 +8,6 @@ use std::marker::PhantomData;
 use std::result::Result as StdResult;
 use std::slice;
 
-use serde;
 use serde::de::Deserializer as _;
 use serde::de::{DeserializeSeed, EnumAccess, IntoDeserializer, SeqAccess, VariantAccess};
 use serde::ser::Impossible;
@@ -591,7 +590,7 @@ impl<'de> Deserializer<'de> {
 
     #[inline]
     fn read_u8(&mut self) -> Result<u8> {
-        self.input.next().map(|x| *x).ok_or(Error::EOF)
+        self.input.next().copied().ok_or(Error::EOF)
     }
 
     #[inline]
@@ -757,7 +756,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_byte_buf<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
         let size = self.read_u16()? as usize;
         let bytes = self.read_bytes(size)?;
-        visitor.visit_bytes(bytes.into())
+        visitor.visit_bytes(bytes)
     }
 
     fn deserialize_option<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
@@ -841,7 +840,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
         visitor.visit_seq(Access {
             deserializer: self,
-            len: len,
+            len,
         })
     }
 

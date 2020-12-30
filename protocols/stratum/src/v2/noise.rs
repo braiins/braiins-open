@@ -146,9 +146,7 @@ impl Initiator {
         let remote_static_key = self
             .handshake_state
             .as_ref()
-            .ok_or(Error::Noise(
-                "Handshake state shouldn't be None".to_string(),
-            ))?
+            .ok_or_else(|| Error::Noise("Handshake state shouldn't be None".to_string()))?
             .get_remote_static()
             .expect("BUG: remote static has not been provided yet");
         let remote_static_key = StaticPublicKey::from(remote_static_key);
@@ -204,7 +202,8 @@ impl handshake::Step for Initiator {
             1 => {
                 // <- chosen algorithm
                 // -> e
-                let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
+                let in_msg =
+                    in_msg.ok_or_else(|| Error::Noise("No message arrived".to_string()))?;
                 let negotiation_message: NegotiationMessage =
                     v2::serialization::from_slice(&in_msg.inner)?;
                 if negotiation_message.encryption_algos.len() != 1 {
@@ -224,22 +223,19 @@ impl handshake::Step for Initiator {
                 let len_written = self
                     .handshake_state
                     .as_mut()
-                    .ok_or(Error::Noise(
-                        "Handshake state shouldn't be None".to_string(),
-                    ))?
+                    .ok_or_else(|| Error::Noise("Handshake state shouldn't be None".to_string()))?
                     .write_message(&[], &mut buf)?;
                 noise_bytes.extend_from_slice(&buf[..len_written]);
                 handshake::StepResult::ExpectReply(handshake::Message::new(noise_bytes))
             }
             2 => {
                 // <- e, ee, s, es
-                let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
+                let in_msg =
+                    in_msg.ok_or_else(|| Error::Noise("No message arrived".to_string()))?;
                 let signature_len = self
                     .handshake_state
                     .as_mut()
-                    .ok_or(Error::Noise(
-                        "Handshake state shouldn't be None".to_string(),
-                    ))?
+                    .ok_or_else(|| Error::Noise("Handshake state shouldn't be None".to_string()))?
                     .read_message(&in_msg.inner, &mut buf)?;
                 self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
                 handshake::StepResult::Done
@@ -371,7 +367,8 @@ impl<'a> handshake::Step for Responder<'a> {
         let result = match self.stage {
             0 => handshake::StepResult::ReceiveMessage,
             1 => {
-                let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
+                let in_msg =
+                    in_msg.ok_or_else(|| Error::Noise("No message arrived".to_string()))?;
                 if let Ok(m) = v2::serialization::from_slice::<NegotiationMessage>(&in_msg.inner) {
                     trace!("Noise: received {:x?}", m);
                     // If list of algorithms is provided, go on with negotiation
@@ -382,9 +379,8 @@ impl<'a> handshake::Step for Responder<'a> {
                         EncryptionAlgorithm::AESGCM
                     } else {
                         algs.into_iter()
-                            .filter(|x| self.algorithms.contains(x))
-                            .next()
-                            .ok_or(Error::Noise("No algorithms provided".to_string()))?
+                            .find(|x| self.algorithms.contains(x))
+                            .ok_or_else(|| Error::Noise("No algorithms provided".to_string()))?
                     };
 
                     let negotiation_message =
@@ -414,21 +410,18 @@ impl<'a> handshake::Step for Responder<'a> {
             }
             2 => {
                 // <- e
-                let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
+                let in_msg =
+                    in_msg.ok_or_else(|| Error::Noise("No message arrived".to_string()))?;
                 self.handshake_state
                     .as_mut()
-                    .ok_or(Error::Noise(
-                        "Handshake state shouldn't be None".to_string(),
-                    ))?
+                    .ok_or_else(|| Error::Noise("Handshake state shouldn't be None".to_string()))?
                     .read_message(&in_msg.inner, &mut buf)?;
                 // Send the signature along this message
                 // -> e, ee, s, es [encrypted signature]
                 let len_written = self
                     .handshake_state
                     .as_mut()
-                    .ok_or(Error::Noise(
-                        "Handshake state shouldn't be None".to_string(),
-                    ))?
+                    .ok_or_else(|| Error::Noise("Handshake state shouldn't be None".to_string()))?
                     .write_message(&self.signature_noise_message, &mut buf)?;
                 noise_bytes.extend_from_slice(&buf[..len_written]);
                 handshake::StepResult::NoMoreReply(handshake::Message::new(noise_bytes))

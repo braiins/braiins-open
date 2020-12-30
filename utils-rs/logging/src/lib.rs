@@ -65,7 +65,6 @@ use lazy_static::lazy_static;
 use slog::{o, Discard, Drain, FilterLevel, Logger};
 use slog_async::{Async, AsyncGuard};
 use slog_envlogger::EnvLogger;
-use slog_term;
 
 // Re-export slog things for easy access to slog by dependers
 // and also because these are used by macros
@@ -242,8 +241,7 @@ fn get_terminal_drain(stderr: bool) -> impl Drain<Ok = (), Err = impl fmt::Debug
         builder.stdout()
     };
     let terminal_decorator = builder.build();
-    let terminal_drain = slog_term::FullFormat::new(terminal_decorator).build();
-    terminal_drain
+    slog_term::FullFormat::new(terminal_decorator).build()
 }
 
 /// Create file drain for logger
@@ -263,8 +261,7 @@ fn get_file_drain(path: &Path) -> impl Drain<Ok = (), Err = impl fmt::Debug> {
         });
 
     let file_decorator = slog_term::PlainDecorator::new(file);
-    let file_drain = slog_term::FullFormat::new(file_decorator).build();
-    file_drain
+    slog_term::FullFormat::new(file_decorator).build()
 }
 
 /// Logger flush RAII guard.
@@ -333,7 +330,7 @@ impl GuardedLogger {
     pub fn set_filter_level(&mut self, filter_level: FilterLevel) -> FlushGuard {
         match filter_level {
             FilterLevel::Off => self.current_config.target = LoggingTarget::None,
-            filter_level @ _ => {
+            filter_level => {
                 self.current_config.level = Level::from_usize(filter_level.as_usize()).expect(
                     "BUG: Internal error: Could not convert slog::FilterLevel to slog::Level",
                 )

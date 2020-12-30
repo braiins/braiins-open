@@ -19,6 +19,7 @@
 // under a proprietary license. For more information on the terms and conditions
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
+#![allow(clippy::single_component_path_imports)]
 
 #[cfg(all(feature = "tokio03", feature = "tokio02"))]
 compile_error!("You can't use both Tokio 0.3 and 0.2. Note: The `tokio02` feature requires default features to be turned off");

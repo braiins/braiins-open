@@ -61,6 +61,7 @@ pub struct Prologue {
     pub responder_msg: Option<NegotiationMessage>,
 }
 
+#[allow(clippy::new_without_default)]
 impl Prologue {
     pub fn new() -> Self {
         Self {

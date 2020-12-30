@@ -258,6 +258,7 @@ pub trait TestFrameReceiver {
         U: TryFrom<(MessageId, TestMessage), Error = ()>,
     {
         let msg = self.next_v1().await;
+        #[allow(clippy::expect_fun_call)]
         f(U::try_from((expected_id, msg.clone())).expect(
             format!(
                 "BUG: expected '{}', received: {:?}",
@@ -471,13 +472,11 @@ pub fn build_mining_notify_request_message() -> Rpc {
 pub fn build_mining_notify() -> Notify {
     let deserialized = Rpc::from_str(MINING_NOTIFY_JSON).expect("BUG: Cannot parse mining job");
 
-    let notify = if let Rpc::Request(req) = deserialized {
+    if let Rpc::Request(req) = deserialized {
         Notify::try_from(req).expect("BUG: Cannot build mining notify message")
     } else {
         panic!("Wrong notification message");
-    };
-
-    notify
+    }
 }
 
 pub const MINING_SUBMIT_JSON: &str = concat!(
@@ -495,13 +494,11 @@ pub fn build_mining_submit_request_message() -> Rpc {
 pub fn build_mining_submit() -> Submit {
     let deserialized = Rpc::from_str(MINING_SUBMIT_JSON).expect("BUG: Cannot parse mining job");
 
-    let submit = if let Rpc::Request(req) = deserialized {
+    if let Rpc::Request(req) = deserialized {
         Submit::try_from(req).expect("BUG: Cannot build mining submit message")
     } else {
         panic!("Wrong notification message");
-    };
-
-    submit
+    }
 }
 
 pub const MINING_AUTHORIZE_JSON: &str =
@@ -530,12 +527,11 @@ pub fn build_client_reconnect_request_message() -> Rpc {
 pub fn build_client_reconnect() -> ClientReconnect {
     let deserialized =
         Rpc::from_str(CLIENT_RECONNECT_JSON).expect("BUG: Cannot parse reconnect message");
-    let reconnect = if let Rpc::Request(req) = deserialized {
+    if let Rpc::Request(req) = deserialized {
         ClientReconnect::try_from(req).expect("BUG: Cannot build reconnect message")
     } else {
         panic!("Wrong reconnect message");
-    };
-    reconnect
+    }
 }
 
 /// Performs 2 checks:

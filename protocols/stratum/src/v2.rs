@@ -35,7 +35,6 @@ pub mod types;
 use tokio::net::TcpStream;
 
 use futures::prelude::*;
-use ii_wire;
 
 pub use self::framing::codec::Codec;
 pub use self::framing::{Frame, Framing};

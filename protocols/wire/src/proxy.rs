@@ -259,7 +259,6 @@ impl Acceptor {
     pub fn require_proxy_header(self, require_proxy_header: bool) -> Self {
         Acceptor {
             require_proxy_header,
-            ..self
         }
     }
 }
