@@ -25,7 +25,7 @@ pub use prometheus::{
     IntCounterVec, TextEncoder,
 };
 
-use prometheus::core::{Atomic, GenericCounter, GenericCounterVec};
+use prometheus::core::{Atomic, GenericCounter, GenericCounterVec, GenericGauge};
 use prometheus::Registry;
 
 /// Operates with Arc<prometheus::Registry>.
@@ -35,6 +35,19 @@ pub struct MetricsRegistry {
 }
 
 impl MetricsRegistry {
+    pub fn register_generic_gauge<T: Atomic + 'static>(
+        &self,
+        name: &str,
+        help: &str,
+    ) -> GenericGauge<T> {
+        let counter = GenericGauge::with_opts(opts!(name, help))
+            .expect("BUG: Couldn't build generic_gauge with opts");
+        self.registry
+            .register(Box::new(counter.clone()))
+            .expect("BUG: Couldn't register generic_gauge");
+        counter
+    }
+
     pub fn register_generic_counter<T: Atomic + 'static>(
         &self,
         name: &str,

@@ -30,6 +30,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::time::Duration;
 
+use prometheus::IntGauge;
 pub use prometheus::{
     histogram_opts, opts, Encoder, Histogram, HistogramTimer, HistogramVec, IntCounter,
     IntCounterVec, TextEncoder,
@@ -68,6 +69,10 @@ impl ProxyCollectorBuilder {
         let variable_label_names = &["direction", "status"];
 
         Arc::new(ProxyMetrics {
+            tokio_tasks: self.0.register_generic_gauge(
+                "runing_tokio_tasks",
+                "Number of running tokio tasks related to connection translations",
+            ),
             tcp_connection_open_total: self.0.register_generic_counter(
                 "tcp_connection_open_total",
                 "Number of connection open events",
@@ -97,6 +102,8 @@ impl ProxyCollectorBuilder {
 }
 
 pub struct ProxyMetrics {
+    /// Running tasks spawned on tokio runtime.
+    tokio_tasks: IntGauge,
     /// TCP connection open events
     tcp_connection_open_total: IntCounter,
     /// TCP connection close events
@@ -185,6 +192,20 @@ impl ProxyMetrics {
     }
     pub fn tcp_connection_close_with_error(&self, error: &error::Error) {
         self.tcp_connection_close_stage.inc_by_error(error)
+    }
+
+    pub fn accounted_spawn<T>(self: &Arc<Self>, future: T) -> tokio::task::JoinHandle<T::Output>
+    where
+        T: std::future::Future + Send + 'static,
+        T::Output: Send + 'static,
+    {
+        let self_clone = self.clone();
+        tokio::spawn(async move {
+            self_clone.tokio_tasks.inc();
+            let output = future.await;
+            self_clone.tokio_tasks.dec();
+            output
+        })
     }
 }
 

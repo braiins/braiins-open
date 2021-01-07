@@ -67,6 +67,7 @@ pub struct ConnTranslation {
     v2_peer_addr: SocketAddr,
     /// Frames from the translator to be sent out via V2 connection
     v2_translation_rx: mpsc::Receiver<v2::Frame>,
+    metrics: Option<Arc<ProxyMetrics>>,
 }
 
 impl ConnTranslation {
@@ -89,7 +90,7 @@ impl ConnTranslation {
             v1_translation_tx,
             v2_translation_tx,
             Default::default(),
-            metrics,
+            metrics.clone(),
         );
 
         Self {
@@ -100,6 +101,7 @@ impl ConnTranslation {
             v2_conn,
             v2_peer_addr,
             v2_translation_rx,
+            metrics,
         }
     }
 
@@ -167,7 +169,7 @@ impl ConnTranslation {
                 // Send out frames translated into V2
                 v2_translated_frame = translation_receiver.next().fuse() => {
                     Self::v2_try_send_frame(&mut conn_sender, v2_translated_frame, &peer_addr)
-                        .await?;
+                        .await?
                 },
             }
         }
@@ -193,13 +195,21 @@ impl ConnTranslation {
                 }
             }
         };
-        tokio::spawn(v1_send_task);
-
-        tokio::spawn(Self::v2_send_task(
-            v2_conn_tx,
-            self.v2_translation_rx,
-            self.v2_peer_addr,
-        ));
+        if let Some(metrics) = self.metrics.as_ref() {
+            metrics.accounted_spawn(v1_send_task);
+            metrics.accounted_spawn(Self::v2_send_task(
+                v2_conn_tx,
+                self.v2_translation_rx,
+                self.v2_peer_addr,
+            ));
+        } else {
+            tokio::spawn(v1_send_task);
+            tokio::spawn(Self::v2_send_task(
+                v2_conn_tx,
+                self.v2_translation_rx,
+                self.v2_peer_addr,
+            ));
+        }
 
         // TODO: add cancel handler into the select statement
         loop {
@@ -616,20 +626,22 @@ where
 
         trace!("stratum proxy: Handling connection from: {:?}", peer_addr);
         // Fully secured connection has been established
-        tokio::spawn(
-            ProxyConnection::new(
-                self.v1_upstream_addr.clone(),
-                self.security_context
-                    .as_ref()
-                    .map(|context| context.clone()),
-                self.connection_handler.clone(),
-                self.proxy_protocol_acceptor_builder.build(connection),
-                self.proxy_protocol_upstream_version.clone(),
-                self.metrics.clone(),
-                self.controller.counter_for_new_client(),
-            )
-            .handle(),
+        let proxy_connection = ProxyConnection::new(
+            self.v1_upstream_addr.clone(),
+            self.security_context
+                .as_ref()
+                .map(|context| context.clone()),
+            self.connection_handler.clone(),
+            self.proxy_protocol_acceptor_builder.build(connection),
+            self.proxy_protocol_upstream_version.clone(),
+            self.metrics.clone(),
+            self.controller.counter_for_new_client(),
         );
+        if let Some(metrics) = self.metrics.as_ref() {
+            metrics.accounted_spawn(proxy_connection.handle());
+        } else {
+            tokio::spawn(proxy_connection.handle());
+        }
         Ok(peer_addr)
     }
 
@@ -649,6 +661,7 @@ where
             .take_until(tripwire);
 
         loop {
+
             // Three situations can happen:
             // 1. Next connection is either yielded
             // 2. Listening is terminated by tripwire (results in immediate termination)

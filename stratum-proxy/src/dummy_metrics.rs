@@ -44,4 +44,15 @@ impl ProxyMetrics {
     pub fn tcp_connection_close_ok(&self) {}
 
     pub fn tcp_connection_close_with_error(&self, _error: &crate::error::Error) {}
+
+    pub fn accounted_spawn<T>(
+        self: &std::sync::Arc<Self>,
+        future: T,
+    ) -> tokio::task::JoinHandle<T::Output>
+    where
+        T: std::future::Future + Send + 'static,
+        T::Output: Send + 'static,
+    {
+        tokio::spawn(future)
+    }
 }
