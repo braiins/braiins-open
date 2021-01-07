@@ -60,6 +60,7 @@ async fn main() -> Result<()> {
             .unwrap_or_else(ProxyProtocolConfig::default),
         None,
     )
+    .await
     .context("Cannot bind the server")?;
 
     let halt_handle = HaltHandle::arc();

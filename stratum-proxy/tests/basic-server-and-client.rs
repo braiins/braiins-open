@@ -46,7 +46,7 @@ use ii_wire::{
 
 mod utils;
 
-static ADDR: &'static str = "127.0.0.1";
+static ADDR: &str = "127.0.0.1";
 static PORT_V1: u16 = 9001;
 const PORT_V1_FULL: u16 = 9091;
 const PORT_V1_WITH_PROXY: u16 = 9092;
@@ -329,6 +329,7 @@ async fn test_v2server_full_no_proxy_protocol() {
         },
         None,
     )
+    .await
     .expect("BUG: Could not bind v2server");
     let halt_handle = HaltHandle::arc();
     halt_handle.spawn_object(v2server);
@@ -351,7 +352,7 @@ async fn test_v2server_full_with_proxy_protocol() {
         .expect("BUG: invalid addresses");
 
     // Dummy pool server
-    tokio::spawn(v1server_task(addr_v1.clone(), Some(proxy_info.clone())));
+    tokio::spawn(v1server_task(addr_v1.clone(), Some(proxy_info)));
 
     let v2server = server::ProxyServer::listen(
         addr_v2.clone(),
@@ -367,6 +368,7 @@ async fn test_v2server_full_with_proxy_protocol() {
         },
         None,
     )
+    .await
     .expect("BUG: Could not bind v2server");
     let halt_handle = HaltHandle::arc();
     halt_handle.spawn_object(v2server);

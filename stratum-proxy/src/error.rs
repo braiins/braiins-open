@@ -76,6 +76,9 @@ impl V2ProtocolError {
 
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("Failed to resolved host: {0}")]
+    HostNameError(String),
+
     /// General error used for more specific errors.
     #[error("General error: {0}")]
     General(String),

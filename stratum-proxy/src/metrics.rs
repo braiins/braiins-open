@@ -243,6 +243,7 @@ impl ErrorLabeling for error::Error {
     fn label(&self) -> &str {
         use ii_stratum::error::Error as StratumError;
         match self {
+            Self::HostNameError(_) => "dns",
             Self::GeneralWithMetricsLabel(_, label) => label,
             Self::Stratum(s) => match s {
                 StratumError::Noise(_)

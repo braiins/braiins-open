@@ -24,7 +24,7 @@ pub mod controller;
 
 use bytes::Bytes;
 use std::convert::TryFrom;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time;
@@ -33,7 +33,7 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 use futures::select;
 use serde::Deserialize;
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::FramedParts;
 
 use ii_async_utils::{FutureExt, Spawnable, Tripwire};
@@ -42,7 +42,7 @@ use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_wire::{
     proxy::{self, Connector, WithProxyInfo},
-    Address, Client, Connection, Server,
+    Address, Client, Connection,
 };
 
 use crate::error::{DownstreamError, Error, Result, UpstreamError};
@@ -541,8 +541,8 @@ where
 /// the `run()` method turns the `ProxyServer`
 /// into an asynchronous task (which internally calls `next()` in a loop).
 pub struct ProxyServer<H> {
-    server: Option<Server>, // TODO get rid of ii-wire::server::Server and use TcpListener
-    listen_addr: Address,
+    server: Option<TcpListener>,
+    listen_socket: SocketAddr,
     v1_upstream_addr: Address,
     controller: controller::Controller,
     /// Closure that generates a handler in the form of a Future that will be passed to the
@@ -562,9 +562,9 @@ where
 {
     /// Constructor, binds the listening socket and builds the `ProxyServer` instance with a
     /// specified `get_connection_handler` that builds the connection handler `Future` on demand
-    pub fn listen(
+    pub async fn listen(
         listen_addr: Address,
-        stratum_addr: Address,
+        v1_upstream_addr: Address,
         connection_handler: H,
         certificate_secret_key_pair: Option<(
             v2::noise::auth::Certificate,
@@ -573,7 +573,16 @@ where
         proxy_protocol_config: ProxyProtocolConfig,
         metrics: Option<Arc<ProxyMetrics>>,
     ) -> Result<ProxyServer<H>> {
-        let server = Some(Server::bind(&listen_addr).map_err(|e| DownstreamError::EarlyIo(e))?);
+        let listen_socket = listen_addr
+            .to_socket_addrs()
+            .map_err(|e| Error::HostNameError(e.to_string()))?
+            .next()
+            .ok_or_else(|| Error::HostNameError("Failed to resolve listen_addr".into()))?;
+        let server = Some(
+            TcpListener::bind(&listen_socket)
+                .await
+                .map_err(|e| DownstreamError::EarlyIo(e))?,
+        );
 
         let security_context = match certificate_secret_key_pair {
             Some((certificate, secret_key)) => Some(Arc::new(
@@ -584,8 +593,8 @@ where
 
         Ok(ProxyServer {
             server,
-            listen_addr,
-            v1_upstream_addr: stratum_addr,
+            listen_socket,
+            v1_upstream_addr,
             connection_handler,
             security_context,
             metrics,
@@ -652,7 +661,7 @@ where
     pub async fn main_loop(mut self, tripwire: Tripwire) {
         info!(
             "Stratum proxy service starting @ {} -> {}",
-            self.listen_addr, self.v1_upstream_addr
+            self.listen_socket, self.v1_upstream_addr
         );
         let mut inbound_conections = self
             .server
@@ -661,7 +670,6 @@ where
             .take_until(tripwire);
 
         loop {
-
             // Three situations can happen:
             // 1. Next connection is either yielded
             // 2. Listening is terminated by tripwire (results in immediate termination)
