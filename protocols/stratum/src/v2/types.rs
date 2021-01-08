@@ -81,7 +81,6 @@ macro_rules! sized_string_type {
         #[derive(PartialEq, Eq, Serialize, Deserialize, Default, Clone, Debug)]
         pub struct $name(String);
 
-        #[allow(clippy::should_implement_trait)]
         impl $name {
             const MIN_LEN: usize = $min_len;
             const MAX_LEN: usize = $max_len;
@@ -94,14 +93,6 @@ macro_rules! sized_string_type {
             pub fn from_string(s: String) -> Self {
                 Self::try_from(s).expect(concat!(
                     "Could not convert String to ",
-                    stringify!($name),
-                    " - string length out of range."
-                ))
-            }
-
-            pub fn from_str(s: &str) -> Self {
-                Self::try_from(s).expect(concat!(
-                    "Could not convert &'str to ",
                     stringify!($name),
                     " - string length out of range."
                 ))

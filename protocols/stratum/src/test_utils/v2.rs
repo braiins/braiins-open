@@ -390,13 +390,14 @@ pub fn build_setup_connection() -> SetupConnection {
         max_version: 2,
         min_version: 2,
         flags: 0,
-        endpoint_host: Str0_255::from_str(POOL_URL),
+        endpoint_host: Str0_255::try_from(POOL_URL).expect("BUG: cannot convert from str"),
         endpoint_port: POOL_PORT as u16,
         device: DeviceInfo {
-            vendor: Str0_255::from_str("Braiins"),
-            hw_rev: Str0_255::from_str("1"),
-            fw_ver: Str0_255::from_str(MINER_SW_SIGNATURE),
-            dev_id: Str0_255::from_str("xyz"),
+            vendor: Str0_255::try_from("Braiins").expect("BUG: cannot convert from string"),
+            hw_rev: Str0_255::try_from("1").expect("BUG: cannot convert from string"),
+            fw_ver: Str0_255::try_from(MINER_SW_SIGNATURE)
+                .expect("BUG: cannot convert from string"),
+            dev_id: Str0_255::try_from("xyz").expect("BUG: cannot convert from string"),
         },
     }
 }
@@ -414,7 +415,7 @@ pub fn build_setup_connection_success() -> SetupConnectionSuccess {
 pub fn build_open_channel() -> OpenStandardMiningChannel {
     OpenStandardMiningChannel {
         req_id: 10,
-        user: Str0_255::from_str(USER_CREDENTIALS),
+        user: Str0_255::try_from(USER_CREDENTIALS).expect("BUG: cannot convert from string"),
         nominal_hashrate: 1e9,
         max_target: ii_bitcoin::Target::default().into(),
     }
@@ -496,13 +497,13 @@ pub fn build_submit_shares_error() -> SubmitSharesError {
     SubmitSharesError {
         channel_id: 0,
         seq_num: 0,
-        code: Str0_32::from_str(""),
+        code: Str0_32::try_from("").expect("BUG: cannot convert from string"),
     }
 }
 
 pub fn build_reconnect() -> Reconnect {
     Reconnect {
-        new_host: Str0_255::from_str(POOL_URL),
+        new_host: Str0_255::try_from(POOL_URL).expect("BUG: cannot convert from string"),
         new_port: POOL_PORT as u16,
     }
 }

@@ -357,7 +357,8 @@ async fn test_shares_sequence_number_translate() {
 
     shares_error_v2.seq_num = 1;
     shares_error_v2.code =
-        v2::types::Str0_32::from_str(format!("ShareRjct:StratumError(0, \"{}", ERR_STALE).as_str());
+        v2::types::Str0_32::from_string(format!("ShareRjct:StratumError(0, \"{}", ERR_STALE));
+
     tester
         .check_next_v2(|msg: v2::messages::SubmitSharesError| {
             assert_eq!(shares_error_v2, msg);
@@ -369,7 +370,8 @@ async fn test_shares_sequence_number_translate() {
         .await;
 
     shares_error_v2.seq_num = 2;
-    shares_error_v2.code = v2::types::Str0_32::from_str("General error: V2 Job ID not pre");
+    shares_error_v2.code = v2::types::Str0_32::try_from("General error: V2 Job ID not pre")
+        .expect("BUG: cannot convert from str");
     tester
         .check_next_v2(|msg: v2::messages::SubmitSharesError| {
             assert_eq!(shares_error_v2, msg);
@@ -409,14 +411,20 @@ fn test_parse_client_reconnect() {
     use v1::messages::ClientReconnect;
 
     assert_eq!(
-        (Str0_255::from_str(""), 0),
+        (
+            Str0_255::try_from("").expect("BUG: cannot convert from str"),
+            0
+        ),
         V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![]))
             .expect(r#"BUG: Could not parse reconnect message without arguments"#)
     );
 
     // lower boundary case
     assert_eq!(
-        (Str0_255::from_str(""), 0),
+        (
+            Str0_255::try_from("").expect("BUG: cannot convert from str"),
+            0
+        ),
         V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
             Value::String("".into()),
             Value::String("0".into()),
@@ -427,7 +435,10 @@ fn test_parse_client_reconnect() {
 
     // lower boundary case
     assert_eq!(
-        (Str0_255::from_str(""), 0),
+        (
+            Str0_255::try_from("").expect("BUG: cannot convert from str"),
+            0
+        ),
         V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
             Value::String("".into()),
             Value::Number(0.into()),
@@ -438,7 +449,10 @@ fn test_parse_client_reconnect() {
 
     // random case
     assert_eq!(
-        (Str0_255::from_str("some_host"), 1000),
+        (
+            Str0_255::try_from("some_host").expect("BUG: cannot convert from str"),
+            1000
+        ),
         V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
             Value::String("some_host".into()),
             Value::Number(1000.into()),
@@ -482,7 +496,10 @@ fn test_parse_client_reconnect() {
 
     // non-ascii host name
     assert_eq!(
-        (Str0_255::from_str("😊"), 1000),
+        (
+            Str0_255::try_from("😊").expect("BUG: cannot convert from str"),
+            1000
+        ),
         V2ToV1Translation::parse_client_reconnect(&ClientReconnect(vec![
             Value::String("😊".into()),
             Value::Number(1000.into()),
