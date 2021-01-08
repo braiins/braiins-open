@@ -189,7 +189,7 @@ impl handshake::Step for Initiator {
         mut noise_bytes: BytesMut,
     ) -> Result<handshake::StepResult> {
         let mut buf = vec![0u8; MAX_MESSAGE_SIZE];
-        let mut prologue = Prologue::new();
+        let mut prologue = Prologue::default();
 
         let result = match self.stage {
             0 => {
@@ -362,7 +362,7 @@ impl<'a> handshake::Step for Responder<'a> {
         mut noise_bytes: BytesMut,
     ) -> Result<handshake::StepResult> {
         let mut buf = vec![0u8; MAX_MESSAGE_SIZE];
-        let mut prologue = Prologue::new();
+        let mut prologue = Prologue::default();
 
         let result = match self.stage {
             0 => handshake::StepResult::ReceiveMessage,
