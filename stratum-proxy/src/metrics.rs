@@ -81,6 +81,8 @@ impl ProxyCollectorBuilder {
             tcp_connection_duration_seconds: self.0.register_histogram(
                 "tcp_connection_duration_seconds",
                 "Histogram of how long each connection has lived for",
+                ii_metrics::exponential_buckets(0.01, 10.0, 9)
+                    .expect("BUG: invalid buckets definition"),
             ),
             shares_total: self.0.register_generic_counter_vec(
                 "shares_total",
@@ -96,13 +98,14 @@ impl ProxyCollectorBuilder {
                 "v1_request_duration_seconds",
                 "Histogram of duration if stratum V1 requests",
                 &["type", "status"],
+                ii_metrics::DEFAULT_BUCKETS.to_vec(),
             ),
         })
     }
 }
 
 pub struct ProxyMetrics {
-    /// Running tasks spawned on tokio runtime.
+    /// Running tasks spawned on tokio runtime using method [`accounted_spawn`].
     tokio_tasks: IntGauge,
     /// TCP connection open events
     tcp_connection_open_total: IntCounter,

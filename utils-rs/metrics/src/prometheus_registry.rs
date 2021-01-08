@@ -21,8 +21,8 @@
 // contact us at opensource@braiins.com.
 
 pub use prometheus::{
-    histogram_opts, opts, Encoder, Histogram, HistogramTimer, HistogramVec, IntCounter,
-    IntCounterVec, TextEncoder,
+    exponential_buckets, histogram_opts, linear_buckets, opts, Encoder, Histogram, HistogramTimer,
+    HistogramVec, IntCounter, IntCounterVec, TextEncoder, DEFAULT_BUCKETS,
 };
 
 use prometheus::core::{Atomic, GenericCounter, GenericCounterVec, GenericGauge};
@@ -34,6 +34,11 @@ pub struct MetricsRegistry {
     registry: std::sync::Arc<Registry>,
 }
 
+/// Provides registry for counting metrics and histograms.
+///
+/// Buckets is vector of floats as it is produced by prometheus functions
+/// [`prometheus::exponential_buckets`] or [`prometheus::linear_buckets`] that are reexported
+/// for convenience. Alternatively reexported constant [`prometheus::DEFAULT_BUCKETS`] can be used.
 impl MetricsRegistry {
     pub fn register_generic_gauge<T: Atomic + 'static>(
         &self,
@@ -75,8 +80,8 @@ impl MetricsRegistry {
         counter
     }
 
-    pub fn register_histogram(&self, name: &str, help: &str) -> Histogram {
-        let histogram = Histogram::with_opts(histogram_opts!(name, help))
+    pub fn register_histogram(&self, name: &str, help: &str, buckets: Vec<f64>) -> Histogram {
+        let histogram = Histogram::with_opts(histogram_opts!(name, help, buckets))
             .expect("BUG: Couldn't build histogram with opts");
         self.registry
             .register(Box::new(histogram.clone()))
@@ -89,8 +94,9 @@ impl MetricsRegistry {
         name: &str,
         help: &str,
         label_names: &[&str],
+        buckets: Vec<f64>,
     ) -> HistogramVec {
-        let histogram = HistogramVec::new(histogram_opts!(name, help), label_names)
+        let histogram = HistogramVec::new(histogram_opts!(name, help, buckets), label_names)
             .expect("BUG: Couldn't build histogram_vec with opts");
         self.registry
             .register(Box::new(histogram.clone()))
