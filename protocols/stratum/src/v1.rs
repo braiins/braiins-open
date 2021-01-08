@@ -103,7 +103,7 @@ impl TryFrom<&str> for HexBytes {
 /// in Extranonce1 serde support
 impl From<String> for HexBytes {
     fn from(value: String) -> Self {
-        HexBytes::try_from(value.as_str()).unwrap_or(HexBytes(vec![]))
+        HexBytes::try_from(value.as_str()).unwrap_or_else(|_| HexBytes(vec![]))
     }
 }
 
@@ -171,7 +171,7 @@ impl TryFrom<&str> for PrevHash {
 /// in Extranonce1 serde support
 impl From<String> for PrevHash {
     fn from(value: String) -> Self {
-        PrevHash::try_from(value.as_str()).unwrap_or(PrevHash(vec![]))
+        PrevHash::try_from(value.as_str()).unwrap_or_else(|_| PrevHash(vec![]))
     }
 }
 
