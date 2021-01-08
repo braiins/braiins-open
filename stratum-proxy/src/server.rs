@@ -34,6 +34,7 @@ use futures::prelude::*;
 use futures::select;
 use serde::Deserialize;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::{Duration, Instant};
 use tokio_util::codec::FramedParts;
 
 use ii_async_utils::{FutureExt, Spawnable, Tripwire};
@@ -578,11 +579,6 @@ where
             .map_err(|e| Error::HostNameError(e.to_string()))?
             .next()
             .ok_or_else(|| Error::HostNameError("Failed to resolve listen_addr".into()))?;
-        let server = Some(
-            TcpListener::bind(&listen_socket)
-                .await
-                .map_err(|e| DownstreamError::EarlyIo(e))?,
-        );
 
         let security_context = match certificate_secret_key_pair {
             Some((certificate, secret_key)) => Some(Arc::new(
@@ -592,7 +588,7 @@ where
         };
 
         Ok(ProxyServer {
-            server,
+            server: Some(Self::bind_new_socket(listen_socket).await?),
             listen_socket,
             v1_upstream_addr,
             connection_handler,
@@ -606,22 +602,21 @@ where
         })
     }
 
+    async fn bind_new_socket(listen_socket: SocketAddr) -> Result<TcpListener> {
+        TcpListener::bind(listen_socket)
+            .await
+            .map_err(|e| DownstreamError::EarlyIo(e).into())
+    }
+
     pub fn termination_notifier(&self) -> Arc<tokio::sync::Notify> {
         self.controller.termination_notifier()
     }
 
     /// Helper method for accepting incoming connections
-    fn accept(&self, connection_result: std::io::Result<TcpStream>) -> Result<SocketAddr> {
-        self.metrics.as_ref().map(|x| x.account_opened_connection());
+    fn accept(&self, connection: TcpStream) -> Result<SocketAddr> {
         // TODO eliminate duplicate code for metrics accounting, consider moving the inc_by_error
         //  to the caller. The problem is that it would not be as transparent due to
-        let connection = connection_result.map_err(|err| {
-            let new_err = DownstreamError::EarlyIo(err).into();
-            self.metrics
-                .as_ref()
-                .map(|x| x.tcp_connection_close_with_error(&new_err));
-            new_err
-        })?;
+        self.metrics.as_ref().map(|x| x.account_opened_connection());
 
         // When the TCP connection is dropped early we won't spawn the handling task. We will only
         // account for this early termination
@@ -667,7 +662,9 @@ where
             .server
             .take()
             .expect("BUG: Missing wire::Server instance")
-            .take_until(tripwire);
+            .take_until(tripwire.clone());
+
+        let mut latest_connection_accept_failure = None::<Instant>;
 
         loop {
             // Three situations can happen:
@@ -692,12 +689,39 @@ where
                     break
                 }
             };
-            match self.accept(connection_result) {
-                Ok(peer) => debug!("Connection accepted from {}", peer),
-                Err(err) => debug!("Connection error: {}", err),
+            if let Ok(connection) = connection_result {
+                match self.accept(connection) {
+                    Ok(peer) => debug!("Connection accepted from {}", peer),
+                    Err(err) => debug!("Connection error: {}", err),
+                }
+            } else {
+                warn!("TcpListener failed to provide functional TcpStream");
+                if let Some(last_fail) = latest_connection_accept_failure.replace(Instant::now()) {
+                    // If the latest connection-accept event was less then millisecond ago,
+                    // create drop the listener and bind again.
+                    if last_fail.elapsed() < Duration::from_millis(1) {
+                        info!("Trying to rebind new TcpListener");
+                        // This doesn't affect existing connections
+                        drop(inbound_conections);
+                        // Wait a little to let system close the socket before trying to create a new one
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        inbound_conections = loop {
+                            match Self::bind_new_socket(self.listen_socket).await {
+                                Ok(tcp_stream) => {
+                                    info!("TcpListener successfully bound");
+                                    break tcp_stream.take_until(tripwire.clone());
+                                }
+                                Err(e) => {
+                                    warn!("TcpListener cannot be bound: {}", e);
+                                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                                }
+                            }
+                        };
+                    }
+                }
             }
         }
-
+        // This doesn't affect existing connections
         drop(inbound_conections);
         self.controller.wait_for_termination(None).await;
 
