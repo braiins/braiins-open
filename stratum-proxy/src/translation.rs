@@ -26,6 +26,7 @@ use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fmt;
 use std::mem::size_of;
+use std::str::FromStr;
 
 use bytes::BytesMut;
 use futures::channel::mpsc;
@@ -958,7 +959,7 @@ impl V2ToV1Translation {
             .insert(
                 v2_job.job_id,
                 V1SubmitTemplate {
-                    job_id: v1::messages::JobId::from_str(payload.job_id()),
+                    job_id: v1::messages::JobId::from_str(payload.job_id())?,
                     time: payload.time(),
                     version: payload.version(),
                 },

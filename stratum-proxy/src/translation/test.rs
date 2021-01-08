@@ -219,7 +219,8 @@ async fn test_initial_sequence_translate(tester: &mut TranslationTester) {
         .await;
     // Ensure that the V1 job has been registered
     let submit_template = V1SubmitTemplate {
-        job_id: v1::messages::JobId::from_str(&test_utils::v1::MINING_NOTIFY_JOB_ID),
+        job_id: v1::messages::JobId::from_str(&test_utils::v1::MINING_NOTIFY_JOB_ID)
+            .expect("BUG: cannot build JobId"),
         time: test_utils::common::MINING_WORK_NTIME,
         version: test_utils::common::MINING_WORK_VERSION,
     };

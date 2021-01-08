@@ -369,13 +369,13 @@ impl From<f32> for SetDifficulty {
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct JobId(String);
 
-#[allow(clippy::should_implement_trait)]
-impl JobId {
-    pub fn from_str(job_id: &str) -> Self {
-        Self(String::from(job_id))
+impl std::str::FromStr for JobId {
+    type Err = crate::error::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(Self(String::from(s)))
     }
 }
-
 /// Leading part of the coinbase transaction
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct CoinBase1(HexBytes);
