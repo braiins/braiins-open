@@ -246,12 +246,12 @@ mod test {
         let mut buffer = BytesMut::new();
         codec
             .encode(expected_frame.clone(), &mut buffer)
-            .expect("Codec failed to encode message");
+            .expect("BUG: Codec failed to encode message");
 
         let decoded_frame = codec
             .decode(&mut buffer)
-            .expect("Codec failed to decode message")
-            .expect("Incomplete message");
+            .expect("BUG: Codec failed to decode message")
+            .expect("BUG: Incomplete message");
 
         assert_eq!(
             expected_frame, decoded_frame,
