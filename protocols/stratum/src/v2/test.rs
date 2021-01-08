@@ -328,7 +328,7 @@ async fn test_full_mining_handler() {
         future_job: false,
         version: 0,
         version_rolling_allowed: false,
-        merkle_path: Seq0_255::<Uint256Bytes>::new(),
+        merkle_path: Seq0_255::<Uint256Bytes>::default(),
         coinbase_tx_prefix: Default::default(),
         coinbase_tx_suffix: Default::default(),
     }

@@ -257,7 +257,6 @@ macro_rules! sized_seq_type {
         where
             T: Serialize + for<'dx> Deserialize<'dx>;
 
-        #[allow(clippy::new_without_default)]
         impl<T> $name<T>
         where
             T: Serialize + for<'dx> Deserialize<'dx>,
@@ -265,17 +264,21 @@ macro_rules! sized_seq_type {
             const MIN_LEN: usize = $min_len;
             const MAX_LEN: usize = $max_len;
 
-            #[inline]
-            pub fn new() -> Self {
-                Self(vec![])
-            }
-
             pub fn from_vec(v: Vec<T>) -> Self {
                 Self::try_from(v).expect(concat!(
                     "Could not convert Vec to ",
                     stringify!($name),
                     " - Vec length out of range."
                 ))
+            }
+        }
+
+        impl<T> Default for $name<T>
+        where
+            T: Serialize + for<'dx> Deserialize<'dx>,
+        {
+            fn default() -> Self {
+                Self(vec![])
             }
         }
 
