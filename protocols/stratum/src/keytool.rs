@@ -36,11 +36,13 @@ use std::time::Duration;
 use structopt::StructOpt;
 
 /// All commands recognized by the keytool
+/// Override clippy warning as the command variants are directly translated into CLI
 #[derive(Debug, StructOpt)]
 #[structopt(
     name = "ii-stratum-keytool",
     about = "Tool for generating ED25519 keypairs and certificates for Stratum V2 mining protocol"
 )]
+#[allow(clippy::enum_variant_names)]
 enum Command {
     /// Generate CA keypair
     GenCAKey(GenCAKeyCommand),
@@ -222,7 +224,7 @@ impl SignKeyCommand {
         // Final step is to compose the certificate from all components and serialize it into a file
         let certificate = noise::auth::Certificate::new(signed_part, signature);
         // Derive the certificate file name from the public key filename
-        let mut cert_file = self.public_key_to_sign.clone();
+        let mut cert_file = self.public_key_to_sign;
         cert_file.set_extension("cert");
 
         write_to_file(&cert_file, certificate, "certificate")
