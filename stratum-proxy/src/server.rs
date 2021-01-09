@@ -615,24 +615,14 @@ where
     }
 
     /// Helper method for accepting incoming connections
-    fn accept(&self, connection: TcpStream) -> Result<SocketAddr> {
+    fn accept(&self, connection: TcpStream, peer: SocketAddr) -> Result<()> {
         // TODO eliminate duplicate code for metrics accounting, consider moving the inc_by_error
         //  to the caller. The problem is that it would not be as transparent due to
         if let Some(x) = self.metrics.as_ref() {
             x.account_opened_connection();
         }
 
-        // When the TCP connection is dropped early we won't spawn the handling task. We will only
-        // account for this early termination
-        let peer_addr = connection.peer_addr().map_err(|err| {
-            let new_err = DownstreamError::EarlyIo(err).into();
-            if let Some(x) = self.metrics.as_ref() {
-                x.tcp_connection_close_with_error(&new_err);
-            }
-            new_err
-        })?;
-
-        trace!("stratum proxy: Handling connection from: {:?}", peer_addr);
+        trace!("stratum proxy: Handling connection from: {:?}", peer);
         // Fully secured connection has been established
         let proxy_connection = ProxyConnection::new(
             self.v1_upstream_addr.clone(),
@@ -648,7 +638,7 @@ where
         } else {
             tokio::spawn(proxy_connection.handle());
         }
-        Ok(peer_addr)
+        Ok(())
     }
 
     /// Creates a proxy server task that calls `.next()`
@@ -663,8 +653,7 @@ where
         let mut inbound_conections = self
             .server
             .take()
-            .expect("BUG: Missing wire::Server instance")
-            .take_until(tripwire.clone());
+            .expect("BUG: Missing wire::Server instance");
 
         let mut latest_connection_accept_failure = None::<Instant>;
 
@@ -673,28 +662,23 @@ where
             // 1. Next connection is either yielded
             // 2. Listening is terminated by tripwire (results in immediate termination)
             // 3. Listening is terminated from shutdown api call (results in slow termination)
-            let connection_result = tokio::select! {
-                conn = inbound_conections.next() => {
-                    match conn {
-                        // Tripwire has terminated the stream of new connections,
-                        // proceed to immediate termination
-                        None => {
-                            self.controller.request_immediate_termination();
-                            break
-                        }
-                        // Regular new connection
-                        Some(connection_result) => connection_result,
-                    }
+            let tcp_accept_result = tokio::select! {
+                tcp_accept_result = inbound_conections.accept() => {
+                    tcp_accept_result
                 },
+                _ = tripwire.clone() => {
+                    self.controller.request_immediate_termination();
+                    break
+                }
                 // Termination has been requested via shutdown api
                 _ = self.controller.wait_for_notification() => {
                     break
                 }
             };
-            if let Ok(connection) = connection_result {
-                match self.accept(connection) {
-                    Ok(peer) => debug!("Connection accepted from {}", peer),
-                    Err(err) => debug!("Connection error: {}", err),
+            if let Ok((stream, peer)) = tcp_accept_result {
+                debug!("Connection accepted from {}", peer);
+                if let Err(err) = self.accept(stream, peer) {
+                    debug!("Connection error: {}", err);
                 }
             } else {
                 warn!("TcpListener failed to provide functional TcpStream");
@@ -711,7 +695,7 @@ where
                             match Self::bind_new_socket(self.listen_socket).await {
                                 Ok(tcp_stream) => {
                                     info!("TcpListener successfully bound");
-                                    break tcp_stream.take_until(tripwire.clone());
+                                    break tcp_stream;
                                 }
                                 Err(e) => {
                                     warn!("TcpListener cannot be bound: {}", e);
