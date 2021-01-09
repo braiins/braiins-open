@@ -144,7 +144,7 @@ impl ConnTranslation {
     {
         let status = match frame {
             Some(v2_translated_frame) => connection.send(v2_translated_frame).await,
-            None => Err(Error::General("No more V2 frames to send".to_string()))?,
+            None => return Err(Error::General("No more V2 frames to send".into())),
         };
         status.map_err(|e| {
             debug!("Send error: {} for (peer: {:?})", e, peer_addr);
@@ -412,7 +412,7 @@ where
             .expect("BUG: proxy protocol acceptor has already been used");
         let proxy_stream = proxy_protocol_acceptor
             .await
-            .map_err(|e| DownstreamError::ProxyProtocol(e))?;
+            .map_err(DownstreamError::ProxyProtocol)?;
         let peer_addr = proxy_stream
             .peer_addr()
             .map_err(|e| DownstreamError::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
@@ -437,7 +437,7 @@ where
         // Use the connection only to build the Framed object with V1 framing and to extract the
         // peer address
         let mut v1_conn = v1_client.next().await?;
-        let v1_peer_addr = v1_conn.peer_addr().map_err(|e| UpstreamError::Io(e))?;
+        let v1_peer_addr = v1_conn.peer_addr().map_err(UpstreamError::Io)?;
 
         if let Some(version) = self.proxy_protocol_upstream_version {
             let (src, dst) = if let (Some(src), Some(dst)) = (
@@ -455,7 +455,7 @@ where
             Connector::new(version)
                 .write_proxy_header(&mut v1_conn, src, dst)
                 .await
-                .map_err(|e| UpstreamError::ProxyProtocol(e))?;
+                .map_err(UpstreamError::ProxyProtocol)?;
         }
         let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
         debug!(
@@ -502,7 +502,7 @@ where
                 v2_framed_stream,
                 // TODO: provide connection info instead of a pure peer address, for now we just
                 //  clone v1_addr
-                v1_peer_addr.clone(),
+                v1_peer_addr,
                 v1_framed_stream,
                 v1_peer_addr,
             )
@@ -518,19 +518,21 @@ where
         // (possible provide full 'ProxyInfo')
         match self.do_handle().await {
             Ok(()) => {
-                metrics.as_ref().map(|x| x.tcp_connection_close_ok());
+                if let Some(x) = metrics.as_ref() {
+                    x.tcp_connection_close_ok();
+                }
                 debug!("Closing connection from {} ...", "N/A")
             }
             Err(err) => {
-                metrics
-                    .as_ref()
-                    .map(|x| x.tcp_connection_close_with_error(&err));
+                if let Some(x) = metrics.as_ref() {
+                    x.tcp_connection_close_with_error(&err);
+                }
                 debug!("Connection error: {}, peer: {}", err, "N/A")
             }
         };
-        self.metrics
-            .as_ref()
-            .map(|x| x.tcp_connection_timer_observe(timer));
+        if let Some(x) = self.metrics.as_ref() {
+            x.tcp_connection_timer_observe(timer);
+        }
     }
 }
 
@@ -616,15 +618,17 @@ where
     fn accept(&self, connection: TcpStream) -> Result<SocketAddr> {
         // TODO eliminate duplicate code for metrics accounting, consider moving the inc_by_error
         //  to the caller. The problem is that it would not be as transparent due to
-        self.metrics.as_ref().map(|x| x.account_opened_connection());
+        if let Some(x) = self.metrics.as_ref() {
+            x.account_opened_connection();
+        }
 
         // When the TCP connection is dropped early we won't spawn the handling task. We will only
         // account for this early termination
         let peer_addr = connection.peer_addr().map_err(|err| {
             let new_err = DownstreamError::EarlyIo(err).into();
-            self.metrics
-                .as_ref()
-                .map(|x| x.tcp_connection_close_with_error(&new_err));
+            if let Some(x) = self.metrics.as_ref() {
+                x.tcp_connection_close_with_error(&new_err);
+            }
             new_err
         })?;
 
@@ -632,12 +636,10 @@ where
         // Fully secured connection has been established
         let proxy_connection = ProxyConnection::new(
             self.v1_upstream_addr.clone(),
-            self.security_context
-                .as_ref()
-                .map(|context| context.clone()),
+            self.security_context.as_ref().cloned(),
             self.connection_handler.clone(),
             self.proxy_protocol_acceptor_builder.build(connection),
-            self.proxy_protocol_upstream_version.clone(),
+            self.proxy_protocol_upstream_version,
             self.metrics.clone(),
             self.controller.counter_for_new_client(),
         );

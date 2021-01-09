@@ -124,7 +124,7 @@ impl Controller {
             ImmediateTermination => {}
             LazyTermination => {
                 if let Some(timeout) = timeout {
-                    if let Err(_) = self.client_counter.timeout(timeout).await {
+                    if self.client_counter.timeout(timeout).await.is_err() {
                         info!("Graceful period for termination timed out")
                     }
                 } else {
