@@ -33,7 +33,9 @@ impl ProxyMetrics {
 
     pub fn account_rejected_share(&self, _target: Option<U256>) {}
 
-    pub fn account_opened_connection(&self) {}
+    pub fn account_successful_tcp_open(&self) {}
+
+    pub fn account_unsuccessful_tcp_open(&self) {}
 
     pub fn observe_v1_request_success(&self, _request_method: Method, _duration: Duration) {}
 
@@ -44,6 +46,8 @@ impl ProxyMetrics {
     pub fn tcp_connection_close_ok(&self) {}
 
     pub fn tcp_connection_close_with_error(&self, _error: &crate::error::Error) {}
+
+    pub fn reset_tcp_conn_accepts_per_socket(&self) {}
 
     pub fn accounted_spawn<T>(
         self: &std::sync::Arc<Self>,

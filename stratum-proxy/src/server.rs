@@ -587,9 +587,8 @@ where
             )),
             None => None,
         };
-
-        Ok(ProxyServer {
-            server: Some(Self::bind_new_socket(listen_socket).await?),
+        let mut proxy_server = ProxyServer {
+            server: None,
             listen_socket,
             v1_upstream_addr,
             connection_handler,
@@ -600,11 +599,21 @@ where
             ),
             proxy_protocol_upstream_version: proxy_protocol_config.upstream_version,
             controller: Default::default(),
-        })
+        };
+        proxy_server.bind_new_socket().await?;
+        Ok(proxy_server)
     }
 
-    async fn bind_new_socket(listen_socket: SocketAddr) -> Result<TcpListener> {
-        TcpListener::bind(listen_socket).await.map_err(Error::Io)
+    async fn bind_new_socket(&mut self) -> Result<()> {
+        if let Some(metrics) = self.metrics.as_ref() {
+            metrics.reset_tcp_conn_accepts_per_socket();
+        }
+        self.server.replace(
+            TcpListener::bind(self.listen_socket)
+                .await
+                .map_err(Error::Io)?,
+        );
+        Ok(())
     }
 
     pub fn termination_notifier(&self) -> Arc<tokio::sync::Notify> {
@@ -613,12 +622,6 @@ where
 
     /// Helper method for accepting incoming connections
     fn accept(&self, connection: TcpStream, peer: SocketAddr) -> Result<()> {
-        // TODO eliminate duplicate code for metrics accounting, consider moving the inc_by_error
-        //  to the caller. The problem is that it would not be as transparent due to
-        if let Some(x) = self.metrics.as_ref() {
-            x.account_opened_connection();
-        }
-
         trace!("stratum proxy: Handling connection from: {:?}", peer);
         // Fully secured connection has been established
         let proxy_connection = ProxyConnection::new(self, connection, peer);
@@ -666,11 +669,20 @@ where
             };
             if let Ok((stream, peer)) = tcp_accept_result {
                 debug!("Connection accepted from {}", peer);
+                if let Some(metrics) = self.metrics.as_ref() {
+                    // TODO eliminate duplicate code for metrics accounting, consider moving the inc_by_error
+                    //  to the caller. The problem is that it would not be as transparent due to
+                    metrics.account_successful_tcp_open();
+                }
                 if let Err(err) = self.accept(stream, peer) {
                     debug!("Connection error: {}", err);
                 }
             } else {
                 warn!("TcpListener failed to provide functional TcpStream");
+                if let Some(metrics) = self.metrics.as_ref() {
+                    metrics.account_unsuccessful_tcp_open();
+                }
+
                 if let Some(last_fail) = latest_connection_accept_failure.replace(Instant::now()) {
                     // If the latest connection-accept event was less then millisecond ago,
                     // create drop the listener and bind again.
@@ -681,10 +693,12 @@ where
                         // Wait a little to let system close the socket before trying to create a new one
                         tokio::time::sleep(Duration::from_millis(100)).await;
                         inbound_conections = loop {
-                            match Self::bind_new_socket(self.listen_socket).await {
-                                Ok(tcp_stream) => {
+                            match self.bind_new_socket().await {
+                                Ok(()) => {
                                     info!("TcpListener successfully bound");
-                                    break tcp_stream;
+                                    break self.server.take().expect(
+                                        "BUG: Missing TcpStream right after successful binding",
+                                    );
                                 }
                                 Err(e) => {
                                     warn!("TcpListener cannot be bound: {}", e);

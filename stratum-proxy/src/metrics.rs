@@ -100,6 +100,11 @@ impl ProxyCollectorBuilder {
                 &["type", "status"],
                 ii_metrics::DEFAULT_BUCKETS.to_vec(),
             ),
+            tcp_connection_accepts_per_socket: self.0.register_generic_counter_vec(
+                "tcp_connection_accepts_per_tcp_socket",
+                "Total of TCP connections classified by 'accept' result",
+                &["result"], // Successful or Unsuccessful
+            ),
         })
     }
 }
@@ -121,11 +126,12 @@ pub struct ProxyMetrics {
     /// - type = (downstream, upstream)
     /// - status = (accepted, rejected)
     submits_total: IntCounterVec,
-
     /// V1 request duration histogram that distinguishes between individual request types
     /// - type (subscribe, authorize, submit, other)
     /// - status (success, error)
     v1_request_duration_seconds: HistogramVec,
+    /// This counter is reset every time new TcpListener is bound
+    tcp_connection_accepts_per_socket: IntCounterVec,
 }
 
 impl ProxyMetrics {
@@ -169,9 +175,19 @@ impl ProxyMetrics {
         self.account_share(target, &["downstream", "rejected"]);
     }
 
-    pub fn account_opened_connection(&self) {
+    pub fn account_successful_tcp_open(&self) {
         self.tcp_connection_open_total.inc();
+        self.tcp_connection_accepts_per_socket
+            .with_label_values(&["successful"])
+            .inc();
     }
+
+    pub fn account_unsuccessful_tcp_open(&self) {
+        self.tcp_connection_accepts_per_socket
+            .with_label_values(&["unsuccessful"])
+            .inc();
+    }
+
     pub fn observe_v1_request_success(
         &self,
         request_method: ii_stratum::v1::rpc::Method,
@@ -179,6 +195,7 @@ impl ProxyMetrics {
     ) {
         self.observe_v1_request_duration(request_method, duration, "success");
     }
+
     pub fn observe_v1_request_error(
         &self,
         request_method: ii_stratum::v1::rpc::Method,
@@ -186,15 +203,22 @@ impl ProxyMetrics {
     ) {
         self.observe_v1_request_duration(request_method, duration, "error");
     }
+
     pub fn tcp_connection_timer_observe(&self, timer: Instant) {
         self.tcp_connection_duration_seconds
             .observe(timer.elapsed().as_secs_f64());
     }
+
     pub fn tcp_connection_close_ok(&self) {
         self.tcp_connection_close_stage.inc_as_ok()
     }
+
     pub fn tcp_connection_close_with_error(&self, error: &error::Error) {
         self.tcp_connection_close_stage.inc_by_error(error)
+    }
+
+    pub fn reset_tcp_conn_accepts_per_socket(&self) {
+        self.tcp_connection_accepts_per_socket.reset()
     }
 
     pub fn accounted_spawn<T>(self: &Arc<Self>, future: T) -> tokio::task::JoinHandle<T::Output>
