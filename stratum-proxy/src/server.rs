@@ -367,6 +367,7 @@ struct ProxyConnection<H> {
     proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
     metrics: Option<Arc<ProxyMetrics>>,
     client_counter: controller::ClientCounter,
+    downstream_peer: SocketAddr,
 }
 
 impl<FN> Drop for ProxyConnection<FN> {
@@ -380,22 +381,23 @@ where
     H: ConnectionHandler,
 {
     fn new(
-        v1_upstream_addr: Address,
-        security_context: Option<Arc<SecurityContext>>,
-        connection_handler: H,
-        proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
-        proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
-        metrics: Option<Arc<ProxyMetrics>>,
-        client_counter: controller::ClientCounter,
+        proxy_server: &ProxyServer<H>,
+        connection: TcpStream,
+        downstream_peer: SocketAddr,
     ) -> Self {
         Self {
-            v1_upstream_addr,
-            connection_handler,
-            security_context,
-            proxy_protocol_acceptor: Some(proxy_protocol_acceptor),
-            proxy_protocol_upstream_version,
-            metrics,
-            client_counter,
+            v1_upstream_addr: proxy_server.v1_upstream_addr.clone(),
+            connection_handler: proxy_server.connection_handler.clone(),
+            security_context: proxy_server.security_context.as_ref().cloned(),
+            proxy_protocol_acceptor: Some(
+                proxy_server
+                    .proxy_protocol_acceptor_builder
+                    .build(connection),
+            ),
+            proxy_protocol_upstream_version: proxy_server.proxy_protocol_upstream_version,
+            metrics: proxy_server.metrics.clone(),
+            client_counter: proxy_server.controller.counter_for_new_client(),
+            downstream_peer,
         }
     }
 
@@ -413,9 +415,6 @@ where
         let proxy_stream = proxy_protocol_acceptor
             .await
             .map_err(DownstreamError::ProxyProtocol)?;
-        let peer_addr = proxy_stream
-            .peer_addr()
-            .map_err(|e| DownstreamError::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
         let local_addr = proxy_stream
             .local_addr()
             .map_err(|e| DownstreamError::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
@@ -425,7 +424,7 @@ where
         debug!(
             "Received connection from downstream - source: {:?}, destination: {:?}, original \
             source: {:?}, original destination: {:?}",
-            peer_addr,
+            self.downstream_peer,
             local_addr,
             proxy_stream.original_peer_addr(),
             proxy_stream.original_destination_addr()
@@ -450,7 +449,7 @@ where
                     "Passing of proxy protocol is required, but incoming connection does \
                             not contain original addresses, using socket addresses"
                 );
-                (Some(peer_addr), Some(local_addr))
+                (Some(self.downstream_peer), Some(local_addr))
             };
             Connector::new(version)
                 .write_proxy_header(&mut v1_conn, src, dst)
@@ -459,7 +458,7 @@ where
         }
         let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
         debug!(
-            "Established translation connection with upstream V1 {} for V2 peer: {:?}",
+            "Established translation connection with upstream V1 {} for original V2 peer: {:?}",
             v1_peer_addr,
             proxy_stream.original_peer_addr()
         );
@@ -622,15 +621,7 @@ where
 
         trace!("stratum proxy: Handling connection from: {:?}", peer);
         // Fully secured connection has been established
-        let proxy_connection = ProxyConnection::new(
-            self.v1_upstream_addr.clone(),
-            self.security_context.as_ref().cloned(),
-            self.connection_handler.clone(),
-            self.proxy_protocol_acceptor_builder.build(connection),
-            self.proxy_protocol_upstream_version,
-            self.metrics.clone(),
-            self.controller.counter_for_new_client(),
-        );
+        let proxy_connection = ProxyConnection::new(self, connection, peer);
         if let Some(metrics) = self.metrics.as_ref() {
             metrics.accounted_spawn(proxy_connection.handle());
         } else {
