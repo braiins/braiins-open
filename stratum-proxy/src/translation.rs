@@ -367,6 +367,7 @@ impl V2ToV1Translation {
         // when V1 authorization has already taken place, report channel opening success
         if let Some(v2_channel_details) = self.v2_channel_details.as_ref() {
             self.state = V2ToV1TranslationState::Operational;
+            debug!("Switching mining channel to operational mode");
             let msg = v2::messages::OpenStandardMiningChannelSuccess {
                 req_id: v2_channel_details.req_id,
                 channel_id: Self::CHANNEL_ID,
@@ -1189,7 +1190,9 @@ impl V2ToV1Translation {
         // We won't process the job as long as the channel is not operational
         if self.state != V2ToV1TranslationState::Operational {
             self.v1_deferred_notify = Some(msg.clone());
-            debug!("Channel not yet operational, caching latest mining.notify from upstream");
+            debug!(
+                "Mining channel not yet operational, caching latest mining.notify from upstream"
+            );
             return Ok(());
         }
         self.perform_notify(&msg).map_err(|e| {
