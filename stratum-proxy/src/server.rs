@@ -605,9 +605,7 @@ where
     }
 
     async fn bind_new_socket(listen_socket: SocketAddr) -> Result<TcpListener> {
-        TcpListener::bind(listen_socket)
-            .await
-            .map_err(|e| DownstreamError::EarlyIo(e).into())
+        TcpListener::bind(listen_socket).await.map_err(Error::Io)
     }
 
     pub fn termination_notifier(&self) -> Arc<tokio::sync::Notify> {
