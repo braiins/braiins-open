@@ -245,7 +245,8 @@ impl ConnTranslation {
                             .await?;
                         }
                         None => {
-                            Err(format!("V2 client disconnected ({:?})", self.v2_peer_addr))?;
+                            debug!("Downstream tcp connection closed by peer {:?}", self.v2_peer_addr);
+                            return Ok(());
                         }
                     }
                 }
@@ -500,8 +501,8 @@ where
             .handle_connection(
                 v2_framed_stream,
                 // TODO: provide connection info instead of a pure peer address, for now we just
-                //  clone v1_addr
-                v1_peer_addr,
+                //  clone downstream peer
+                self.downstream_peer,
                 v1_framed_stream,
                 v1_peer_addr,
             )
@@ -520,7 +521,6 @@ where
                 if let Some(x) = metrics.as_ref() {
                     x.tcp_connection_close_ok();
                 }
-                debug!("Closing connection from {} ...", "N/A")
             }
             Err(err) => {
                 if let Some(x) = metrics.as_ref() {
