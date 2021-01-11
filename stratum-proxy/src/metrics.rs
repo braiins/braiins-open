@@ -105,6 +105,13 @@ impl ProxyCollectorBuilder {
                 "Total of TCP connections classified by 'accept' result",
                 &["result"], // Successful or Unsuccessful
             ),
+            tcp_socket_failure_threshold: self.0.register_histogram_vec(
+                "tcp_socket_failure_threshold",
+                "Number of tcp connection accept events before failure occurs",
+                &["result"],
+                ii_metrics::exponential_buckets(1.0, 10.0, 10)
+                    .expect("BUG: Invalid bucket definition"),
+            ),
         })
     }
 }
@@ -132,9 +139,14 @@ pub struct ProxyMetrics {
     v1_request_duration_seconds: HistogramVec,
     /// This counter is reset every time new TcpListener is bound
     tcp_connection_accepts_per_socket: IntCounterVec,
+    /// Number of tcp connection accept events before failure occurs
+    tcp_socket_failure_threshold: HistogramVec,
 }
 
 impl ProxyMetrics {
+    const SUCCESS_LABEL: &'static str = "success";
+    const ERROR_LABEL: &'static str = "error";
+
     /// Helper that accounts a share if `target` is provided among timeseries specified by
     /// `label_values`. If no target is specified only submit is accounted
     fn account_share(&self, target: Option<U256>, label_values: &[&str]) {
@@ -178,13 +190,13 @@ impl ProxyMetrics {
     pub fn account_successful_tcp_open(&self) {
         self.tcp_connection_open_total.inc();
         self.tcp_connection_accepts_per_socket
-            .with_label_values(&["successful"])
+            .with_label_values(&[Self::SUCCESS_LABEL])
             .inc();
     }
 
     pub fn account_unsuccessful_tcp_open(&self) {
         self.tcp_connection_accepts_per_socket
-            .with_label_values(&["unsuccessful"])
+            .with_label_values(&[Self::ERROR_LABEL])
             .inc();
     }
 
@@ -193,7 +205,7 @@ impl ProxyMetrics {
         request_method: ii_stratum::v1::rpc::Method,
         duration: Duration,
     ) {
-        self.observe_v1_request_duration(request_method, duration, "success");
+        self.observe_v1_request_duration(request_method, duration, Self::SUCCESS_LABEL);
     }
 
     pub fn observe_v1_request_error(
@@ -201,7 +213,7 @@ impl ProxyMetrics {
         request_method: ii_stratum::v1::rpc::Method,
         duration: Duration,
     ) {
-        self.observe_v1_request_duration(request_method, duration, "error");
+        self.observe_v1_request_duration(request_method, duration, Self::ERROR_LABEL);
     }
 
     pub fn tcp_connection_timer_observe(&self, timer: Instant) {
@@ -218,7 +230,23 @@ impl ProxyMetrics {
     }
 
     pub fn reset_tcp_conn_accepts_per_socket(&self) {
-        self.tcp_connection_accepts_per_socket.reset()
+        let errors = self
+            .tcp_connection_accepts_per_socket
+            .get_metric_with_label_values(&[Self::ERROR_LABEL])
+            .expect("BUG: invalid value chosen")
+            .get();
+        let successes = self
+            .tcp_connection_accepts_per_socket
+            .get_metric_with_label_values(&[Self::SUCCESS_LABEL])
+            .expect("BUG: invalid value chosen")
+            .get();
+        self.tcp_connection_accepts_per_socket.reset();
+        self.tcp_socket_failure_threshold
+            .with_label_values(&[Self::ERROR_LABEL])
+            .observe(errors as f64);
+        self.tcp_socket_failure_threshold
+            .with_label_values(&[Self::SUCCESS_LABEL])
+            .observe(successes as f64);
     }
 
     pub fn accounted_spawn<T>(self: &Arc<Self>, future: T) -> tokio::task::JoinHandle<T::Output>
