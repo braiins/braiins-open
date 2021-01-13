@@ -229,7 +229,10 @@ impl ProxyMetrics {
         self.tcp_connection_close_stage.inc_by_error(error)
     }
 
-    pub fn reset_tcp_conn_accepts_per_socket(&self) {
+    /// Helper for debugging TCP listener issues where it starts spinning for unknown reason
+    /// emitting errors. It tracks how many TCP connections have been successfully accepted until
+    /// TCP listener needs to be restarted due to the failure
+    pub fn account_tcp_listener_breakdown(&self) {
         let errors = self
             .tcp_connection_accepts_per_socket
             .get_metric_with_label_values(&[Self::ERROR_LABEL])

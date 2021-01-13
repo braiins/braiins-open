@@ -606,7 +606,7 @@ where
 
     async fn bind_new_socket(&mut self) -> Result<()> {
         if let Some(metrics) = self.metrics.as_ref() {
-            metrics.reset_tcp_conn_accepts_per_socket();
+            metrics.account_tcp_listener_breakdown();
         }
         self.server.replace(
             TcpListener::bind(self.listen_socket)

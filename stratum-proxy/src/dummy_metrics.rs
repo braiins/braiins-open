@@ -47,7 +47,7 @@ impl ProxyMetrics {
 
     pub fn tcp_connection_close_with_error(&self, _error: &crate::error::Error) {}
 
-    pub fn reset_tcp_conn_accepts_per_socket(&self) {}
+    pub fn account_tcp_listener_breakdown(&self) {}
 
     pub fn accounted_spawn<T>(
         self: &std::sync::Arc<Self>,
