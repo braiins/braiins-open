@@ -667,45 +667,53 @@ where
                     break
                 }
             };
-            if let Ok((stream, peer)) = tcp_accept_result {
-                debug!("Connection accepted from {}", peer);
-                if let Some(metrics) = self.metrics.as_ref() {
-                    // TODO eliminate duplicate code for metrics accounting, consider moving the inc_by_error
-                    //  to the caller. The problem is that it would not be as transparent due to
-                    metrics.account_successful_tcp_open();
+            match tcp_accept_result {
+                Ok((stream, peer)) => {
+                    debug!("Connection accepted from {}", peer);
+                    if let Some(metrics) = self.metrics.as_ref() {
+                        // TODO eliminate duplicate code for metrics accounting, consider moving the inc_by_error
+                        //  to the caller. The problem is that it would not be as transparent due to
+                        metrics.account_successful_tcp_open();
+                    }
+                    if let Err(err) = self.accept(stream, peer) {
+                        debug!("Connection error: {}", err);
+                    }
                 }
-                if let Err(err) = self.accept(stream, peer) {
-                    debug!("Connection error: {}", err);
-                }
-            } else {
-                warn!("TcpListener failed to provide functional TcpStream");
-                if let Some(metrics) = self.metrics.as_ref() {
-                    metrics.account_unsuccessful_tcp_open();
-                }
+                Err(accept_error) => {
+                    warn!(
+                        "TcpListener failed to provide functional TcpStream: {}",
+                        accept_error
+                    );
+                    if let Some(metrics) = self.metrics.as_ref() {
+                        metrics.account_unsuccessful_tcp_open();
+                    }
 
-                if let Some(last_fail) = latest_connection_accept_failure.replace(Instant::now()) {
-                    // If the latest connection-accept event was less then millisecond ago,
-                    // create drop the listener and bind again.
-                    if last_fail.elapsed() < Duration::from_millis(1) {
-                        info!("Trying to rebind new TcpListener");
-                        // This doesn't affect existing connections
-                        drop(inbound_conections);
-                        // Wait a little to let system close the socket before trying to create a new one
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                        inbound_conections = loop {
-                            match self.bind_new_socket().await {
-                                Ok(()) => {
-                                    info!("TcpListener successfully bound");
-                                    break self.server.take().expect(
-                                        "BUG: Missing TcpStream right after successful binding",
-                                    );
+                    if let Some(last_fail) =
+                        latest_connection_accept_failure.replace(Instant::now())
+                    {
+                        // If the latest connection-accept event was less then millisecond ago,
+                        // create drop the listener and bind again.
+                        if last_fail.elapsed() < Duration::from_millis(1) {
+                            info!("Trying to rebind new TcpListener");
+                            // This doesn't affect existing connections
+                            drop(inbound_conections);
+                            // Wait a little to let system close the socket before trying to create a new one
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                            inbound_conections = loop {
+                                match self.bind_new_socket().await {
+                                    Ok(()) => {
+                                        info!("TcpListener successfully bound");
+                                        break self.server.take().expect(
+                                            "BUG: Missing TcpStream right after successful binding",
+                                        );
+                                    }
+                                    Err(e) => {
+                                        warn!("TcpListener cannot be bound: {}", e);
+                                        tokio::time::sleep(Duration::from_millis(1000)).await;
+                                    }
                                 }
-                                Err(e) => {
-                                    warn!("TcpListener cannot be bound: {}", e);
-                                    tokio::time::sleep(Duration::from_millis(1000)).await;
-                                }
-                            }
-                        };
+                            };
+                        }
                     }
                 }
             }
