@@ -143,20 +143,34 @@ pub struct SubmitSharesStandard {
     pub version: u32,
 }
 
+/// Response to SubmitShares or SubmitSharesExtended, accepting results from the miner.
+/// Because it is a common case that shares submission is successful, this response can be
+/// provided for multiple SubmitShare messages aggregated together.
 #[id(0x1cu8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitSharesSuccess {
+    /// Channel identifier.
     pub channel_id: u32,
+    /// Most recent sequence number with a correct result
     pub last_seq_num: u32,
+    /// Most recent sequence number with a correct result
     pub new_submits_accepted_count: u32,
+    /// Most recent sequence number with a correct result.
     pub new_shares_sum: u32,
 }
 
+/// An error is immediately submitted for every incorrect submit attempt. In case the server is
+/// not able to immediately validate the submission, the error is sent as soon as the result is
+/// known. This delayed validation can occur when a miner gets faster updates about a new prevhash
+/// than the server does (see NewPrevHash message for details).
 #[id(0x1du8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SubmitSharesError {
+    /// Channel identifier.
     pub channel_id: u32,
+    /// Submission sequence number for which this error is returned.
     pub seq_num: u32,
+    /// Human-readable error code(s). See Error Codes section, below
     pub code: Str0_32,
 }
 
