@@ -23,7 +23,7 @@
 //! This module provides custom types used in Stratum V2 messages
 
 pub use std::convert::{TryFrom, TryInto};
-use std::fmt::{self, Debug};
+use std::fmt::{self, Debug, Formatter};
 use std::ops::Deref;
 
 use serde::{Deserialize, Serialize};
@@ -32,21 +32,35 @@ use crate::v1::HexBytes;
 use primitive_types::U256;
 
 // TODO consolidate the u8;32 copied all over the place into an alias
-//type Uint256Inner = [u8; 32];
+type Uint256Inner = [u8; 32];
 
 /// Custom type for serializing the sha256 values
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
-pub struct Uint256Bytes(pub [u8; 32]);
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
+pub struct Uint256Bytes(pub Uint256Inner);
+
+/// Little endian bytes
+impl Debug for Uint256Bytes {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let hex = self
+            .0
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .chain(std::iter::repeat("00".to_string()))
+            .take(32)
+            .fold(String::new(), |p, b| p + &b);
+        write!(f, "{}", hex)
+    }
+}
 
 // TODO review whether Deref might be suitable
-impl AsRef<[u8; 32]> for Uint256Bytes {
-    fn as_ref(&self) -> &[u8; 32] {
+impl AsRef<Uint256Inner> for Uint256Bytes {
+    fn as_ref(&self) -> &Uint256Inner {
         &self.0
     }
 }
 
-impl AsMut<[u8; 32]> for Uint256Bytes {
-    fn as_mut(&mut self) -> &mut [u8; 32] {
+impl AsMut<Uint256Inner> for Uint256Bytes {
+    fn as_mut(&mut self) -> &mut Uint256Inner {
         &mut self.0
     }
 }
@@ -178,7 +192,7 @@ macro_rules! sized_string_type {
 
 macro_rules! sized_bytes_type {
     ($name:ident, $min_len:expr, $max_len:expr) => {
-        #[derive(PartialEq, Eq, Serialize, Deserialize, Default, Clone, Debug)]
+        #[derive(PartialEq, Eq, Serialize, Deserialize, Default, Clone)]
         pub struct $name(Box<[u8]>);
 
         impl $name {
@@ -204,6 +218,16 @@ macro_rules! sized_bytes_type {
                     stringify!($name),
                     " - slice length out of range."
                 ))
+            }
+        }
+        impl Debug for $name {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                let hex = self
+                    .0
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .fold(String::new(), |p, b| p + &b);
+                write!(f, "{}({})", stringify!($name), hex)
             }
         }
 

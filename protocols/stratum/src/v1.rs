@@ -26,6 +26,7 @@ pub mod messages;
 pub mod rpc;
 
 use std::convert::TryFrom;
+use std::fmt::{self, Debug, Formatter};
 use std::mem::size_of;
 
 use bitcoin_hashes::hex::{FromHex, ToHex};
@@ -51,6 +52,13 @@ impl crate::Protocol for Protocol {
     type Header = MessageId;
 }
 
+fn to_le_hex_string(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .fold(String::new(), |p, b| p + &b)
+}
+
 /// Extranonce 1 introduced as new type to provide shared conversions to/from string
 /// TODO: find out correct byte order for extra nonce 1
 /// TODO: implement deref trait consolidate use of extra nonce 1
@@ -59,9 +67,15 @@ pub struct ExtraNonce1(pub HexBytes);
 
 /// Helper type that allows simple serialization and deserialization of byte vectors
 /// that are represented as hex strings in JSON
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(into = "String", from = "String")]
 pub struct HexBytes(Vec<u8>);
+
+impl Debug for HexBytes {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", to_le_hex_string(&self.0))
+    }
+}
 
 impl HexBytes {
     pub fn len(&self) -> usize {
@@ -116,9 +130,16 @@ impl Into<String> for HexBytes {
 
 /// PrevHash in Stratum V1 has brain-damaged serialization as it swaps bytes of very u32 word
 /// into big endian. Therefore, we need a special type for it
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(into = "String", from = "String")]
 pub struct PrevHash(Vec<u8>);
+
+impl Debug for PrevHash {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let hex = to_le_hex_string(&self.0);
+        write!(f, "PrevHash({})", hex)
+    }
+}
 
 impl PrevHash {
     pub fn len(&self) -> usize {
@@ -193,9 +214,15 @@ impl Into<String> for PrevHash {
 }
 
 /// Little-endian hex encoded u32
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(into = "String", from = "String")]
 pub struct HexU32Le(pub u32);
+
+impl Debug for HexU32Le {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:x}", self.0)
+    }
+}
 
 impl TryFrom<&str> for HexU32Le {
     type Error = crate::error::Error;
@@ -224,9 +251,15 @@ impl Into<String> for HexU32Le {
 
 /// Big-endian alternative of the HexU32
 /// TODO: find out how to consolidate/parametrize it with generic parameters
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(into = "String", from = "String")]
 pub struct HexU32Be(pub u32);
+
+impl Debug for HexU32Be {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:x}", self.0)
+    }
+}
 
 impl TryFrom<&str> for HexU32Be {
     type Error = crate::error::Error;
