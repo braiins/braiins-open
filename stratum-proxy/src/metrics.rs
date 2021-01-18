@@ -53,7 +53,7 @@ impl TcpConnectionCloseTotal {
         self.0.with_label_values(&[stage_label]).inc();
     }
     pub fn inc_as_ok(&self) {
-        self.0.with_label_values(&["ok"]);
+        self.0.with_label_values(&["ok"]).inc();
     }
 }
 
@@ -70,8 +70,8 @@ impl ProxyCollectorBuilder {
 
         Arc::new(ProxyMetrics {
             tokio_tasks: self.0.register_generic_gauge(
-                "runing_tokio_tasks",
-                "Number of running tokio tasks related to connection translations",
+                "mining_session_tokio_tasks",
+                "Number of running tokio tasks related to translation sessions",
             ),
             tcp_connection_open_total: self.0.register_generic_counter(
                 "tcp_connection_open_total",
