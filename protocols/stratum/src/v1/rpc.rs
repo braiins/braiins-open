@@ -73,7 +73,7 @@ pub enum Method {
 
 /// The motivation is to provide only the payload part of the message to ID
 /// handling
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct RequestPayload {
     /// Protocol method to be 'called'.
     /// If not recognized, the method string is stored in `Err`.
@@ -83,7 +83,7 @@ pub struct RequestPayload {
 }
 
 /// Generic stratum request
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Request {
     /// Optional identifier for pairing with the response. Empty ID is a notification
     pub id: MessageId,
@@ -196,7 +196,7 @@ pub type ResponsePayload = StdResult<StratumResult, StratumError>;
 ///
 /// The response maybe optionally paired via 'id' with original request. Empty ID
 /// represents a notification.
-#[derive(PartialEq, Debug, Deserialize, Serialize)]
+#[derive(PartialEq, Debug, Deserialize, Serialize, Clone)]
 pub struct Response {
     /// Response pairing identifier
     pub id: u32,
@@ -258,7 +258,7 @@ impl TryFrom<Response> for ResponsePayload {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum Rpc {
     Request(Request),
