@@ -1438,7 +1438,7 @@ impl V2ToV1Translation {
         msg: v2::messages::SubmitSharesStandard,
     ) -> Result<()> {
         trace!(
-            "handle_submit_shares_standard() state={:?} payload:{:?}",
+            "handle_submit_shares_standard() state={:?} payload:{:02x?}",
             self.state,
             msg,
         );
