@@ -355,6 +355,18 @@ impl V2ToV1Translation {
         )
     }
 
+    fn submit_v2_message<M>(&mut self, message: M) -> Result<()>
+    where
+        M: TryInto<v2::Frame> + fmt::Debug + Clone,
+        <M as TryInto<v2::Frame>>::Error: fmt::Debug,
+    {
+        if let Err(e) = util::submit_message(&mut self.v2_tx, message.clone()) {
+            debug!("Cannot submit {:?}: {}", message, e);
+            return Err(e);
+        }
+        Ok(())
+    }
+
     /// Builds a V1 request from V1 method and assigns a unique identifier to it
     fn v1_method_into_message<M>(
         &mut self,
@@ -414,7 +426,7 @@ impl V2ToV1Translation {
                 extranonce_prefix: Bytes0_32::new(),
                 group_channel_id: Self::DEFAULT_GROUP_CHANNEL_ID,
             };
-            util::submit_message(&mut self.v2_tx, msg)?;
+            self.submit_v2_message(msg)?;
 
             // If mining.notify is pending, process it now as part of open channel finalization
             if let Some(notify_payload) = self.v1_deferred_notify.take() {
@@ -445,7 +457,7 @@ impl V2ToV1Translation {
             max_target,
         };
 
-        util::submit_message(&mut self.v2_tx, msg)
+        self.submit_v2_message(msg)
     }
 
     /// Reports failure to open the channel and changes the translation state
@@ -470,7 +482,7 @@ impl V2ToV1Translation {
             };
             self.v2_channel_details = None;
 
-            if let Err(submit_err) = util::submit_message(&mut self.v2_tx, msg) {
+            if let Err(submit_err) = self.submit_v2_message(msg) {
                 info!(
                     "abort_open_channel() failed: {:?}, abort message: {}",
                     submit_err, err_msg
@@ -514,21 +526,19 @@ impl V2ToV1Translation {
         {
             self.state = V2ToV1TranslationState::ConnectionSetup;
 
-            let success = v2::messages::SetupConnectionSuccess {
+            self.submit_v2_message(v2::messages::SetupConnectionSuccess {
                 used_version: Self::PROTOCOL_VERSION as u16,
                 flags: 0,
-            };
-            util::submit_message(&mut self.v2_tx, success)
+            })
         } else {
             // TODO consolidate into abort_connection() + communicate shutdown of this
             // connection similarly everywhere in the code
-            let response = v2::messages::SetupConnectionError {
+            self.submit_v2_message(v2::messages::SetupConnectionError {
                 flags: 0, // TODO handle flags
                 code: "Cannot negotiate upstream V1 version mask"
                     .try_into()
                     .expect("BUG: incorrect error message"),
-            };
-            util::submit_message(&mut self.v2_tx, response)
+            })
         }
     }
 
@@ -545,13 +555,12 @@ impl V2ToV1Translation {
         );
         // TODO consolidate into abort_connection() + communicate shutdown of this
         // connection similarly everywhere in the code
-        let response = v2::messages::SetupConnectionError {
+        self.submit_v2_message(v2::messages::SetupConnectionError {
             flags: 0, // TODO handle flags
             code: "Cannot negotiate upstream V1 version mask"
                 .try_into()
                 .expect("BUG: incorrect error message"),
-        };
-        util::submit_message(&mut self.v2_tx, response)
+        })
     }
 
     fn handle_extranonce_subscribe_result(
@@ -868,24 +877,19 @@ impl V2ToV1Translation {
             }
             match self.v2_submit_share_queue.pop_front() {
                 Some(SubmitShare::SubmitSharesError(submit_shares_error_msg)) => {
-                    util::submit_message(&mut self.v2_tx, submit_shares_error_msg).map_err(
-                        |e| {
-                            info!("Cannot send 'SubmitSharesError': {:?}", e);
-                            e
-                        },
-                    )?;
+                    self.submit_v2_message(submit_shares_error_msg)?;
                 }
                 _ => panic!("BUG: unexpected submit share item"),
             }
         }
     }
 
-    fn submit_share_response<T, E>(&mut self, msg: T, err_msg: &str) -> Result<()>
+    fn submit_share_response<T>(&mut self, msg: T, err_msg: &str) -> Result<()>
     where
-        E: fmt::Debug,
-        T: TryInto<v2::Frame, Error = E>,
+        T: TryInto<v2::Frame> + fmt::Debug + Clone,
+        <T as TryInto<v2::Frame>>::Error: fmt::Debug,
     {
-        util::submit_message(&mut self.v2_tx, msg).map_err(|e| {
+        self.submit_v2_message(msg).map_err(|e| {
             info!("Cannot send '{}': {:?}", err_msg, e);
             e
         })?;
@@ -1011,10 +1015,10 @@ impl V2ToV1Translation {
             panic!("V2 id already exists");
         }
 
-        util::submit_message(&mut self.v2_tx, v2_job)?;
+        self.submit_v2_message(v2_job)?;
 
         if let Some(set_new_prev_hash) = maybe_set_new_prev_hash {
-            util::submit_message(&mut self.v2_tx, set_new_prev_hash)?
+            self.submit_v2_message(set_new_prev_hash)?
         }
         Ok(())
     }
@@ -1277,9 +1281,7 @@ impl V2ToV1Translation {
             let (new_host, new_port) = Self::parse_client_reconnect(&msg)
                 .map_err(|e| Error::General(format!("visit_client_reconnect failed: {}", e)))?;
 
-            let reconnect_msg = v2::messages::Reconnect { new_host, new_port };
-
-            util::submit_message(&mut self.v2_tx, reconnect_msg)
+            self.submit_v2_message(v2::messages::Reconnect { new_host, new_port })
                 .map_err(|e| Error::General(format!("Cannot send 'Reconnect': {:?}", e)))?;
         }
         Ok(())
@@ -1329,12 +1331,7 @@ impl V2ToV1Translation {
                 flags: msg.flags, // TODO Flags indicating features causing an error
             };
 
-            if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg)
-                .map_err(V2ProtocolError::setup_connection)
-            {
-                info!("Cannot submit SetupConnectionError: {:?}", submit_err);
-                Err(submit_err)?;
-            }
+            self.submit_v2_message(err_msg)?;
         }
 
         self.v2_conn_details = Some(msg.clone());
@@ -1386,15 +1383,8 @@ impl V2ToV1Translation {
                     .expect("BUG: incorrect error message"),
             };
 
-            if let Err(submit_err) = util::submit_message(&mut self.v2_tx, err_msg)
-                .map_err(V2ProtocolError::open_mining_channel)
-            {
-                info!(
-                    "Cannot send OpenMiningChannelError message: {:?}",
-                    submit_err
-                );
-                Err(submit_err)?;
-            }
+            self.submit_v2_message(err_msg)
+                .map_err(V2ProtocolError::open_mining_channel)?
         }
         // Connection details are present by now
         if let Some(conn_details) = self.v2_conn_details.as_ref() {
