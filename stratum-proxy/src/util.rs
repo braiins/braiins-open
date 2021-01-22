@@ -27,11 +27,11 @@ use crate::error::Result;
 
 /// Converts the response message into a `Frame` and submits it into the
 /// specified queue
-pub fn submit_message<F, T, E>(tx: &mut mpsc::Sender<F>, msg: T) -> Result<()>
+pub fn submit_message<F, T>(tx: &mut mpsc::Sender<F>, msg: T) -> Result<()>
 where
     F: Send + Sync + 'static,
-    E: fmt::Debug,
-    T: TryInto<F, Error = E>,
+    T: TryInto<F>,
+    <T as TryInto<F>>::Error: fmt::Debug,
 {
     let frame = msg
         .try_into()

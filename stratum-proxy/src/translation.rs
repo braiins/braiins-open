@@ -318,16 +318,53 @@ impl V2ToV1Translation {
         }
     }
 
+    fn submit_v1_request_message<M>(
+        &mut self,
+        message: M,
+        result_handler: V1StratumResultHandler,
+        error_handler: V1StratumErrorHandler,
+    ) -> Result<u32>
+    where
+        M: TryInto<v1::rpc::RequestPayload> + Clone + fmt::Debug,
+        <M as TryInto<v1::rpc::RequestPayload>>::Error: fmt::Debug,
+    {
+        let (req_id, request_rpc) =
+            self.v1_method_into_message(message.clone(), result_handler, error_handler);
+        if let Err(submit_err) = util::submit_message(&mut self.v1_tx, request_rpc)
+            .map_err(V2ProtocolError::setup_connection)
+        {
+            debug!("Cannot submit {:?} request: {:?}", message, submit_err);
+            Err(submit_err)?;
+        }
+        Ok(req_id)
+    }
+
+    fn submit_v1_response_message(
+        &mut self,
+        message_id: MessageId,
+        stratum_result: Option<v1::rpc::StratumResult>,
+    ) -> Result<()> {
+        use v1::rpc::{Response, Rpc};
+        util::submit_message(
+            &mut self.v1_tx,
+            Rpc::Response(Response {
+                id: message_id.unwrap_or_default(),
+                stratum_result,
+                stratum_error: None,
+            }),
+        )
+    }
+
     /// Builds a V1 request from V1 method and assigns a unique identifier to it
-    fn v1_method_into_message<M, E>(
+    fn v1_method_into_message<M>(
         &mut self,
         method: M,
         result_handler: V1StratumResultHandler,
         error_handler: V1StratumErrorHandler,
-    ) -> v1::rpc::Rpc
+    ) -> (u32, v1::rpc::Rpc)
     where
-        E: fmt::Debug,
-        M: TryInto<v1::rpc::RequestPayload, Error = E>,
+        M: TryInto<v1::rpc::RequestPayload>,
+        <M as TryInto<v1::rpc::RequestPayload>>::Error: fmt::Debug,
     {
         let payload = method
             .try_into()
@@ -349,11 +386,13 @@ impl V2ToV1Translation {
             panic!("V1 id already exists");
         }
 
-        v1::rpc::Request {
-            id: Some(id),
-            payload,
-        }
-        .into()
+        (
+            id,
+            v1::rpc::Rpc::from(v1::rpc::Request {
+                id: Some(id),
+                payload,
+            }),
+        )
     }
 
     /// Sets the current pending channel to operational state and submits success message
@@ -1252,14 +1291,10 @@ impl V2ToV1Translation {
         let stratum_result = v1::rpc::ResponsePayload::try_from(msg)
             .expect("BUG: Pong response to ping couldn't be serialized")
             .ok();
-        let rpc_pld = v1::rpc::Response {
-            id: payload.0.unwrap_or_default(),
-            stratum_result,
-            stratum_error: None,
-        };
-        util::submit_message(&mut self.v1_tx, v1::rpc::Rpc::Response(rpc_pld)).map_err(|e| {
-            Error::General(format!("Cannot send ping response to mining.ping: {:?}", e))
-        })
+        self.submit_v1_response_message(payload.0, stratum_result)
+            .map_err(|e| {
+                Error::General(format!("Cannot send ping response to mining.ping: {:?}", e))
+            })
     }
 
     #[handle(_)]
@@ -1311,17 +1346,11 @@ impl V2ToV1Translation {
             ))
             .expect("BUG: addfeature failed"); // FIXME: how to handle errors from configure.add_feature() ?
 
-        let v1_configure_message = self.v1_method_into_message(
+        self.submit_v1_request_message(
             configure,
             Self::handle_configure_result,
             Self::handle_configure_error,
-        );
-        if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_configure_message)
-            .map_err(V2ProtocolError::setup_connection)
-        {
-            debug!("Cannot submit mining.configure: {:?}", submit_err);
-            Err(submit_err)?;
-        }
+        )?;
         self.state = V2ToV1TranslationState::V1Configure;
         Ok(())
     }
@@ -1386,53 +1415,30 @@ impl V2ToV1Translation {
                 port: None,
             };
 
-            let v1_subscribe_message = self.v1_method_into_message(
+            self.submit_v1_request_message(
                 subscribe,
                 Self::handle_subscribe_result,
                 Self::handle_authorize_or_subscribe_error,
-            );
-
-            if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_subscribe_message)
-                .map_err(V2ProtocolError::open_mining_channel)
-            {
-                info!("Cannot send V1 mining.subscribe: {:?}", submit_err);
-                Err(submit_err)?;
-            }
+            )?;
 
             if self.options.try_enable_xnsub {
                 let extranonce_subscribe = v1::messages::ExtranonceSubscribe;
-                let v1_extranonce_subscribe = self.v1_method_into_message(
+                self.submit_v1_request_message(
                     extranonce_subscribe,
                     Self::handle_extranonce_subscribe_result,
                     Self::handle_extranonce_subscribe_error,
-                );
-                if let Err(submit_err) =
-                    util::submit_message(&mut self.v1_tx, v1_extranonce_subscribe)
-                        .map_err(V2ProtocolError::open_mining_channel)
-                {
-                    info!(
-                        "Cannot send V1 mining.extranonce_subscribe: {:?}",
-                        submit_err
-                    );
-                    Err(submit_err)?;
-                }
+                )?;
             }
 
             let authorize = v1::messages::Authorize {
                 name: msg.user.to_string(),
                 password: self.v1_password.clone(),
             };
-            let v1_authorize_message = self.v1_method_into_message(
+            self.submit_v1_request_message(
                 authorize,
                 Self::handle_authorize_result,
                 Self::handle_authorize_or_subscribe_error,
-            );
-            if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_authorize_message)
-                .map_err(V2ProtocolError::open_mining_channel)
-            {
-                info!("Cannot send V1 mining.authorized: {:?}", submit_err);
-                Err(submit_err)?;
-            }
+            )?;
         }
         Ok(())
     }
@@ -1501,32 +1507,13 @@ impl V2ToV1Translation {
                     msg.version & ii_stratum::BIP320_N_VERSION_MASK,
                 );
                 // Convert the method into a message + provide handling methods
-                let v1_submit_message = self.v1_method_into_message(
+                let v1_seq_num = self.submit_v1_request_message(
                     submit,
                     Self::handle_submit_result,
                     Self::handle_submit_error,
-                );
-
-                let v1_seq_num = if let v1::rpc::Rpc::Request(r) = &v1_submit_message {
-                    r.id.expect("BUG: missing v1 request ID")
-                } else {
-                    panic!("BUG: expected v1 share request");
-                };
-
-                if let Err(submit_err) = util::submit_message(&mut self.v1_tx, v1_submit_message) {
-                    info!(
-                        "SubmitSharesStandard: cannot send translated V1 message: {:?}",
-                        submit_err
-                    );
-                    let _ = self.reject_shares(
-                        msg.channel_id,
-                        SeqNum::V2(msg.seq_num),
-                        format!("{}", submit_err),
-                    );
-                } else {
-                    self.v2_submit_share_queue
-                        .push_back(SubmitShare::V1ToV2Mapping(v1_seq_num, msg.seq_num));
-                }
+                )?;
+                self.v2_submit_share_queue
+                    .push_back(SubmitShare::V1ToV2Mapping(v1_seq_num, msg.seq_num));
             }
             Err(e) => {
                 let _ =
