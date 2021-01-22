@@ -334,7 +334,10 @@ impl V2ToV1Translation {
             .map_err(V2ProtocolError::setup_connection)
         {
             debug!("Cannot submit {:?} request: {:?}", message, submit_err);
-            Err(submit_err)?;
+            return Err(submit_err.into());
+        }
+        if let Some(metrics) = &self.metrics {
+            metrics.enqueue_upstream_outgoing();
         }
         Ok(req_id)
     }
@@ -352,7 +355,11 @@ impl V2ToV1Translation {
                 stratum_result,
                 stratum_error: None,
             }),
-        )
+        )?;
+        if let Some(metrics) = &self.metrics {
+            metrics.enqueue_upstream_outgoing();
+        }
+        Ok(())
     }
 
     fn submit_v2_message<M>(&mut self, message: M) -> Result<()>
@@ -363,6 +370,9 @@ impl V2ToV1Translation {
         if let Err(e) = util::submit_message(&mut self.v2_tx, message.clone()) {
             debug!("Cannot submit {:?}: {}", message, e);
             return Err(e);
+        }
+        if let Some(metrics) = &self.metrics {
+            metrics.enqueue_downstream_outgoing();
         }
         Ok(())
     }

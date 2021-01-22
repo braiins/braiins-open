@@ -159,6 +159,7 @@ impl ConnTranslation {
         mut conn_sender: S,
         mut translation_receiver: mpsc::Receiver<v2::Frame>,
         peer_addr: SocketAddr,
+        metrics: Option<Arc<ProxyMetrics>>,
     ) -> Result<()>
     where
         S: v2::FramedSink,
@@ -168,9 +169,12 @@ impl ConnTranslation {
             // added
             select! {
                 // Send out frames translated into V2
-                v2_translated_frame = translation_receiver.next().fuse() => {
+                v2_translated_frame = translation_receiver.next() => {
                     Self::v2_try_send_frame(&mut conn_sender, v2_translated_frame, &peer_addr)
-                        .await?
+                        .await?;
+                    if let Some(metrics) = &metrics {
+                        metrics.dequeue_downstream_outgoing();
+                    }
                 },
             }
         }
@@ -185,6 +189,7 @@ impl ConnTranslation {
         let (mut v1_conn_tx, mut v1_conn_rx) = self.v1_conn.split();
         let (v2_conn_tx, mut v2_conn_rx) = self.v2_conn.split();
 
+        let metrics = self.metrics.clone();
         // TODO factor out the frame pumping functionality and append the JoinHandle of this task
         //  to the select statement to detect any problems and to terminate the translation, too
         // V1 message send out loop
@@ -194,6 +199,9 @@ impl ConnTranslation {
                     warn!("V1 connection failed: {}", err);
                     break;
                 }
+                if let Some(metrics) = &metrics {
+                    metrics.dequeue_upstream_outgoing();
+                }
             }
         };
         if let Some(metrics) = self.metrics.as_ref() {
@@ -202,6 +210,7 @@ impl ConnTranslation {
                 v2_conn_tx,
                 self.v2_translation_rx,
                 self.v2_peer_addr,
+                self.metrics.clone(),
             ));
         } else {
             tokio::spawn(v1_send_task);
@@ -209,6 +218,7 @@ impl ConnTranslation {
                 v2_conn_tx,
                 self.v2_translation_rx,
                 self.v2_peer_addr,
+                self.metrics.clone(),
             ));
         }
 

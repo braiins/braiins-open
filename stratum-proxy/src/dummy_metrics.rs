@@ -59,4 +59,8 @@ impl ProxyMetrics {
     {
         tokio::spawn(future)
     }
+    pub fn enqueue_upstream_outgoing(&self) {}
+    pub fn dequeue_upstream_outgoing(&self) {}
+    pub fn enqueue_downstream_outgoing(&self) {}
+    pub fn dequeue_downstream_outgoing(&self) {}
 }

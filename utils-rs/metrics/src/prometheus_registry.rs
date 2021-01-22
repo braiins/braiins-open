@@ -25,7 +25,7 @@ pub use prometheus::{
     HistogramVec, IntCounter, IntCounterVec, TextEncoder, DEFAULT_BUCKETS,
 };
 
-use prometheus::core::{Atomic, GenericCounter, GenericCounterVec, GenericGauge};
+use prometheus::core::{Atomic, GenericCounter, GenericCounterVec, GenericGauge, GenericGaugeVec};
 use prometheus::Registry;
 
 /// Operates with Arc<prometheus::Registry>.
@@ -46,6 +46,20 @@ impl MetricsRegistry {
         help: &str,
     ) -> GenericGauge<T> {
         let counter = GenericGauge::with_opts(opts!(name, help))
+            .expect("BUG: Couldn't build generic_gauge with opts");
+        self.registry
+            .register(Box::new(counter.clone()))
+            .expect("BUG: Couldn't register generic_gauge");
+        counter
+    }
+
+    pub fn register_generic_gauge_vec<T: Atomic + 'static>(
+        &self,
+        name: &str,
+        help: &str,
+        label_names: &[&str],
+    ) -> GenericGaugeVec<T> {
+        let counter = GenericGaugeVec::new(opts!(name, help), label_names)
             .expect("BUG: Couldn't build generic_gauge with opts");
         self.registry
             .register(Box::new(counter.clone()))

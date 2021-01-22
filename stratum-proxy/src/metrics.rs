@@ -30,10 +30,9 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::time::Duration;
 
-use prometheus::IntGauge;
 pub use prometheus::{
     histogram_opts, opts, Encoder, Histogram, HistogramTimer, HistogramVec, IntCounter,
-    IntCounterVec, TextEncoder,
+    IntCounterVec, IntGauge, IntGaugeVec, TextEncoder,
 };
 
 #[derive(Debug)]
@@ -55,6 +54,13 @@ impl TcpConnectionCloseTotal {
     pub fn inc_as_ok(&self) {
         self.0.with_label_values(&["ok"]).inc();
     }
+}
+
+enum OutgoingFrameDirection {
+    IncrementUpstream,
+    DecrementUpstream,
+    IncrementDownstream,
+    DecrementDownstream,
 }
 
 #[derive(Default, Clone)]
@@ -112,6 +118,11 @@ impl ProxyCollectorBuilder {
                 ii_metrics::exponential_buckets(1.0, 10.0, 10)
                     .expect("BUG: Invalid bucket definition"),
             ),
+            outgoing_frames_queue: self.0.register_generic_gauge_vec(
+                "stratum_frame_outgoing_queue_proxy",
+                "Number of stratum frames waiting in an outgoing channel to be sent over tcp",
+                &["direction"],
+            ),
         })
     }
 }
@@ -141,6 +152,8 @@ pub struct ProxyMetrics {
     tcp_connection_accepts_per_socket: IntCounterVec,
     /// Number of tcp connection accept events before failure occurs
     tcp_socket_failure_threshold: HistogramVec,
+    /// Number of stratum frames waiting in an outgoing channel to be sent over tcp
+    outgoing_frames_queue: IntGaugeVec,
 }
 
 impl ProxyMetrics {
@@ -264,6 +277,38 @@ impl ProxyMetrics {
             self_clone.tokio_tasks.dec();
             output
         })
+    }
+
+    #[inline]
+    fn account_outgoing_frame(&self, direction: OutgoingFrameDirection) {
+        match direction {
+            OutgoingFrameDirection::IncrementDownstream => self
+                .outgoing_frames_queue
+                .with_label_values(&["down"])
+                .inc(),
+            OutgoingFrameDirection::IncrementUpstream => {
+                self.outgoing_frames_queue.with_label_values(&["up"]).inc()
+            }
+            OutgoingFrameDirection::DecrementDownstream => self
+                .outgoing_frames_queue
+                .with_label_values(&["down"])
+                .dec(),
+            OutgoingFrameDirection::DecrementUpstream => {
+                self.outgoing_frames_queue.with_label_values(&["up"]).dec()
+            }
+        }
+    }
+    pub fn enqueue_upstream_outgoing(&self) {
+        self.account_outgoing_frame(OutgoingFrameDirection::IncrementUpstream);
+    }
+    pub fn dequeue_upstream_outgoing(&self) {
+        self.account_outgoing_frame(OutgoingFrameDirection::DecrementUpstream);
+    }
+    pub fn enqueue_downstream_outgoing(&self) {
+        self.account_outgoing_frame(OutgoingFrameDirection::IncrementDownstream);
+    }
+    pub fn dequeue_downstream_outgoing(&self) {
+        self.account_outgoing_frame(OutgoingFrameDirection::DecrementDownstream);
     }
 }
 
