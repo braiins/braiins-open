@@ -46,7 +46,7 @@ use ii_unvariant::handler;
 
 use ii_logging::macros::*;
 
-use crate::error::{Error, Result, V2ProtocolError};
+use crate::error::{DownstreamError, Error, Result, UpstreamError, V2ProtocolError};
 use crate::metrics::ProxyMetrics;
 use crate::util;
 use std::sync::Arc;
@@ -330,12 +330,11 @@ impl V2ToV1Translation {
     {
         let (req_id, request_rpc) =
             self.v1_method_into_message(message.clone(), result_handler, error_handler);
-        if let Err(submit_err) = util::submit_message(&mut self.v1_tx, request_rpc)
-            .map_err(V2ProtocolError::setup_connection)
-        {
-            debug!("Cannot submit {:?} request: {:?}", message, submit_err);
-            return Err(submit_err.into());
-        }
+
+        util::submit_message(&mut self.v1_tx, request_rpc).map_err(|e| {
+            debug!("Cannot submit request upstream: {:?}", e);
+            UpstreamError::from(e)
+        })?;
         if let Some(metrics) = &self.metrics {
             metrics.enqueue_upstream_outgoing();
         }
@@ -367,10 +366,10 @@ impl V2ToV1Translation {
         M: TryInto<v2::Frame> + fmt::Debug + Clone,
         <M as TryInto<v2::Frame>>::Error: fmt::Debug,
     {
-        if let Err(e) = util::submit_message(&mut self.v2_tx, message.clone()) {
-            debug!("Cannot submit {:?}: {}", message, e);
-            return Err(e);
-        }
+        util::submit_message(&mut self.v2_tx, message).map_err(|e| {
+            debug!("Cannot submit message downstream: {}", e);
+            DownstreamError::from(e)
+        })?;
         if let Some(metrics) = &self.metrics {
             metrics.enqueue_downstream_outgoing();
         }

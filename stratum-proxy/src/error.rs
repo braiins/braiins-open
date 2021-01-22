@@ -22,6 +22,7 @@
 
 //! Module that represents custom stratum proxy errors
 
+use futures::channel::mpsc;
 use std::error::Error as StdError;
 use std::io;
 use thiserror::Error;
@@ -30,6 +31,8 @@ use ii_wire::proxy::error::Error as ProxyError;
 
 #[derive(Error, Debug)]
 pub enum DownstreamError {
+    #[error("Error on sending downstream: {0}")]
+    SendError(String),
     #[error("Early network error before any protocol communication started")]
     EarlyIo(std::io::Error),
     #[error("PROXY protocol error: {0}")]
@@ -42,6 +45,8 @@ pub enum DownstreamError {
 
 #[derive(Error, Debug)]
 pub enum UpstreamError {
+    #[error("Error on sending upstream: {0}")]
+    SendError(String),
     #[error("IO error: {0}")]
     Io(std::io::Error),
     #[error("PROXY protocol error: {0}")]
@@ -50,6 +55,18 @@ pub enum UpstreamError {
     Stratum(ii_stratum::error::Error),
     #[error("Timeout error: {0}")]
     Timeout(tokio::time::error::Elapsed),
+}
+
+impl<T> From<mpsc::TrySendError<T>> for UpstreamError {
+    fn from(e: mpsc::TrySendError<T>) -> Self {
+        UpstreamError::SendError(e.into_send_error().to_string())
+    }
+}
+
+impl<T> From<mpsc::TrySendError<T>> for DownstreamError {
+    fn from(e: mpsc::TrySendError<T>) -> Self {
+        DownstreamError::SendError(e.into_send_error().to_string())
+    }
 }
 
 #[derive(Error, Debug)]

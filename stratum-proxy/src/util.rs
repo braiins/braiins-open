@@ -23,11 +23,9 @@
 use futures::channel::mpsc;
 use std::{convert::TryInto, fmt};
 
-use crate::error::Result;
-
 /// Converts the response message into a `Frame` and submits it into the
 /// specified queue
-pub fn submit_message<F, T>(tx: &mut mpsc::Sender<F>, msg: T) -> Result<()>
+pub fn submit_message<F, T>(tx: &mut mpsc::Sender<F>, msg: T) -> Result<(), mpsc::TrySendError<F>>
 where
     F: Send + Sync + 'static,
     T: TryInto<F>,
@@ -36,5 +34,5 @@ where
     let frame = msg
         .try_into()
         .expect("BUG: Could convert the message to frame");
-    tx.try_send(frame).map_err(Into::into)
+    tx.try_send(frame)
 }
