@@ -893,15 +893,12 @@ impl V2ToV1Translation {
         }
     }
 
-    fn submit_share_response<T>(&mut self, msg: T, err_msg: &str) -> Result<()>
+    fn submit_share_response<T>(&mut self, msg: T) -> Result<()>
     where
         T: TryInto<v2::Frame> + fmt::Debug + Clone,
         <T as TryInto<v2::Frame>>::Error: fmt::Debug,
     {
-        self.submit_v2_message(msg).map_err(|e| {
-            info!("Cannot send '{}': {:?}", err_msg, e);
-            e
-        })?;
+        self.submit_v2_message(msg)?;
         self.submit_queued_share_responses()
     }
 
@@ -930,7 +927,7 @@ impl V2ToV1Translation {
             new_shares_sum: new_shares as u32,
         };
 
-        self.submit_share_response(success_msg, "SubmitSharesSuccess")
+        self.submit_share_response(success_msg)
     }
 
     /// Generates log trace entry and reject shares error reply to the client
@@ -965,7 +962,7 @@ impl V2ToV1Translation {
         };
 
         if submit {
-            self.submit_share_response(submit_shares_error_msg, "SubmitSharesError")
+            self.submit_share_response(submit_shares_error_msg)
         } else {
             self.v2_submit_share_queue
                 .push_back(SubmitShare::SubmitSharesError(submit_shares_error_msg));
@@ -1290,8 +1287,7 @@ impl V2ToV1Translation {
             let (new_host, new_port) = Self::parse_client_reconnect(&msg)
                 .map_err(|e| Error::General(format!("visit_client_reconnect failed: {}", e)))?;
 
-            self.submit_v2_message(v2::messages::Reconnect { new_host, new_port })
-                .map_err(|e| Error::General(format!("Cannot send 'Reconnect': {:?}", e)))?;
+            self.submit_v2_message(v2::messages::Reconnect { new_host, new_port })?;
         }
         Ok(())
     }
