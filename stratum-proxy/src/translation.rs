@@ -1489,8 +1489,8 @@ impl V2ToV1Translation {
             .map(|tmpl| tmpl.clone());
         // TODO validate the job (recalculate the hash and compare the target)
         // Submit upstream V1 job based on the found job ID in the map
-        match v1_submit_template {
-            Ok(v1_submit_template) => {
+        let submit_result = v1_submit_template
+            .and_then(|v1_submit_template| {
                 let submit = v1::messages::Submit::new(
                     v2_channel_details.user.to_string(),
                     v1_submit_template.job_id.clone(),
@@ -1502,18 +1502,20 @@ impl V2ToV1Translation {
                     msg.version & ii_stratum::BIP320_N_VERSION_MASK,
                 );
                 // Convert the method into a message + provide handling methods
-                let v1_seq_num = self.submit_v1_request_message(
+                self.submit_v1_request_message(
                     submit,
                     Self::handle_submit_result,
                     Self::handle_submit_error,
-                )?;
+                )
+            })
+            .and_then(|v1_seq_num| {
                 self.v2_submit_share_queue
                     .push_back(SubmitShare::V1ToV2Mapping(v1_seq_num, msg.seq_num));
-            }
-            Err(e) => {
-                let _ =
-                    self.reject_shares(msg.channel_id, SeqNum::V2(msg.seq_num), format!("{}", e));
-            }
+                Ok(())
+            });
+        if let Err(e) = submit_result {
+            self.reject_shares(msg.channel_id, SeqNum::V2(msg.seq_num), format!("{}", e))
+                .ok(); // TODO: Should the error be propagated?
         }
         Ok(())
     }
