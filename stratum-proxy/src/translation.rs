@@ -1336,7 +1336,8 @@ impl V2ToV1Translation {
                 flags: msg.flags, // TODO Flags indicating features causing an error
             };
 
-            self.submit_v2_message(err_msg)?;
+            self.submit_v2_message(err_msg)
+                .map_err(V2ProtocolError::setup_connection)?;
         }
 
         self.v2_conn_details = Some(msg.clone());
@@ -1352,7 +1353,7 @@ impl V2ToV1Translation {
             configure,
             Self::handle_configure_result,
             Self::handle_configure_error,
-        )?;
+        ).map_err(V2ProtocolError::setup_connection)?;
         self.state = V2ToV1TranslationState::V1Configure;
         Ok(())
     }
@@ -1422,7 +1423,7 @@ impl V2ToV1Translation {
                     extranonce_subscribe,
                     Self::handle_extranonce_subscribe_result,
                     Self::handle_extranonce_subscribe_error,
-                )?;
+                ).map_err(V2ProtocolError::open_mining_channel)?;
             }
 
             let authorize = v1::messages::Authorize {
@@ -1433,7 +1434,7 @@ impl V2ToV1Translation {
                 authorize,
                 Self::handle_authorize_result,
                 Self::handle_authorize_or_subscribe_error,
-            )?;
+            ).map_err(V2ProtocolError::open_mining_channel)?;
         }
         Ok(())
     }
