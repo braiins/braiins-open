@@ -56,13 +56,6 @@ impl TcpConnectionCloseTotal {
     }
 }
 
-enum OutgoingFrameDirection {
-    IncrementUpstream,
-    DecrementUpstream,
-    IncrementDownstream,
-    DecrementDownstream,
-}
-
 #[derive(Default, Clone)]
 pub struct ProxyCollectorBuilder(MetricsRegistry);
 
@@ -159,6 +152,8 @@ pub struct ProxyMetrics {
 impl ProxyMetrics {
     const SUCCESS_LABEL: &'static str = "success";
     const ERROR_LABEL: &'static str = "error";
+    const DIRECTION_UP: &'static str = "up";
+    const DIRECTION_DOWN: &'static str = "down";
 
     /// Helper that accounts a share if `target` is provided among timeseries specified by
     /// `label_values`. If no target is specified only submit is accounted
@@ -279,36 +274,25 @@ impl ProxyMetrics {
         })
     }
 
-    #[inline]
-    fn account_outgoing_frame(&self, direction: OutgoingFrameDirection) {
-        match direction {
-            OutgoingFrameDirection::IncrementDownstream => self
-                .outgoing_frames_queue
-                .with_label_values(&["down"])
-                .inc(),
-            OutgoingFrameDirection::IncrementUpstream => {
-                self.outgoing_frames_queue.with_label_values(&["up"]).inc()
-            }
-            OutgoingFrameDirection::DecrementDownstream => self
-                .outgoing_frames_queue
-                .with_label_values(&["down"])
-                .dec(),
-            OutgoingFrameDirection::DecrementUpstream => {
-                self.outgoing_frames_queue.with_label_values(&["up"]).dec()
-            }
-        }
+    pub fn inc_upstream_outgoing(&self) {
+        self.outgoing_frames_queue
+            .with_label_values(&[Self::DIRECTION_UP])
+            .inc()
     }
-    pub fn enqueue_upstream_outgoing(&self) {
-        self.account_outgoing_frame(OutgoingFrameDirection::IncrementUpstream);
+    pub fn dec_upstream_outgoing(&self) {
+        self.outgoing_frames_queue
+            .with_label_values(&[Self::DIRECTION_UP])
+            .dec()
     }
-    pub fn dequeue_upstream_outgoing(&self) {
-        self.account_outgoing_frame(OutgoingFrameDirection::DecrementUpstream);
+    pub fn inc_downstream_outgoing(&self) {
+        self.outgoing_frames_queue
+            .with_label_values(&[Self::DIRECTION_DOWN])
+            .inc()
     }
-    pub fn enqueue_downstream_outgoing(&self) {
-        self.account_outgoing_frame(OutgoingFrameDirection::IncrementDownstream);
-    }
-    pub fn dequeue_downstream_outgoing(&self) {
-        self.account_outgoing_frame(OutgoingFrameDirection::DecrementDownstream);
+    pub fn dec_downstream_outgoing(&self) {
+        self.outgoing_frames_queue
+            .with_label_values(&[Self::DIRECTION_DOWN])
+            .dec()
     }
 }
 

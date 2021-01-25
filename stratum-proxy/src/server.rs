@@ -173,7 +173,7 @@ impl ConnTranslation {
                     Self::v2_try_send_frame(&mut conn_sender, v2_translated_frame, &peer_addr)
                         .await?;
                     if let Some(metrics) = &metrics {
-                        metrics.dequeue_downstream_outgoing();
+                        metrics.dec_downstream_outgoing();
                     }
                 },
             }
@@ -200,7 +200,7 @@ impl ConnTranslation {
                     break;
                 }
                 if let Some(metrics) = &metrics {
-                    metrics.dequeue_upstream_outgoing();
+                    metrics.dec_upstream_outgoing();
                 }
             }
         };

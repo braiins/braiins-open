@@ -336,7 +336,7 @@ impl V2ToV1Translation {
             UpstreamError::from(e)
         })?;
         if let Some(metrics) = &self.metrics {
-            metrics.enqueue_upstream_outgoing();
+            metrics.inc_upstream_outgoing();
         }
         Ok(req_id)
     }
@@ -356,7 +356,7 @@ impl V2ToV1Translation {
             }),
         )?;
         if let Some(metrics) = &self.metrics {
-            metrics.enqueue_upstream_outgoing();
+            metrics.inc_upstream_outgoing();
         }
         Ok(())
     }
@@ -371,7 +371,7 @@ impl V2ToV1Translation {
             DownstreamError::from(e)
         })?;
         if let Some(metrics) = &self.metrics {
-            metrics.enqueue_downstream_outgoing();
+            metrics.inc_downstream_outgoing();
         }
         Ok(())
     }
@@ -1353,7 +1353,8 @@ impl V2ToV1Translation {
             configure,
             Self::handle_configure_result,
             Self::handle_configure_error,
-        ).map_err(V2ProtocolError::setup_connection)?;
+        )
+        .map_err(V2ProtocolError::setup_connection)?;
         self.state = V2ToV1TranslationState::V1Configure;
         Ok(())
     }
@@ -1423,7 +1424,8 @@ impl V2ToV1Translation {
                     extranonce_subscribe,
                     Self::handle_extranonce_subscribe_result,
                     Self::handle_extranonce_subscribe_error,
-                ).map_err(V2ProtocolError::open_mining_channel)?;
+                )
+                .map_err(V2ProtocolError::open_mining_channel)?;
             }
 
             let authorize = v1::messages::Authorize {
@@ -1434,7 +1436,8 @@ impl V2ToV1Translation {
                 authorize,
                 Self::handle_authorize_result,
                 Self::handle_authorize_or_subscribe_error,
-            ).map_err(V2ProtocolError::open_mining_channel)?;
+            )
+            .map_err(V2ProtocolError::open_mining_channel)?;
         }
         Ok(())
     }
