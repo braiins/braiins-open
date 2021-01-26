@@ -1,0 +1,4 @@
+listen = "0.0.0.0:3338"
+upstream = "eu.stratum.slushpool.com:3333"
+certificate = "config/server-noise-static-public.cert"
+server_key = "config/server-noise-static-secret.key"
