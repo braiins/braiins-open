@@ -1,4 +1,4 @@
-// Copyright (C) 2020  Braiins Systems s.r.o.
+// Copyright (C) 2021  Braiins Systems s.r.o.
 //
 // This file is part of Braiins Open-Source Initiative (BOSI).
 //
