@@ -111,11 +111,6 @@ impl ProxyCollectorBuilder {
                 ii_metrics::exponential_buckets(1.0, 10.0, 10)
                     .expect("BUG: Invalid bucket definition"),
             ),
-            outgoing_frames_queue: self.0.register_generic_gauge_vec(
-                "stratum_frame_outgoing_queue_proxy",
-                "Number of stratum frames waiting in an outgoing channel to be sent over tcp",
-                &["direction"],
-            ),
         })
     }
 }
@@ -145,15 +140,11 @@ pub struct ProxyMetrics {
     tcp_connection_accepts_per_socket: IntCounterVec,
     /// Number of tcp connection accept events before failure occurs
     tcp_socket_failure_threshold: HistogramVec,
-    /// Number of stratum frames waiting in an outgoing channel to be sent over tcp
-    outgoing_frames_queue: IntGaugeVec,
 }
 
 impl ProxyMetrics {
     const SUCCESS_LABEL: &'static str = "success";
     const ERROR_LABEL: &'static str = "error";
-    const DIRECTION_UP: &'static str = "up";
-    const DIRECTION_DOWN: &'static str = "down";
 
     /// Helper that accounts a share if `target` is provided among timeseries specified by
     /// `label_values`. If no target is specified only submit is accounted
@@ -272,27 +263,6 @@ impl ProxyMetrics {
             self_clone.tokio_tasks.dec();
             output
         })
-    }
-
-    pub fn inc_upstream_outgoing(&self) {
-        self.outgoing_frames_queue
-            .with_label_values(&[Self::DIRECTION_UP])
-            .inc()
-    }
-    pub fn dec_upstream_outgoing(&self) {
-        self.outgoing_frames_queue
-            .with_label_values(&[Self::DIRECTION_UP])
-            .dec()
-    }
-    pub fn inc_downstream_outgoing(&self) {
-        self.outgoing_frames_queue
-            .with_label_values(&[Self::DIRECTION_DOWN])
-            .inc()
-    }
-    pub fn dec_downstream_outgoing(&self) {
-        self.outgoing_frames_queue
-            .with_label_values(&[Self::DIRECTION_DOWN])
-            .dec()
     }
 }
 

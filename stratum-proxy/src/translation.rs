@@ -335,9 +335,6 @@ impl V2ToV1Translation {
             debug!("Cannot submit request upstream: {:?}", e);
             UpstreamError::from(e)
         })?;
-        if let Some(metrics) = &self.metrics {
-            metrics.inc_upstream_outgoing();
-        }
         Ok(req_id)
     }
 
@@ -355,9 +352,6 @@ impl V2ToV1Translation {
                 stratum_error: None,
             }),
         )?;
-        if let Some(metrics) = &self.metrics {
-            metrics.inc_upstream_outgoing();
-        }
         Ok(())
     }
 
@@ -370,9 +364,6 @@ impl V2ToV1Translation {
             debug!("Cannot submit message downstream: {}", e);
             DownstreamError::from(e)
         })?;
-        if let Some(metrics) = &self.metrics {
-            metrics.inc_downstream_outgoing();
-        }
         Ok(())
     }
 
