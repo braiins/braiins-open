@@ -32,7 +32,7 @@ use ii_stratum::v2::{
     },
 };
 use tokio::{fs::File, io::AsyncReadExt, net::TcpStream};
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use tokio_util::codec::{Decoder, Encoder, Framed, FramedParts};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -121,6 +121,26 @@ impl SecurityContext {
         let responder = self.build_responder();
         responder
             .accept_with_codec(tcp_stream, |noise_codec| {
+                CompoundCodec::<C>::new(Some(noise_codec))
+            })
+            .await
+            .map_err(|e| Error::NoiseInitError(e.to_string()))
+    }
+
+    pub async fn build_framed_tcp_from_parts<P, C, F>(
+        &self,
+        parts: FramedParts<TcpStream, P>,
+    ) -> Result<Framed<TcpStream, CompoundCodec<C>>>
+    where
+        C: Default + Decoder + Encoder<F>,
+        <C as tokio_util::codec::Encoder<F>>::Error: Into<ii_stratum::error::Error>,
+    {
+        let responder = self.build_responder();
+        responder
+            // TODO this needs refactoring there is no point of passing the codec
+            // type, we should be able to run noise just with anything that
+            // implements AsyncRead/AsyncWrite
+            .accept_parts_with_codec(parts, |noise_codec| {
                 CompoundCodec::<C>::new(Some(noise_codec))
             })
             .await
