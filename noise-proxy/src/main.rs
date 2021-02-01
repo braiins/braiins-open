@@ -72,7 +72,8 @@ async fn main() -> Result<()> {
     let key_path = Path::new(&config.server_key);
     let ctx = SecurityContext::read_from_file(cert_path, key_path).await?;
     let halt_handle = HaltHandle::arc();
-    let noise_proxy = NoiseProxy::new(config.listen, config.upstream, ctx).await?;
+    let noise_proxy =
+        NoiseProxy::new(config.listen, config.upstream, std::sync::Arc::new(ctx)).await?;
     halt_handle.spawn_object(noise_proxy);
     halt_handle.ready();
     halt_handle.clone().halt_on_signal();

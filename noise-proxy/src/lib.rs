@@ -29,7 +29,6 @@ use ii_logging::macros::*;
 use ii_stratum::v1;
 use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
-    sync::RwLock,
     task::JoinHandle,
 };
 
@@ -40,7 +39,7 @@ pub use frontend::SecurityContext;
 
 pub struct NoiseProxy {
     upstream: SocketAddr,
-    security_context: Arc<RwLock<SecurityContext>>,
+    security_context: Arc<SecurityContext>,
     listener: Option<TcpListener>,
 }
 
@@ -48,7 +47,7 @@ impl NoiseProxy {
     pub async fn new<P>(
         listen_on: P,
         upstream: P,
-        security_context: SecurityContext,
+        security_context: Arc<SecurityContext>,
     ) -> Result<Self>
     where
         P: ToSocketAddrs,
@@ -61,7 +60,7 @@ impl NoiseProxy {
 
         Ok(Self {
             upstream,
-            security_context: Arc::new(RwLock::new(security_context)),
+            security_context,
             listener,
         })
     }
@@ -105,7 +104,7 @@ impl Spawnable for NoiseProxy {
 
 async fn encrypt_v1_connection(
     tcp_stream: TcpStream,
-    security_context: Arc<RwLock<SecurityContext>>,
+    security_context: Arc<SecurityContext>,
     upstream: SocketAddr,
     tripwire: Tripwire,
 ) -> Result<()> {
@@ -118,8 +117,6 @@ async fn encrypt_v1_connection(
     let up_peer = upstream.to_string();
 
     let downstream_framed = security_context
-        .read()
-        .await
         .build_framed_tcp::<v1::Codec, v1::Frame>(tcp_stream)
         .await?;
 
