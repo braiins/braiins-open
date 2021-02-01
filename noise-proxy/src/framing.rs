@@ -19,3 +19,5 @@
 // under a proprietary license. For more information on the terms and conditions
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
+
+// TODO: implement transparent L2 codec for stratum::v2::noise::CompoundCodec

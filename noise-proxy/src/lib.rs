@@ -20,7 +20,6 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use std::convert::TryFrom;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -133,17 +132,12 @@ async fn encrypt_v1_connection(
     let tripwire1 = tripwire.clone();
     let down_to_up = async move {
         let mut str1 = futures::StreamExt::take_until(&mut downstream_stream, tripwire1);
-        while let Some(x) = futures::StreamExt::next(&mut str1).await {
+        while let Some(x) = str1.next().await {
             if let Ok(frame) = x {
-                if let Ok(rpc) = ii_stratum::v1::rpc::Rpc::try_from(frame) {
-                    debug!("client -> server: {:?}", rpc);
-                    if let Ok(frame) = v1::Frame::try_from(rpc) {
-                        if let Err(e) = upstream_sink.send(frame).await {
-                            warn!("Error: {}", e);
-                        }
-                    }
+                if let Err(e) = upstream_sink.send(frame).await {
+                    warn!("Upstream error: {}", e);
                 } else {
-                    warn!("client -> server: Invalid Rpc-frame received");
+                    trace!("-> Frame")
                 }
             }
         }
@@ -155,17 +149,12 @@ async fn encrypt_v1_connection(
     let up_to_down = async move {
         let mut str1 = futures::StreamExt::take_until(&mut upstream_stream, tripwire);
 
-        while let Some(x) = futures::StreamExt::next(&mut str1).await {
+        while let Some(x) = str1.next().await {
             if let Ok(frame) = x {
-                if let Ok(rpc) = ii_stratum::v1::rpc::Rpc::try_from(frame) {
-                    debug!("server -> client: {:?}", rpc);
-                    if let Ok(frame) = v1::Frame::try_from(rpc) {
-                        if let Err(e) = downstream_sink.send(frame).await {
-                            warn!("Error: {}", e);
-                        }
-                    }
+                if let Err(e) = downstream_sink.send(frame).await {
+                    warn!("Error: {}", e);
                 } else {
-                    warn!("server -> client: Invalid Rpc-frame received");
+                    trace!("<- Frame")
                 }
             }
         }

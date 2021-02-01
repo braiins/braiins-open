@@ -48,18 +48,21 @@ async fn main() -> Result<()> {
                 .short("c")
                 .takes_value(true)
                 .help("Configuration file path"),
-        ).get_matches();
+        )
+        .get_matches();
 
     let config_file = matches
         .value_of("config")
         .context("Missing configuration path")?;
-    let cfg_string = tokio::fs::File::open(config_file).and_then(|mut file_handle| async move {
-        let mut cfg_str = String::new();
-        file_handle
-            .read_to_string(&mut cfg_str)
-            .await
-            .map(|_| cfg_str)
-    }).await?;
+    let cfg_string = tokio::fs::File::open(config_file)
+        .and_then(|mut file_handle| async move {
+            let mut cfg_str = String::new();
+            file_handle
+                .read_to_string(&mut cfg_str)
+                .await
+                .map(|_| cfg_str)
+        })
+        .await?;
 
     let config = toml::from_str::<Configuration>(&cfg_string)?;
 
@@ -69,12 +72,7 @@ async fn main() -> Result<()> {
     let key_path = Path::new(&config.server_key);
     let ctx = SecurityContext::read_from_file(cert_path, key_path).await?;
     let halt_handle = HaltHandle::arc();
-    let noise_proxy = NoiseProxy::new(
-        config.listen,
-        config.upstream,
-        ctx,
-    )
-    .await?;
+    let noise_proxy = NoiseProxy::new(config.listen, config.upstream, ctx).await?;
     halt_handle.spawn_object(noise_proxy);
     halt_handle.ready();
     halt_handle.clone().halt_on_signal();
