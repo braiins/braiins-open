@@ -23,7 +23,6 @@
 pub mod controller;
 mod peer_address;
 
-use bytes::Bytes;
 use std::convert::TryFrom;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::pin::Pin;
@@ -40,6 +39,7 @@ use tokio_util::codec::FramedParts;
 
 use ii_async_utils::{FutureExt, Spawnable, Tripwire};
 use ii_logging::macros::*;
+use ii_noise_proxy::SecurityContext;
 use ii_stratum::v1;
 use ii_stratum::v2;
 use ii_wire::{
@@ -300,42 +300,6 @@ impl ConnectionHandler for TranslationHandler {
     }
 }
 
-/// Security context is held by the server and provided to each (noise secured) connection so
-/// that it can successfully perform the noise handshake and authenticate itself to the client
-/// NOTE: this struct doesn't intentionally derive Debug to prevent leakage of the secure key
-/// into log messages
-struct SecurityContext {
-    /// Serialized Signature noise message that contains the necessary part of the certificate for
-    /// succesfully authenticating with the Initiator. We store it as Bytes as it will be shared
-    /// to among all incoming connections
-    signature_noise_message: Bytes,
-    /// Static key pair that the server will use within the noise handshake
-    static_key_pair: v2::noise::StaticKeypair,
-}
-
-impl SecurityContext {
-    fn from_certificate_and_secret_key(
-        certificate: v2::noise::auth::Certificate,
-        secret_key: v2::noise::auth::StaticSecretKeyFormat,
-    ) -> Result<Self> {
-        let signature_noise_message = certificate
-            .build_noise_message()
-            .serialize_to_bytes_mut()?
-            .freeze();
-        // TODO secret key validation is currently not possible
-        //let public_key = certificate.validate_secret_key(&secret_key)?;
-        let static_key_pair = v2::noise::StaticKeypair {
-            private: secret_key.into_inner(),
-            public: certificate.public_key.into_inner(),
-        };
-
-        Ok(Self {
-            signature_noise_message,
-            static_key_pair,
-        })
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProxyProtocolConfig {
     #[serde(flatten)]
@@ -391,7 +355,7 @@ where
         Self {
             v1_upstream_addr: proxy_server.v1_upstream_addr.clone(),
             connection_handler: proxy_server.connection_handler.clone(),
-            security_context: proxy_server.security_context.as_ref().cloned(),
+            security_context: proxy_server.security_context.clone(),
             proxy_protocol_acceptor: Some(
                 proxy_server
                     .proxy_protocol_acceptor_builder
@@ -466,35 +430,14 @@ where
             v1_peer_addr,
             proxy_stream.original_peer_addr()
         );
-
         let v2_framed_stream = match self.security_context.as_ref() {
-            // Establish noise responder and run the handshake
-            Some(ref security_context) => {
-                // TODO pass the signature message once the Responder API is adjusted
-                let responder = v2::noise::Responder::new(
-                    &security_context.static_key_pair,
-                    security_context.signature_noise_message.clone(),
-                    vec![
-                        v2::noise::negotiation::EncryptionAlgorithm::AESGCM,
-                        v2::noise::negotiation::EncryptionAlgorithm::ChaChaPoly,
-                    ],
-                );
-                let build_stratum_noise_codec =
-                    |noise_codec| <v2::Framing as ii_wire::Framing>::Codec::new(Some(noise_codec));
-                trace!("Handling incoming secure connection: {:?}", proxy_stream);
-                // TODO this needs refactoring there is no point of passing the codec
-                // type, we should be able to run noise just with anything that
-                // implements AsyncRead/AsyncWrite
-                responder
-                    .accept_parts_with_codec(
-                        FramedParts::<TcpStream, ii_wire::proxy::codec::v1::V1Codec>::from(
-                            proxy_stream,
-                        ),
-                        build_stratum_noise_codec,
-                    )
-                    .await?
-            }
-            // Insecure operation has been configured
+            Some(security_context) => security_context
+                .build_framed_tcp_from_parts(FramedParts::<
+                    TcpStream,
+                    ii_wire::proxy::codec::v1::V1Codec,
+                >::from(proxy_stream))
+                .await
+                .map_err(|e| ii_stratum::error::Error::Noise(e.to_string()))?,
             None => Connection::<v2::Framing>::from(proxy_stream).into_inner(),
         };
 
@@ -578,10 +521,7 @@ where
         listen_addr: Address,
         v1_upstream_addr: Address,
         connection_handler: H,
-        certificate_secret_key_pair: Option<(
-            v2::noise::auth::Certificate,
-            v2::noise::auth::StaticSecretKeyFormat,
-        )>,
+        security_context: Option<Arc<SecurityContext>>,
         proxy_protocol_config: ProxyProtocolConfig,
         metrics: Option<Arc<ProxyMetrics>>,
     ) -> Result<ProxyServer<H>> {
@@ -591,12 +531,6 @@ where
             .next()
             .ok_or_else(|| Error::HostNameError("Failed to resolve listen_addr".into()))?;
 
-        let security_context = match certificate_secret_key_pair {
-            Some((certificate, secret_key)) => Some(Arc::new(
-                SecurityContext::from_certificate_and_secret_key(certificate, secret_key)?,
-            )),
-            None => None,
-        };
         let mut proxy_server = ProxyServer {
             server: None,
             listen_socket,
