@@ -21,6 +21,7 @@
 // contact us at opensource@braiins.com.
 
 pub mod controller;
+mod peer_address;
 
 use bytes::Bytes;
 use std::convert::TryFrom;
@@ -50,6 +51,8 @@ use crate::error::{DownstreamError, Error, Result, UpstreamError};
 use crate::metrics::ProxyMetrics;
 use crate::translation::V2ToV1Translation;
 
+pub use peer_address::DownstreamPeer;
+
 /// Represents a single protocol translation session (one V2 client talking to one V1 server)
 pub struct ConnTranslation {
     /// Actual protocol translator
@@ -65,7 +68,7 @@ pub struct ConnTranslation {
     /// Downstream connection
     v2_conn: v2::Framed,
     /// Address of the v2 peer that has connected
-    v2_peer_addr: SocketAddr,
+    v2_peer_addr: DownstreamPeer,
     /// Frames from the translator to be sent out via V2 connection
     v2_translation_rx: mpsc::Receiver<v2::Frame>,
     metrics: Option<Arc<ProxyMetrics>>,
@@ -78,7 +81,7 @@ impl ConnTranslation {
 
     fn new(
         v2_conn: v2::Framed,
-        v2_peer_addr: SocketAddr,
+        v2_peer_addr: DownstreamPeer,
         v1_conn: v1::Framed,
         v1_peer_addr: SocketAddr,
         metrics: Option<Arc<ProxyMetrics>>,
@@ -137,7 +140,7 @@ impl ConnTranslation {
     pub async fn v2_try_send_frame<S>(
         connection: &mut S,
         frame: Option<v2::framing::Frame>,
-        peer_addr: &SocketAddr,
+        peer_addr: &DownstreamPeer,
     ) -> Result<()>
     where
         S: v2::FramedSink,
@@ -147,7 +150,7 @@ impl ConnTranslation {
             None => return Err(Error::General("No more V2 frames to send".into())),
         };
         status.map_err(|e| {
-            debug!("Send error: {} for (peer: {:?})", e, peer_addr);
+            debug!("Send error: {} for (peer: {})", e, peer_addr);
             e.into()
         })
     }
@@ -158,7 +161,7 @@ impl ConnTranslation {
     async fn v2_send_task<S>(
         mut conn_sender: S,
         mut translation_receiver: mpsc::Receiver<v2::Frame>,
-        peer_addr: SocketAddr,
+        peer_addr: DownstreamPeer,
     ) -> Result<()>
     where
         S: v2::FramedSink,
@@ -245,7 +248,7 @@ impl ConnTranslation {
                             .await?;
                         }
                         None => {
-                            debug!("Downstream tcp connection closed by peer {:?}", self.v2_peer_addr);
+                            debug!("Downstream tcp connection closed by peer {}", self.v2_peer_addr);
                             return Ok(());
                         }
                     }
@@ -259,7 +262,7 @@ pub trait ConnectionHandler: Clone + Send + Sync + 'static {
     fn handle_connection(
         &self,
         v2_conn: v2::Framed,
-        v2_peer_addr: SocketAddr,
+        v2_peer_addr: DownstreamPeer,
         v1_conn: v1::Framed,
         v1_peer_addr: SocketAddr,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>;
@@ -282,7 +285,7 @@ impl ConnectionHandler for TranslationHandler {
     fn handle_connection(
         &self,
         v2_conn: v2::Framed,
-        v2_peer_addr: SocketAddr,
+        v2_peer_addr: DownstreamPeer,
         v1_conn: v1::Framed,
         v1_peer_addr: SocketAddr,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
@@ -368,7 +371,7 @@ struct ProxyConnection<H> {
     proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
     metrics: Option<Arc<ProxyMetrics>>,
     client_counter: controller::ClientCounter,
-    downstream_peer: SocketAddr,
+    downstream_peer: DownstreamPeer,
 }
 
 impl<FN> Drop for ProxyConnection<FN> {
@@ -398,7 +401,7 @@ where
             proxy_protocol_upstream_version: proxy_server.proxy_protocol_upstream_version,
             metrics: proxy_server.metrics.clone(),
             client_counter: proxy_server.controller.counter_for_new_client(),
-            downstream_peer,
+            downstream_peer: DownstreamPeer::new(downstream_peer),
         }
     }
 
@@ -425,7 +428,7 @@ where
         debug!(
             "Received connection from downstream - source: {:?}, destination: {:?}, original \
             source: {:?}, original destination: {:?}",
-            self.downstream_peer,
+            self.downstream_peer.direct_peer(),
             local_addr,
             proxy_stream.original_peer_addr(),
             proxy_stream.original_destination_addr()
@@ -444,13 +447,14 @@ where
                 proxy_stream.original_peer_addr(),
                 proxy_stream.original_destination_addr(),
             ) {
+                self.downstream_peer.add_original_peer(src);
                 (Some(src), Some(dst))
             } else {
                 debug!(
                     "Passing of proxy protocol is required, but incoming connection does \
                             not contain original addresses, using socket addresses"
                 );
-                (Some(self.downstream_peer), Some(local_addr))
+                (Some(self.downstream_peer.direct_peer()), Some(local_addr))
             };
             Connector::new(version)
                 .write_proxy_header(&mut v1_conn, src, dst)
