@@ -23,15 +23,18 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+#[macro_use]
+extern crate ii_logging;
+
 use anyhow::{anyhow, Result};
 use ii_async_utils::{Spawnable, Tripwire};
-use ii_logging::macros::*;
 use ii_stratum::v1;
 use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
     task::JoinHandle,
 };
 
+pub mod connector;
 mod framing;
 mod frontend;
 
