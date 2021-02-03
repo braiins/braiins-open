@@ -127,11 +127,11 @@ async fn encrypt_v1_connection(
     let upstream_framed =
         tokio_util::codec::Framed::new(TcpStream::connect(upstream).await?, v1::Codec::default());
 
-    let (mut downstream_sink, mut downstream_stream) = downstream_framed.split();
-    let (mut upstream_sink, mut upstream_stream) = upstream_framed.split();
+    let (mut downstream_sink, downstream_stream) = downstream_framed.split();
+    let (mut upstream_sink, upstream_stream) = upstream_framed.split();
     let tripwire1 = tripwire.clone();
     let down_to_up = async move {
-        let mut str1 = futures::StreamExt::take_until(&mut downstream_stream, tripwire1);
+        let mut str1 = downstream_stream.take_until(tripwire1);
         while let Some(x) = str1.next().await {
             if let Ok(frame) = x {
                 if let Err(e) = upstream_sink.send(frame).await {
@@ -147,7 +147,7 @@ async fn encrypt_v1_connection(
         };
     };
     let up_to_down = async move {
-        let mut str1 = futures::StreamExt::take_until(&mut upstream_stream, tripwire);
+        let mut str1 = upstream_stream.take_until(tripwire);
 
         while let Some(x) = str1.next().await {
             if let Ok(frame) = x {
