@@ -818,14 +818,14 @@ mod tests {
         let src = SocketAddr::new(IpAddr::from([5, 4, 3, 2]), 5432);
         let dst = SocketAddr::new(IpAddr::from([4, 5, 6, 7]), 4567);
         let proxy_info =
-            ProxyInfo::try_from((Some(src), Some(dst))).expect("BUG cannot produce proxy info");
+            ProxyInfo::try_from((Some(src), Some(dst))).expect("BUG: cannot produce proxy info");
         assert_eq!(
             format!("{}", proxy_info),
             String::from("ProxyInfo[SRC:5.4.3.2:5432, DST:4.5.6.7:4567]")
         );
 
         let empty_proxy_info =
-            ProxyInfo::try_from((None, None)).expect("BUG cannot produce proxy info");
+            ProxyInfo::try_from((None, None)).expect("BUG: cannot produce proxy info");
         assert_eq!(
             format!("{}", empty_proxy_info),
             String::from("ProxyInfo[SRC:N/A, DST:N/A]")

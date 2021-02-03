@@ -72,7 +72,7 @@ mod tests {
         let src = SocketAddr::new(IpAddr::from([4, 5, 6, 7]), 4567);
         let dst = SocketAddr::new(IpAddr::from([1, 2, 3, 4]), 1234);
         let proxy_info =
-            ProxyInfo::try_from((Some(src), Some(dst))).expect("BUG cannot produce proxy info");
+            ProxyInfo::try_from((Some(src), Some(dst))).expect("BUG: cannot produce proxy info");
 
         let mut peer = DownstreamPeer::new(SocketAddr::new(IpAddr::from([5, 4, 3, 2]), 5432));
         assert_eq!(
