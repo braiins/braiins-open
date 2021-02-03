@@ -943,7 +943,7 @@ impl V2ToV1Translation {
         let submit_shares_error_msg = v2::messages::SubmitSharesError {
             channel_id,
             seq_num,
-            code: err_msg[..32].try_into().expect(
+            code: err_msg[..err_msg.len().min(32)].try_into().expect(
                 format!(
                     "BUG: cannot convert error message to V2 format: {}",
                     err_msg
