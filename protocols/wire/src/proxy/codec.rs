@@ -22,6 +22,7 @@
 
 use super::error::{Error, Result};
 use std::convert::TryFrom;
+use std::fmt;
 use std::net::SocketAddr;
 
 pub mod v1;
@@ -77,5 +78,18 @@ impl TryFrom<(Option<SocketAddr>, Option<SocketAddr>)> for ProxyInfo {
                 "Inconsistent source and destination addresses".into(),
             )),
         }
+    }
+}
+
+impl fmt::Display for ProxyInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "ProxyInfo[SRC:{}, DST:{}]",
+            self.original_source
+                .map_or_else(|| "N/A".to_string(), |s| s.to_string()),
+            self.original_destination
+                .map_or_else(|| "N/A".to_string(), |s| s.to_string())
+        )
     }
 }
