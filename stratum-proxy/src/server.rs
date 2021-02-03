@@ -248,7 +248,6 @@ impl ConnTranslation {
                             .await?;
                         }
                         None => {
-                            debug!("Downstream tcp connection closed by peer {}", self.v2_peer_addr);
                             return Ok(());
                         }
                     }
@@ -422,16 +421,17 @@ where
         let local_addr = proxy_stream
             .local_addr()
             .map_err(|e| DownstreamError::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
+        let proxy_info = proxy_stream
+            .proxy_info()
+            .map_err(|e| DownstreamError::ProxyProtocol(e))?;
+        self.downstream_peer.set_proxy_info(proxy_info);
 
         self.connection_handler
             .extract_proxy_proxy_info(&proxy_stream);
         debug!(
-            "Received connection from downstream - source: {:?}, destination: {:?}, original \
-            source: {:?}, original destination: {:?}",
-            self.downstream_peer.direct_peer(),
-            local_addr,
-            proxy_stream.original_peer_addr(),
-            proxy_stream.original_destination_addr()
+            "Received connection from downstream: {}, local destination: {}",
+            self.downstream_peer,
+            local_addr.to_string()
         );
         // Connect to upstream V1 server
         let mut v1_client = Client::new(self.v1_upstream_addr.clone());
@@ -447,14 +447,13 @@ where
                 proxy_stream.original_peer_addr(),
                 proxy_stream.original_destination_addr(),
             ) {
-                self.downstream_peer.add_original_peer(src);
                 (Some(src), Some(dst))
             } else {
                 debug!(
                     "Passing of proxy protocol is required, but incoming connection does \
                             not contain original addresses, using socket addresses"
                 );
-                (Some(self.downstream_peer.direct_peer()), Some(local_addr))
+                (Some(self.downstream_peer.direct_peer), Some(local_addr))
             };
             Connector::new(version)
                 .write_proxy_header(&mut v1_conn, src, dst)
@@ -525,12 +524,19 @@ where
                 if let Some(x) = metrics.as_ref() {
                     x.tcp_connection_close_ok();
                 }
+                debug!(
+                    "Connection closed by downstream peer: {}",
+                    self.downstream_peer
+                );
             }
             Err(err) => {
                 if let Some(x) = metrics.as_ref() {
                     x.tcp_connection_close_with_error(&err);
                 }
-                debug!("Connection error: {}, peer: {}", err, "N/A")
+                debug!(
+                    "Connection error: {} downstream peer: {}",
+                    err, self.downstream_peer
+                )
             }
         };
         if let Some(x) = self.metrics.as_ref() {
