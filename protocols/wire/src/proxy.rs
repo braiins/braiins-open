@@ -75,14 +75,6 @@ pub trait WithProxyInfo {
 
 impl WithProxyInfo for TcpStream {}
 
-pub trait ProxyInfoExtractor {
-    fn accept<T: WithProxyInfo>(&mut self, connection_context: &T);
-}
-
-impl ProxyInfoExtractor for () {
-    fn accept<T: WithProxyInfo>(&mut self, _connection_context: &T) {}
-}
-
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ProtocolVersion {
