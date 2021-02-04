@@ -145,7 +145,10 @@ impl ConnTranslation {
         S: v2::FramedSink,
     {
         let status = match frame {
-            Some(v2_translated_frame) => connection.send(v2_translated_frame).await,
+            Some(v2_translated_frame) => {
+                trace!("TX:Stratum V2: {}<-{:x?}", peer_addr, v2_translated_frame);
+                connection.send(v2_translated_frame).await
+            }
             None => return Err(Error::General("No more V2 frames to send".into())),
         };
         status.map_err(|e| {
@@ -154,10 +157,26 @@ impl ConnTranslation {
         })
     }
 
+    pub async fn v1_send_task<S>(
+        mut conn_sender: S,
+        mut translation_receiver: mpsc::Receiver<v1::Frame>,
+        peer_addr: DownstreamPeer,
+    ) where
+        S: v1::FramedSink,
+    {
+        while let Some(frame) = translation_receiver.next().await {
+            trace!("TX:Stratum V1: {} Upstream<-{:?}", peer_addr, frame);
+            if let Err(err) = conn_sender.send(frame).await {
+                warn!("V1 connection failed: {}", err);
+                break;
+            }
+        }
+    }
+
     /// Send all V2 frames via the specified V2 connection
     /// TODO consolidate this method into V2Handler, turn the parameters into fields and
     /// implement ConnTranslation::split()
-    async fn v2_send_task<S>(
+    pub async fn v2_send_task<S>(
         mut conn_sender: S,
         mut translation_receiver: mpsc::Receiver<v2::Frame>,
         peer_addr: DownstreamPeer,
@@ -166,47 +185,36 @@ impl ConnTranslation {
         S: v2::FramedSink,
     {
         loop {
-            // We use select! so that more than just the translation receiver as a source can be
-            // added
-            select! {
-                // Send out frames translated into V2
-                v2_translated_frame = translation_receiver.next() => {
-                    Self::v2_try_send_frame(&mut conn_sender, v2_translated_frame, &peer_addr)
-                        .await?;
-                },
-            }
+            let frame = translation_receiver.next().await;
+            Self::v2_try_send_frame(&mut conn_sender, frame, &peer_addr).await?;
         }
     }
 
     async fn run(self) -> Result<()> {
-        let mut v1_translation_rx = self.v1_translation_rx;
         let mut translation = self.translation;
 
         // TODO make connections 'optional' so that we can remove them from the instance and use
         //  the rest of the instance in as 'borrowed mutable reference'.
-        let (mut v1_conn_tx, mut v1_conn_rx) = self.v1_conn.split();
+        let (v1_conn_tx, mut v1_conn_rx) = self.v1_conn.split();
         let (v2_conn_tx, mut v2_conn_rx) = self.v2_conn.split();
 
-        // TODO factor out the frame pumping functionality and append the JoinHandle of this task
-        //  to the select statement to detect any problems and to terminate the translation, too
-        // V1 message send out loop
-        let v1_send_task = async move {
-            while let Some(frame) = v1_translation_rx.next().await {
-                if let Err(err) = v1_conn_tx.send(frame).await {
-                    warn!("V1 connection failed: {}", err);
-                    break;
-                }
-            }
-        };
         if let Some(metrics) = self.metrics.as_ref() {
-            metrics.accounted_spawn(v1_send_task);
+            metrics.accounted_spawn(Self::v1_send_task(
+                v1_conn_tx,
+                self.v1_translation_rx,
+                self.v2_peer_addr,
+            ));
             metrics.accounted_spawn(Self::v2_send_task(
                 v2_conn_tx,
                 self.v2_translation_rx,
                 self.v2_peer_addr,
             ));
         } else {
-            tokio::spawn(v1_send_task);
+            tokio::spawn(Self::v1_send_task(
+                v1_conn_tx,
+                self.v1_translation_rx,
+                self.v2_peer_addr,
+            ));
             tokio::spawn(Self::v2_send_task(
                 v2_conn_tx,
                 self.v2_translation_rx,
