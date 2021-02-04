@@ -258,14 +258,12 @@ impl ConnTranslation {
 
 pub trait ConnectionHandler: Clone + Send + Sync + 'static {
     fn handle_connection(
-        &self,
+        &mut self,
         v2_conn: v2::Framed,
-        v2_peer_addr: DownstreamPeer,
+        v2_peer: DownstreamPeer,
         v1_conn: v1::Framed,
         v1_peer_addr: SocketAddr,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>;
-
-    fn extract_proxy_proxy_info<T: WithProxyInfo>(&mut self, _connection_context: &T) {}
 }
 
 #[derive(Clone, Default)]
@@ -281,15 +279,15 @@ impl TranslationHandler {
 
 impl ConnectionHandler for TranslationHandler {
     fn handle_connection(
-        &self,
+        &mut self,
         v2_conn: v2::Framed,
-        v2_peer_addr: DownstreamPeer,
+        v2_peer: DownstreamPeer,
         v1_conn: v1::Framed,
         v1_peer_addr: SocketAddr,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
         let translation = ConnTranslation::new(
             v2_conn,
-            v2_peer_addr,
+            v2_peer,
             v1_conn,
             v1_peer_addr,
             self.metrics.clone(),
@@ -389,8 +387,6 @@ where
             .map_err(|e| DownstreamError::ProxyProtocol(e))?;
         self.downstream_peer.set_proxy_info(proxy_info);
 
-        self.connection_handler
-            .extract_proxy_proxy_info(&proxy_stream);
         debug!(
             "Received connection from downstream: {}, local destination: {}",
             self.downstream_peer,
@@ -442,8 +438,6 @@ where
         self.connection_handler
             .handle_connection(
                 v2_framed_stream,
-                // TODO: provide connection info instead of a pure peer address, for now we just
-                //  clone downstream peer
                 self.downstream_peer,
                 v1_framed_stream,
                 v1_peer_addr,
