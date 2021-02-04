@@ -172,7 +172,7 @@ impl<P: Protocol> From<BytesMut> for Payload<P> {
 impl<P: Protocol> fmt::Debug for Payload<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::SerializedBytes(payload) => write!(f, "S{:x?}", payload.to_vec()),
+            Self::SerializedBytes(payload) => write!(f, "S{:x?}", payload),
             Self::LazyBytes(_) => write!(f, "L{:x?}", self.to_bytes_mut().map_err(|_| fmt::Error)?),
         }
     }
