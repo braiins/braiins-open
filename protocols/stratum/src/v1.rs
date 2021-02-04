@@ -31,6 +31,7 @@ use std::mem::size_of;
 
 use bitcoin_hashes::hex::{FromHex, ToHex};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
+use futures::prelude::*;
 use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
@@ -42,6 +43,22 @@ use crate::error::Result;
 
 /// Tcp stream that produces/consumes V1 frames
 pub type Framed = tokio_util::codec::Framed<TcpStream, crate::v2::noise::CompoundCodec<Codec>>;
+
+pub trait FramedSink:
+    Sink<<Framing as ii_wire::Framing>::Tx, Error = <Framing as ii_wire::Framing>::Error>
+    + std::marker::Unpin
+    + std::fmt::Debug
+    + 'static
+{
+}
+
+impl<T> FramedSink for T where
+    T: Sink<<Framing as ii_wire::Framing>::Tx, Error = <Framing as ii_wire::Framing>::Error>
+        + std::marker::Unpin
+        + std::fmt::Debug
+        + 'static
+{
+}
 
 /// Message Id is used for pairing request/response messages
 pub type MessageId = Option<u32>;
