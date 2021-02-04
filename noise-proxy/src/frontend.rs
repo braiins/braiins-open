@@ -127,13 +127,14 @@ impl SecurityContext {
             .map_err(|e| Error::NoiseInitError(e.to_string()))
     }
 
-    pub async fn build_framed_tcp_from_parts<P, C, F>(
+    pub async fn build_framed_tcp_from_parts<C, F, P>(
         &self,
-        parts: FramedParts<TcpStream, P>,
+        parts: P,
     ) -> Result<Framed<TcpStream, CompoundCodec<C>>>
     where
         C: Default + Decoder + Encoder<F>,
         <C as tokio_util::codec::Encoder<F>>::Error: Into<ii_stratum::error::Error>,
+        P: Into<FramedParts<TcpStream, v2::noise::Codec>>,
     {
         let responder = self.build_responder();
         responder

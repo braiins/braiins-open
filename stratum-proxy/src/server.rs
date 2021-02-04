@@ -35,7 +35,6 @@ use futures::select;
 use serde::Deserialize;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{Duration, Instant};
-use tokio_util::codec::FramedParts;
 
 use ii_async_utils::{FutureExt, Spawnable, Tripwire};
 use ii_logging::macros::*;
@@ -432,10 +431,7 @@ where
         );
         let v2_framed_stream = match self.security_context.as_ref() {
             Some(security_context) => security_context
-                .build_framed_tcp_from_parts(FramedParts::<
-                    TcpStream,
-                    ii_wire::proxy::codec::v1::V1Codec,
-                >::from(proxy_stream))
+                .build_framed_tcp_from_parts(proxy_stream.into_framed_parts())
                 .await
                 .map_err(|e| ii_stratum::error::Error::Noise(e.to_string()))?,
             None => Connection::<v2::Framing>::from(proxy_stream).into_inner(),

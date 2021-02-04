@@ -419,6 +419,18 @@ impl<T> ProxyStream<T> {
             ))
         }
     }
+
+    /// Direct conversion to FramedParts with arbitrary codec. It eliminates the problem with
+    /// `From` implementation that also exists but doesn't simply allow using the 'I' parameter.
+    /// See additional notes in `From`
+    pub fn into_framed_parts<C, I>(self: ProxyStream<T>) -> FramedParts<T, C>
+    where
+        C: Encoder<I> + Decoder + Default,
+    {
+        let mut parts = FramedParts::new(self.inner, C::default());
+        parts.read_buf = self.buf;
+        parts
+    }
 }
 
 impl<T> AsRef<T> for ProxyStream<T> {
@@ -491,6 +503,10 @@ where
     }
 }
 
+/// NOTE: if conversion to FramedParts with arbitrary codec is needed, use
+/// ProxyStream::into_framed_parts. The problem here is that we cannot replace ProxyInfo with `I`
+/// generic parameter as it would require adding a phantom generic parameter to ProxyStream
+/// (see E207)
 impl<C> From<ProxyStream<TcpStream>> for FramedParts<TcpStream, C>
 where
     C: Encoder<ProxyInfo> + Decoder + Default,

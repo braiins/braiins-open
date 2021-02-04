@@ -304,22 +304,21 @@ impl<'a> Responder<'a> {
 
     /// Executes noise protocol handshake on provided `FramedParts` - e.g. on stream and buffers returned
     /// from previous phase (PROXY protocol etc.)
-    /// `C` - arbitrary codec that will be dropped once `parts` is transformed into a noise TCP
-    /// stream
-    /// `parts` - `FramedParts` that will be transformed into a `Framed` once the noise handshake
-    /// is complete
-    /// `build_codec` - custom codec builder that is passed the noise codec
-    pub async fn accept_parts_with_codec<C, F, I, U>(
+    /// `parts` - anything that can be transformed into `FramedParts` bearing noise codec that will
+    /// be transformed into a `Framed` with noise codec. And once the noise handshake
+    /// is complete it will provide `Framed` with the desired codec yielded by `build_codec`
+    /// `build_codec` - custom codec builder that wraps the noise codec into custom codec
+    pub async fn accept_parts_with_codec<F, I, P, U>(
         self,
-        parts: FramedParts<TcpStream, C>,
+        parts: P,
         build_codec: F,
     ) -> Result<Framed<TcpStream, U>>
     where
         F: FnOnce(Codec) -> U,
         U: Encoder<I>,
+        P: Into<FramedParts<TcpStream, Codec>>,
     {
-        let mut noise_framed_stream =
-            ii_wire::Connection::<Framing>::new_from_parts(parts).into_inner();
+        let mut noise_framed_stream = Framed::from_parts(parts.into());
 
         let handshake = handshake::Handshake::new(self);
         let transport_mode = handshake.run(&mut noise_framed_stream).await?;
