@@ -83,6 +83,16 @@ impl SecurityContext {
         })
     }
 
+    pub fn read_from_strings(certificate: String, secret_key: String) -> Result<Self> {
+        let cert = Certificate::try_from(certificate)
+            .map_err(|e| Error::KeySerializationError(e.to_string()))?;
+
+        let key = StaticSecretKeyFormat::try_from(secret_key)
+            .map_err(|e| Error::KeySerializationError(e.to_string()))?;
+
+        SecurityContext::from_certificate_and_secret_key(cert, key)
+    }
+
     pub async fn read_from_file(certificate_file: &Path, secret_key_file: &Path) -> Result<Self> {
         let mut cert_file = File::open(certificate_file).await?;
         let mut key_file = File::open(secret_key_file).await?;
@@ -92,13 +102,7 @@ impl SecurityContext {
         let mut key_string = String::new();
         key_file.read_to_string(&mut key_string).await?;
 
-        let cert = Certificate::try_from(cert_string)
-            .map_err(|e| Error::KeySerializationError(e.to_string()))?;
-
-        let key = StaticSecretKeyFormat::try_from(key_string)
-            .map_err(|e| Error::KeySerializationError(e.to_string()))?;
-
-        SecurityContext::from_certificate_and_secret_key(cert, key)
+        Self::read_from_strings(cert_string, key_string)
     }
 
     fn build_responder(&self) -> Responder {
