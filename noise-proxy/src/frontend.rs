@@ -20,15 +20,18 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use bytes::Bytes;
+use std::fmt;
+
 use std::convert::TryFrom;
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 use ii_stratum::v2::{
     self,
     noise::{
-        auth::{Certificate, StaticSecretKeyFormat},
-        CompoundCodec, Responder,
+        auth::{Certificate, EncodedEd25519PublicKey, StaticSecretKeyFormat},
+        negotiation::EncryptionAlgorithm::{ChaChaPoly, AESGCM},
+        CompoundCodec, Responder, StaticKeypair,
     },
 };
 use tokio::{fs::File, io::AsyncReadExt, net::TcpStream};
@@ -44,20 +47,37 @@ pub enum Error {
 
     #[error("Error during noise initialization: {0}")]
     NoiseInitError(String),
+
+    #[error("Noise certificate has expired, contact Braiins support")]
+    TimeValidationError,
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Security context is held by the server and provided to each (noise secured) connection so
 /// that it can successfully perform the noise handshake and authenticate itself to the client
-/// NOTE: this struct doesn't intentionally derive Debug to prevent leakage of the secure key
+/// NOTE: this struct intentionally implements Debug manually to prevent leakage of the secure key
 /// into log messages
 pub struct SecurityContext {
     /// Serialized Signature noise message that contains the necessary part of the certificate for
     /// succesfully authenticating with the Initiator. We store it as Bytes as it will be shared
     /// to among all incoming connections
-    signature_noise_message: Bytes,
-    /// Static key pair that the server will use within the noise handshake
-    static_key_pair: v2::noise::StaticKeypair,
+    certificate: v2::noise::auth::Certificate,
+    secret_key: v2::noise::auth::StaticSecretKeyFormat,
+}
+
+// Show certificate authority public key and expiry timestamp
+impl fmt::Debug for SecurityContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let certificate_authority = self.authority_pubkey();
+        let expiry_timestamp = self.certificate.validate(SystemTime::now).map_or_else(
+            |_| "certificate is invalid".to_owned(),
+            |t| format!("{:?}", t),
+        );
+        f.debug_struct("SecurityContext")
+            .field("certificate_authority", &certificate_authority.to_string())
+            .field("certificate_expiry", &expiry_timestamp)
+            .finish()
+    }
 }
 
 impl SecurityContext {
@@ -65,22 +85,34 @@ impl SecurityContext {
         certificate: v2::noise::auth::Certificate,
         secret_key: v2::noise::auth::StaticSecretKeyFormat,
     ) -> Result<Self> {
-        let signature_noise_message = certificate
-            .build_noise_message()
-            .serialize_to_bytes_mut()
-            .map_err(|e| Error::KeySerializationError(e.to_string()))?
-            .freeze();
+        certificate
+            .validate(SystemTime::now)
+            .map_err(|e| Error::NoiseInitError(e.to_string()))?;
         // TODO secret key validation is currently not possible
-        //let public_key = certificate.validate_secret_key(&secret_key)?;
-        let static_key_pair = v2::noise::StaticKeypair {
-            private: secret_key.into_inner(),
-            public: certificate.public_key.into_inner(),
-        };
-
+        // let public_key = certificate.validate_secret_key(&secret_key)?;
         Ok(Self {
-            signature_noise_message,
-            static_key_pair,
+            certificate,
+            secret_key,
         })
+    }
+
+    fn authority_pubkey(&self) -> EncodedEd25519PublicKey {
+        EncodedEd25519PublicKey::new(self.certificate.authority_public_key.clone().into_inner())
+    }
+
+    /// Returns remaining time of certificate validity or error if the certificate has expired
+    pub fn validate_by_time<FN>(&self, get_current_time: FN) -> Result<Duration>
+    where
+        FN: FnOnce() -> SystemTime,
+    {
+        self.certificate
+            .validate(get_current_time)
+            .map_err(|_| Error::TimeValidationError)
+            .and_then(|expiry_time| {
+                expiry_time
+                    .duration_since(SystemTime::now())
+                    .map_err(|_| Error::TimeValidationError)
+            })
     }
 
     pub fn read_from_strings(certificate: String, secret_key: String) -> Result<Self> {
@@ -105,15 +137,6 @@ impl SecurityContext {
         Self::read_from_strings(cert_string, key_string)
     }
 
-    fn build_responder(&self) -> Responder {
-        use v2::noise::negotiation::EncryptionAlgorithm::{ChaChaPoly, AESGCM};
-        Responder::new(
-            &self.static_key_pair,
-            self.signature_noise_message.clone(),
-            vec![AESGCM, ChaChaPoly],
-        )
-    }
-
     pub async fn build_framed_tcp<C, F>(
         &self,
         tcp_stream: TcpStream,
@@ -122,7 +145,24 @@ impl SecurityContext {
         C: Default + Decoder + Encoder<F>,
         <C as tokio_util::codec::Encoder<F>>::Error: Into<ii_stratum::error::Error>,
     {
-        let responder = self.build_responder();
+        // TODO: consolidate the two functions build_framed_tcp and build_framed_tcp_from_parts
+        // Note that Responder construction cannot be moved to a separate function because
+        // it contains reference to a static_key_pair
+        let signature_noise_message = self
+            .certificate
+            .build_noise_message()
+            .serialize_to_bytes_mut()
+            .map_err(|e| Error::KeySerializationError(e.to_string()))?
+            .freeze();
+        let static_key_pair = StaticKeypair {
+            private: self.secret_key.clone().into_inner(),
+            public: self.certificate.public_key.clone().into_inner(),
+        };
+        let responder = Responder::new(
+            &static_key_pair,
+            signature_noise_message,
+            vec![AESGCM, ChaChaPoly],
+        );
         responder
             .accept_with_codec(tcp_stream, |noise_codec| {
                 CompoundCodec::<C>::new(Some(noise_codec))
@@ -140,7 +180,21 @@ impl SecurityContext {
         <C as tokio_util::codec::Encoder<F>>::Error: Into<ii_stratum::error::Error>,
         P: Into<FramedParts<TcpStream, v2::noise::Codec>>,
     {
-        let responder = self.build_responder();
+        let signature_noise_message = self
+            .certificate
+            .build_noise_message()
+            .serialize_to_bytes_mut()
+            .map_err(|e| Error::KeySerializationError(e.to_string()))?
+            .freeze();
+        let static_key_pair = StaticKeypair {
+            private: self.secret_key.clone().into_inner(),
+            public: self.certificate.public_key.clone().into_inner(),
+        };
+        let responder = Responder::new(
+            &static_key_pair,
+            signature_noise_message,
+            vec![AESGCM, ChaChaPoly],
+        );
         responder
             // TODO this needs refactoring there is no point of passing the codec
             // type, we should be able to run noise just with anything that

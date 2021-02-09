@@ -158,7 +158,7 @@ impl Initiator {
             remote_static_key,
             self.authority_public_key,
         );
-        certificate.validate()?;
+        certificate.validate(std::time::SystemTime::now)?;
 
         Ok(())
     }
@@ -675,7 +675,7 @@ pub(crate) mod test {
                 remote_static_key,
                 self.authority_public_key,
             );
-            certificate.validate()?;
+            certificate.validate(|| std::time::SystemTime::now())?;
 
             Ok(())
         }

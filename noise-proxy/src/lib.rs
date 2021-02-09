@@ -38,7 +38,7 @@ pub mod connector;
 mod framing;
 mod frontend;
 
-pub use frontend::SecurityContext;
+pub use frontend::{Error, SecurityContext};
 
 pub struct NoiseProxy {
     upstream: SocketAddr,

@@ -225,7 +225,7 @@ generate_noise_keypair_structs!(
 pub struct Certificate {
     signed_part_header: SignedPartHeader,
     pub public_key: StaticPublicKeyFormat,
-    authority_public_key: Ed25519PublicKeyFormat,
+    pub authority_public_key: Ed25519PublicKeyFormat,
     signature: Ed25519SignatureFormat,
 }
 
@@ -259,15 +259,19 @@ impl Certificate {
     //    }
 
     /// See  https://docs.rs/ed25519-dalek/1.0.0-pre.3/ed25519_dalek/struct.PublicKey.html on
-    /// details for the strict verification
-    pub fn validate(&self) -> Result<()> {
+    /// details for the strict verification.
+    /// Returns expiration timestamp stated in certificate represented as SystemTime
+    pub fn validate<FN>(&self, get_current_time: FN) -> Result<SystemTime>
+    where
+        FN: FnOnce() -> SystemTime,
+    {
         let signed_part = SignedPart::new(
             self.signed_part_header.clone(),
             self.public_key.clone().into_inner(),
             self.authority_public_key.clone().into_inner(),
         );
         signed_part.verify(&self.signature.clone().into_inner())?;
-        signed_part.verify_expiration(SystemTime::now())
+        signed_part.verify_expiration(get_current_time())
     }
 
     pub fn from_noise_message(
@@ -315,7 +319,9 @@ pub mod test {
             build_test_signed_part_and_auth();
         let certificate = Certificate::new(signed_part, signature);
 
-        certificate.validate().expect("BUG: Certificate not valid!");
+        certificate
+            .validate(|| SystemTime::now())
+            .expect("BUG: Certificate not valid!");
     }
 
     #[test]

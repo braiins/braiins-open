@@ -67,7 +67,7 @@ impl SignedPartHeader {
             .expect("BUG: cannot provide 'not_valid_after' time")
     }
 
-    pub fn verify_expiration(&self, now: SystemTime) -> Result<()> {
+    pub fn verify_expiration(&self, now: SystemTime) -> Result<SystemTime> {
         let now_timestamp = Self::system_time_to_unix_time_u32(&now)?;
         if now_timestamp < self.valid_from {
             return Err(Error::Noise(format!(
@@ -81,7 +81,7 @@ impl SignedPartHeader {
                 self.valid_from, now
             )));
         }
-        Ok(())
+        Ok(self.not_valid_after())
     }
 
     fn system_time_to_unix_time_u32(t: &SystemTime) -> Result<u32> {
@@ -157,7 +157,7 @@ impl SignedPart {
         Ok(())
     }
 
-    fn verify_expiration(&self, now: SystemTime) -> Result<()> {
+    fn verify_expiration(&self, now: SystemTime) -> Result<SystemTime> {
         self.header.verify_expiration(now)
     }
 }
