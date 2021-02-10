@@ -44,7 +44,8 @@ use std::sync::Once;
 use std::time::Duration;
 
 use futures::prelude::*;
-use tokio::time;
+use once_cell::sync::OnceCell;
+use tokio::time::{self, Instant};
 
 /// This registers a customized panic hook with the stdlib.
 /// The customized panic hook does the same thing as the default
@@ -105,5 +106,88 @@ mod test {
         let mut stream = stream::pending::<()>();
         let future = stream.next().timeout(timeout);
         future.await.expect_err("BUG: Timeout expected");
+    }
+}
+
+/// An instance of `Instant` used as a reference/anchor for coarse-grained timer.
+/// All "grainy" time instants are constructed in exactly `N * 100ms` distance from this
+/// base.
+static GRAINY_TIMER_BASE: OnceCell<Instant> = OnceCell::new();
+
+/// Moves the given instant value to the first point which is on a 100ms time grid,
+/// starting from `GRAINY_TIMER_BASE` instant.
+/// This function never moves the instant to the past, always to the future or keeps
+/// it the same in case when it is already on the grid (or this is the first ever call
+/// to this function and `initialize_grainy_timer` has not been called before).
+#[inline(never)]
+pub fn make_grainy(instant: Instant) -> Instant {
+    /// This must be on a milli-second grid. We cannot use ms directly because of
+    /// "not move back" requirement.
+    const PRECISION_NS: u64 = 100_000_000;
+    let base = *GRAINY_TIMER_BASE.get_or_init(Instant::now);
+    if instant < base {
+        return instant;
+    }
+    let ns = instant.duration_since(base).as_nanos() as u64;
+    // Move the point almost by one full grid to the right. The "one" keeps
+    // any already-on-the grid value in place.
+    let ns = ns + PRECISION_NS - 1;
+    // Truncate the point to the first grid point to the left.
+    let ns = ns - ns % PRECISION_NS;
+    base + Duration::from_nanos(ns)
+}
+
+/// Makes sure we have the GRAINY_TIMER_BASE initialized. This should be ideally
+/// called before first `Instance::now()` is called, which should be later used
+/// in "grainy" context.
+pub fn initialize_grainy_timer() {
+    let _ = make_grainy(Instant::now());
+}
+
+/// Provides support for more efficient, coarse-grained timeouts for a generic futures.
+pub trait GrainyTimeout: Future {
+    /// Require a `Future` to complete before the specified duration has elapsed,
+    /// when used a grainy deadline. The actual timeout will be equal or larger than
+    /// the requested one by the `timeout` parameter.
+    fn grainy_timeout(self, timeout: Duration) -> time::Timeout<Self>
+    where
+        Self: Sized,
+    {
+        // "Optimal" deadline.
+        let deadline = Instant::now() + timeout;
+        // Coarse-grained deadline.
+        let deadline = make_grainy(deadline);
+        time::timeout_at(deadline, self)
+    }
+}
+
+impl<F: Future> GrainyTimeout for F {}
+
+#[cfg(test)]
+mod test2 {
+    use super::{initialize_grainy_timer, make_grainy};
+    use tokio::time::Instant;
+
+    #[test]
+    fn grainy() {
+        initialize_grainy_timer();
+        // Try it few times for potentially hitting some unexpected corner case.
+        for _ in 0..100 {
+            // Get some instant not on the grid.
+            let i = loop {
+                let i = Instant::now();
+                let g = make_grainy(i);
+                if i != g {
+                    break i;
+                }
+            };
+
+            let g1 = make_grainy(i);
+            let g2 = make_grainy(g1);
+
+            assert!(i < g1);
+            // It is stable
+            assert_eq!(g1, g2);
+        }
     }
 }
