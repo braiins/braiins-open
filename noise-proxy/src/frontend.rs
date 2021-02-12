@@ -24,7 +24,7 @@ use std::fmt;
 
 use std::convert::TryFrom;
 use std::path::Path;
-use std::time::{Duration, SystemTime};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ii_stratum::v2::{
     self,
@@ -65,13 +65,45 @@ pub struct SecurityContext {
     secret_key: v2::noise::auth::StaticSecretKeyFormat,
 }
 
-// Show certificate authority public key and expiry timestamp
+/// Show certificate authority public key and expiry timestamp
+/// ```
+/// use ii_noise_proxy::SecurityContext;
+/// let ctx = SecurityContext::read_from_strings(r#"{
+///   "signed_part_header": {
+///     "version": 0,
+///     "valid_from": 1613145976,
+///     "not_valid_after": 2477145976
+///   },
+///   "public_key": {
+///     "noise_public_key": "2Nki8zRNjrYLdcGbRLFrTbwLsDfKSiDMsiK3UWGTJNJpaPjAZW"
+///   },
+///   "authority_public_key": {
+///     "ed25519_public_key": "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx"
+///   },
+///   "signature": {
+///     "ed25519_signature": "AdrgZxKNM3wCQmv5q3aTn8T96DV6egAYYFQRgcxuQjfiKvraR2xp3pNLRuDTvwQApYZc6YXnwbxXzUdHbGxaxSMq4g67c"
+///   }
+/// }"#.to_owned(), r#"{
+///   "noise_secret_key": "2owBcKCGg7k46rTUYEwNEKJsnT2TqYDtFsMAuicrsLXhi3VwK4"
+/// }"#.to_owned()).expect("BUG: Failed to parse certificate");
+/// assert_eq!(
+///     format!("{:?}", ctx),
+///     String::from(
+///r#"SecurityContext { certificate_authority: "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx", certificate_expiry: "2477145976" }"#)
+/// );
+///
+/// ```
 impl fmt::Debug for SecurityContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let certificate_authority = self.authority_pubkey();
         let expiry_timestamp = self.certificate.validate(SystemTime::now).map_or_else(
             |_| "certificate is invalid".to_owned(),
-            |t| format!("{:?}", t),
+            |t| {
+                let expiration_time = t
+                    .duration_since(UNIX_EPOCH)
+                    .expect("BUG: Invalid expiry date");
+                format!("{:?}", expiration_time.as_secs())
+            },
         );
         f.debug_struct("SecurityContext")
             .field("certificate_authority", &certificate_authority.to_string())
@@ -84,16 +116,16 @@ impl SecurityContext {
     fn from_certificate_and_secret_key(
         certificate: v2::noise::auth::Certificate,
         secret_key: v2::noise::auth::StaticSecretKeyFormat,
-    ) -> Result<Self> {
-        certificate
-            .validate(SystemTime::now)
-            .map_err(|e| Error::NoiseInitError(e.to_string()))?;
+    ) -> Self {
+        // certificate
+        //     .validate(SystemTime::now)
+        //     .map_err(|e| Error::NoiseInitError(e.to_string()))?;
         // TODO secret key validation is currently not possible
         // let public_key = certificate.validate_secret_key(&secret_key)?;
-        Ok(Self {
+        Self {
             certificate,
             secret_key,
-        })
+        }
     }
 
     fn authority_pubkey(&self) -> EncodedEd25519PublicKey {
@@ -101,18 +133,47 @@ impl SecurityContext {
     }
 
     /// Returns remaining time of certificate validity or error if the certificate has expired
-    pub fn validate_by_time<FN>(&self, get_current_time: FN) -> Result<Duration>
+    /// ```
+    /// use std::time::{Duration, UNIX_EPOCH};
+    /// use ii_noise_proxy::SecurityContext;
+    /// let ctx = SecurityContext::read_from_strings(r#"{
+    ///   "signed_part_header": {
+    ///     "version": 0,
+    ///     "valid_from": 1612897727,
+    ///     "not_valid_after": 1612954827
+    ///   },
+    ///   "public_key": {
+    ///     "noise_public_key": "2Nki8zRNjrYLdcGbRLFrTbwLsDfKSiDMsiK3UWGTJNJpaPjAZW"
+    ///   },
+    ///   "authority_public_key": {
+    ///     "ed25519_public_key": "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx"
+    ///   },
+    ///   "signature": {
+    ///     "ed25519_signature": "ZAefGhUNHn6u26Vob5T4UM32mH9Wujx7oDR1bmf4ei6cVNvrFtbaNkSvdRyJz13KdU92tK3DrdcG4AwfSAuj7MXRFdKLE"
+    ///   }
+    /// }"#.to_owned(), r#"{
+    ///   "noise_secret_key": "2owBcKCGg7k46rTUYEwNEKJsnT2TqYDtFsMAuicrsLXhi3VwK4"
+    /// }"#.to_owned()).expect("BUG: Failed to parse certificate");
+    ///
+    /// let time_before_expiration = || UNIX_EPOCH + Duration::from_secs(1612954826);
+    /// let time_after_expiration = || UNIX_EPOCH + Duration::from_secs(1612954828);
+    ///
+    /// assert!(
+    ///     ctx.validate_by_time(time_before_expiration).is_ok(),
+    ///     "BUG: Certificate should be valid"
+    /// );
+    /// assert!(
+    ///     ctx.validate_by_time(time_after_expiration).is_err(),
+    ///     "BUG: Certificate shouldn't be valid"
+    /// );
+    /// ```
+    pub fn validate_by_time<FN>(&self, get_current_time: FN) -> Result<SystemTime>
     where
         FN: FnOnce() -> SystemTime,
     {
         self.certificate
             .validate(get_current_time)
             .map_err(|_| Error::TimeValidationError)
-            .and_then(|expiry_time| {
-                expiry_time
-                    .duration_since(SystemTime::now())
-                    .map_err(|_| Error::TimeValidationError)
-            })
     }
 
     pub fn read_from_strings(certificate: String, secret_key: String) -> Result<Self> {
@@ -122,7 +183,7 @@ impl SecurityContext {
         let key = StaticSecretKeyFormat::try_from(secret_key)
             .map_err(|e| Error::KeySerializationError(e.to_string()))?;
 
-        SecurityContext::from_certificate_and_secret_key(cert, key)
+        Ok(SecurityContext::from_certificate_and_secret_key(cert, key))
     }
 
     pub async fn read_from_file(certificate_file: &Path, secret_key_file: &Path) -> Result<Self> {
