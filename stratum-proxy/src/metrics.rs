@@ -323,6 +323,7 @@ impl ErrorLabeling for error::Error {
             Self::InvalidFile(_) => "invalid_file",
             Self::Metrics(_) => "metrics",
             Self::Io(_) => "io",
+            Self::Noise(_) => "expired_cert",
         }
     }
 }

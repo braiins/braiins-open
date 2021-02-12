@@ -82,7 +82,7 @@ impl Config {
             Ok(None)
         } else {
             if let Some(key_and_cert_files) = self.key_and_cert_files.as_ref() {
-                SecurityContext::read_from_file(
+                let ctx_result = SecurityContext::read_from_file(
                     key_and_cert_files.certificate_file.as_path(),
                     key_and_cert_files.secret_key_file.as_path(),
                 )
@@ -90,7 +90,11 @@ impl Config {
                 .map_err(|e| {
                     Error::InvalidFile(format!("Failed to read certificate and key: {}", e))
                 })
-                .map(|ctx| Some(Arc::new(ctx)))
+                .map(|ctx| Arc::new(ctx));
+                if let Ok(ctx) = ctx_result.as_ref() {
+                    ctx.validate_by_time(std::time::SystemTime::now)?;
+                }
+                ctx_result.map(Some)
             } else {
                 Err(Error::InvalidFile(
                     "Certificate and key files are missing".to_owned(),

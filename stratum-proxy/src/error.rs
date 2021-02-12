@@ -150,6 +150,9 @@ pub enum Error {
 
     #[error("I/O error: {0}")]
     Io(std::io::Error),
+
+    #[error("Noise security error: {0}")]
+    Noise(#[from] ii_noise_proxy::Error),
 }
 
 impl From<V2ProtocolError> for Error {
