@@ -142,7 +142,7 @@ impl Initiator {
     fn verify_remote_static_key_signature(
         &mut self,
         signature_noise_message: BytesMut,
-    ) -> Result<()> {
+    ) -> Result<auth::Certificate> {
         let remote_static_key = self
             .handshake_state
             .as_ref()
@@ -160,7 +160,7 @@ impl Initiator {
         );
         certificate.validate(std::time::SystemTime::now)?;
 
-        Ok(())
+        Ok(certificate)
     }
 
     fn build_handshake_state(&mut self, negotiation: EncryptionNegotiation) -> Result<()> {
