@@ -24,6 +24,7 @@
 
 use bytes::BytesMut;
 use snow::HandshakeState;
+use std::convert::{TryFrom, TryInto};
 use std::time;
 
 use futures::prelude::*;
@@ -59,7 +60,7 @@ pub(super) enum StepResult {
     NoMoreReply(Message),
     /// The handshake is complete, no more messages are expected and nothing is to be sent. The
     /// protocol can be switched to transport mode now.
-    Done,
+    Done(Option<super::auth::Certificate>),
 }
 
 /// Objects that can perform 1 handshake step implement this trait
@@ -108,14 +109,13 @@ where
         Ok(Message::new(handshake_frame))
     }
 
-    /// Consumes the handshake object and drives the inner `Step`
-    pub(super) async fn run(
-        mut self,
+    pub(super) async fn complete_handshake(
+        &mut self,
         handshake_stream: &mut super::NoiseFramedTcpStream,
-    ) -> Result<super::TransportMode> {
+    ) -> Result<Option<super::auth::Certificate>> {
         let mut in_msg: Option<Message> = None;
 
-        loop {
+        let certificate = loop {
             let handshake_buf: BytesMut = BytesMut::new();
 
             match self
@@ -147,19 +147,37 @@ where
                         .await??;
                 }
                 // Initiator is now finalized
-                StepResult::Done => {
-                    break;
+                StepResult::Done(certificate) => {
+                    break (certificate);
                 }
             };
-        }
+        };
 
-        // At this point the handshake has been successfully completed
-        // Consume the handshake step object extracting the `HandshakeState` and attempt to
-        // transition into transport mode
-        self.handshake_step
+        Ok(certificate)
+    }
+
+    /// Completes the handshake and consumes it transforming it into transport mode
+    pub(super) async fn run(
+        mut self,
+        handshake_stream: &mut super::NoiseFramedTcpStream,
+    ) -> Result<super::TransportMode> {
+        self.complete_handshake(handshake_stream).await?;
+        self.try_into()
+    }
+}
+
+impl<T> TryFrom<Handshake<T>> for super::TransportMode
+where
+    T: Step,
+{
+    type Error = crate::error::Error;
+
+    fn try_from(handshake: Handshake<T>) -> std::result::Result<Self, Self::Error> {
+        handshake
+            .handshake_step
             .into_handshake_state()
             .into_transport_mode()
             .map_err(Into::into)
-            .map(super::TransportMode::new)
+            .map(|state| (super::TransportMode::new(state)))
     }
 }

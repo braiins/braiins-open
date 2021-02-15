@@ -135,6 +135,30 @@ impl Initiator {
         Ok(transport_mode.into_framed(noise_framed_stream, build_codec))
     }
 
+    pub async fn connect_with_codec_and_cert<I, F, U>(
+        self,
+        connection: TcpStream,
+        build_codec: F,
+    ) -> Result<(Framed<TcpStream, U>, auth::Certificate)>
+    where
+        F: FnOnce(Codec) -> U,
+        U: Encoder<I>,
+    {
+        let mut noise_framed_stream = ii_wire::Connection::<Framing>::new(connection).into_inner();
+
+        let mut handshake = handshake::Handshake::new(self);
+        let certificate = handshake
+            .complete_handshake(&mut noise_framed_stream)
+            .await?
+            .expect("BUG: remote end certificate not provided!");
+        let transport_mode = TransportMode::try_from(handshake)?;
+
+        Ok((
+            transport_mode.into_framed(noise_framed_stream, build_codec),
+            certificate,
+        ))
+    }
+
     /// Verify the signature of the remote static key
     /// TODO: verify the signature of the remote static public key based on:
     ///  - remote central authority public key (must be provided to Initiator instance upon
@@ -237,8 +261,9 @@ impl handshake::Step for Initiator {
                     .as_mut()
                     .ok_or_else(|| Error::Noise("Handshake state shouldn't be None".to_string()))?
                     .read_message(&in_msg.inner, &mut buf)?;
-                self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
-                handshake::StepResult::Done
+                let certificate =
+                    self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
+                handshake::StepResult::Done(Some(certificate))
             }
             _ => {
                 panic!("BUG: No more steps that can be done by the Initiator in Noise handshake");
@@ -425,7 +450,8 @@ impl<'a> handshake::Step for Responder<'a> {
                 noise_bytes.extend_from_slice(&buf[..len_written]);
                 handshake::StepResult::NoMoreReply(handshake::Message::new(noise_bytes))
             }
-            3 => handshake::StepResult::Done,
+            // Responer will not provide the certificate as it has been already loaded
+            3 => handshake::StepResult::Done(None),
             _ => {
                 panic!("BUG: No more steps that can be done by the Responder in Noise handshake");
             }
@@ -505,6 +531,7 @@ pub(crate) mod test {
     use super::*;
     use futures::prelude::*;
     use handshake::Step as _;
+    use std::time::SystemTime;
 
     /// Helper that builds:
     /// - serialized signature noise message
@@ -574,7 +601,7 @@ pub(crate) mod test {
                         handshake::StepResult::NextStep(_) => {
                             panic!("BUG: no next step should happen in non-legacy handshake")
                         }
-                        handshake::StepResult::Done | handshake::StepResult::ReceiveMessage => {
+                        handshake::StepResult::Done(_) | handshake::StepResult::ReceiveMessage => {
                             panic!("BUG: Responder didn't yield any response!");
                         }
                     }
@@ -591,11 +618,11 @@ pub(crate) mod test {
                             responder_out_msg
                         ),
                         // Responder is now either done or may request another message
-                        handshake::StepResult::ReceiveMessage | handshake::StepResult::Done => {}
+                        handshake::StepResult::ReceiveMessage | handshake::StepResult::Done(_) => {}
                     }
                 }
                 // Initiator is now finalized
-                handshake::StepResult::Done => break,
+                handshake::StepResult::Done(_) => break,
             };
         }
         let initiator_transport_mode = TransportMode::new(
@@ -705,7 +732,7 @@ pub(crate) mod test {
                     let signature_len =
                         self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
                     self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
-                    handshake::StepResult::Done
+                    handshake::StepResult::Done(None)
                 }
                 _ => {
                     panic!(
@@ -752,7 +779,7 @@ pub(crate) mod test {
                         handshake::StepResult::NextStep(_) => {
                             panic!("BUG: Initiator shouldn't ...")
                         }
-                        handshake::StepResult::Done | handshake::StepResult::ReceiveMessage => {
+                        handshake::StepResult::Done(_) | handshake::StepResult::ReceiveMessage => {
                             panic!("BUG: Initiator didn't yield any response!");
                         }
                     }
@@ -772,7 +799,7 @@ pub(crate) mod test {
                         handshake::StepResult::NextStep(_) => {
                             panic!("BUG: Initiator shouldn't ...")
                         }
-                        handshake::StepResult::Done | handshake::StepResult::ReceiveMessage => {
+                        handshake::StepResult::Done(_) | handshake::StepResult::ReceiveMessage => {
                             panic!("BUG: Initiator didn't yield any response!");
                         }
                     }
@@ -789,11 +816,11 @@ pub(crate) mod test {
                             initiator_out_msg,
                         ),
                         // Initiator is now either done or may request another message
-                        handshake::StepResult::ReceiveMessage | handshake::StepResult::Done => {}
+                        handshake::StepResult::ReceiveMessage | handshake::StepResult::Done(_) => {}
                     }
                 }
                 // Responder is now finalized
-                handshake::StepResult::Done => break,
+                handshake::StepResult::Done(_) => break,
             };
         }
         let initiator_transport_mode = TransportMode::new(
@@ -899,10 +926,16 @@ pub(crate) mod test {
             authority_keypair.public,
             vec![EncryptionAlgorithm::ChaChaPoly, EncryptionAlgorithm::AESGCM],
         );
-        let mut client_framed_stream = initiator
-            .connect(connection)
+        let (mut client_framed_stream, responder_certificate) = initiator
+            .connect_with_codec_and_cert(connection, |noise_codec| {
+                codec::CompoundCodec::<v2::Codec>::new(Some(noise_codec))
+            })
             .await
             .expect("BUG: cannot connect to noise responder");
+
+        responder_certificate
+            .validate(SystemTime::now)
+            .expect("BUG: Responder cerficate invalid");
 
         let received_frame = client_framed_stream
             .next()
