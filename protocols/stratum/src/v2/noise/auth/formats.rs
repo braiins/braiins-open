@@ -223,10 +223,10 @@ generate_noise_keypair_structs!(
 /// validity
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Certificate {
-    signed_part_header: SignedPartHeader,
+    pub signed_part_header: SignedPartHeader,
     pub public_key: StaticPublicKeyFormat,
     pub authority_public_key: Ed25519PublicKeyFormat,
-    signature: Ed25519SignatureFormat,
+    pub signature: Ed25519SignatureFormat,
 }
 
 impl Certificate {

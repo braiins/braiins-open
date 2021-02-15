@@ -37,11 +37,11 @@ pub use formats::*;
 /// Header of the `SignedPart` that will also be part of the `Certificate`
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SignedPartHeader {
-    version: u16,
+    pub version: u16,
     // Validity start time (unix timestamp)
-    valid_from: u32,
+    pub valid_from: u32,
     // Signature is invalid after this point in time (unix timestamp)
-    not_valid_after: u32,
+    pub not_valid_after: u32,
 }
 
 impl SignedPartHeader {
