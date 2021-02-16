@@ -451,9 +451,13 @@ sized_seq_type!(Seq0_64k, 0, 65535);
 /// TODO: Fix minimal string length in the Stratum V2 specification
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DeviceInfo {
+    /// E.g. "Bitmain"
     pub vendor: Str0_255,
+    /// E.g. "S9i 13.5"
     pub hw_rev: Str0_255,
+    /// E.g. "braiins-os-2018-09-22-1-hash"
     pub fw_ver: Str0_255,
+    /// E.g. Unique identifier of the device as defined by the vendor.
     pub dev_id: Str0_255,
 }
 

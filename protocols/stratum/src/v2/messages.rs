@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Braiins Systems s.r.o.
+// Copyright (C) 2021  Braiins Systems s.r.o.
 //
 // This file is part of Braiins Open-Source Initiative (BOSI).
 //
@@ -48,22 +48,41 @@ macro_rules! impl_base_message_conversion {
     };
 }
 
+/// Initiates the connection. This MUST be the first message sent by the client on the newly opened
+/// connection. Server MUST respond with either a [`SetupConnectionSuccess`] or [`SetupConnectionError`]
+/// message. Clients that are not configured to provide telemetry data to the upstream node SHOULD
+/// set device_id to 0-length strings. However, they MUST always set vendor to a string describing
+/// the manufacturer/developer and firmware version and SHOULD always set hardware_version to a
+/// string describing, at least, the particular hardware/software package in use.
 #[id(0x00u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetupConnection {
+    /// 0 = Mining Protocol
+    /// 1 = Job Negotiation Protocol
+    /// 2 = Template Distribution Protocol
+    /// 3 = Job Distribution Protocol
     pub protocol: u8,
+    /// The minimum protocol version the client supports (currently must be 2).
     pub min_version: u16,
+    /// The maximum protocol version the client supports (currently must be 2).
     pub max_version: u16,
-    /// TODO: specify an enum for flags
+    // TODO: specify an enum for flags
+    /// Flags indicating optional protocol features the client supports. Each protocol from protocol
+    /// field has its own values/flags.
     pub flags: u32,
+    /// ASCII text indicating the hostname or IP address (upstream host).
     pub endpoint_host: Str0_255,
+    /// Connecting port value (upstream port).
     pub endpoint_port: u16,
     pub device: DeviceInfo,
 }
 
+/// Response to SetupConnection message if the server accepts the connection. The client is required
+/// to verify the set of feature flags that the server supports and act accordingly.
 #[id(0x01u8)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SetupConnectionSuccess {
+    /// Selected version proposed by the connecting node that the upstream node supports. This version will be used on the connection for the rest of its life.
     pub used_version: u16,
     /// TODO: specify an enum for flags
     pub flags: u32,
