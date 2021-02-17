@@ -320,7 +320,7 @@ pub mod test {
         let certificate = Certificate::new(signed_part, signature);
 
         certificate
-            .validate(|| SystemTime::now())
+            .validate(SystemTime::now)
             .expect("BUG: Certificate not valid!");
     }
 
