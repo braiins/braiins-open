@@ -27,6 +27,7 @@ use std::sync::Arc;
 extern crate ii_logging;
 
 use anyhow::{anyhow, Result};
+use futures::{sink::SinkExt, stream::StreamExt};
 use ii_async_utils::{Spawnable, Tripwire};
 use ii_stratum::v1;
 use ii_wire::proxy::{self, WithProxyInfo};
@@ -48,7 +49,7 @@ pub struct NoiseProxy {
     /// Builds PROXY protocol acceptor for a specified configuration
     proxy_protocol_acceptor_builder: proxy::AcceptorBuilder<TcpStream>,
     /// Server will use this version for talking to upstream server (when defined)
-    _proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
+    proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
 }
 
 impl NoiseProxy {
@@ -77,7 +78,7 @@ impl NoiseProxy {
             proxy_protocol_acceptor_builder: proxy::AcceptorBuilder::new(
                 proxy_protocol_downstream_config,
             ),
-            _proxy_protocol_upstream_version: proxy_protocol_upstream_version,
+            proxy_protocol_upstream_version,
         })
     }
 
@@ -91,18 +92,21 @@ impl NoiseProxy {
                         Ok(x) => x,
                         Err(e) => {
                             warn!("NoiseProxy: TCP Error, disconnecting from client: {}", e);
+                            // Why the sleep here?
                             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                             continue;
                         }
                     };
                     debug!("NoiseProxy: Spawning connection task from peer {}", peer_socket);
-                    tokio::spawn(encrypt_v1_connection(
+                    let connection = NoiseProxyConnection::new(
                         self.proxy_protocol_acceptor_builder.build(tcp_stream),
+                        self.proxy_protocol_upstream_version,
                         peer_socket,
                         self.security_context.clone(),
                         self.upstream,
                         tripwire.clone(),
-                    ));
+                    );
+                    tokio::spawn(connection.handle());
                 }
                 _ = tripwire.clone() => {
                     info!("NoiseProxy: terminating");
@@ -119,85 +123,121 @@ impl Spawnable for NoiseProxy {
     }
 }
 
-async fn encrypt_v1_connection(
-    proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
-    direct_downstream_peer_addr: SocketAddr,
+struct NoiseProxyConnection {
+    /// The acceptor is a disposable item that will be used only once throughout the connection
+    /// lifetime
+    proxy_protocol_acceptor: Option<proxy::AcceptorFuture<TcpStream>>,
+    /// Server will use this version for talking to upstream server (when defined)
+    _proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
     security_context: Arc<SecurityContext>,
+    direct_downstream_peer_addr: SocketAddr,
     upstream: SocketAddr,
     tripwire: Tripwire,
-) -> Result<()> {
-    use futures::{sink::SinkExt, stream::StreamExt};
+}
 
-    let proxy_stream = proxy_protocol_acceptor.await?;
-    let proxy_info = proxy_stream.proxy_info()?;
-
-    let up_peer = upstream.to_string();
-
-    let downstream_framed = security_context
-        .build_framed_tcp_from_parts::<v1::Codec, v1::Frame, _>(proxy_stream.into_framed_parts())
-        .await?;
-
-    debug!(
-        "NoiseProxy: Established secure V1 connection with {}:{}",
-        direct_downstream_peer_addr, proxy_info
-    );
-    let upstream_framed =
-        tokio_util::codec::Framed::new(TcpStream::connect(upstream).await?, v1::Codec::default());
-
-    let (mut downstream_sink, downstream_stream) = downstream_framed.split();
-    let (mut upstream_sink, upstream_stream) = upstream_framed.split();
-    let tripwire1 = tripwire.clone();
-    let down_to_up = async move {
-        let mut str1 = downstream_stream.take_until(tripwire1);
-        while let Some(x) = str1.next().await {
-            if let Ok(frame) = x {
-                if let Err(e) = upstream_sink.send(frame).await {
-                    warn!(
-                        "NoiseProxy: {}:{} Upstream error: {}",
-                        direct_downstream_peer_addr, proxy_info, e
-                    );
-                } else {
-                    trace!("-> Frame")
-                }
-            }
+impl NoiseProxyConnection {
+    fn new(
+        proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
+        proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
+        direct_downstream_peer_addr: SocketAddr,
+        security_context: Arc<SecurityContext>,
+        upstream: SocketAddr,
+        tripwire: Tripwire,
+    ) -> Self {
+        Self {
+            proxy_protocol_acceptor: Some(proxy_protocol_acceptor),
+            _proxy_protocol_upstream_version: proxy_protocol_upstream_version,
+            security_context,
+            direct_downstream_peer_addr,
+            upstream,
+            tripwire,
         }
-        info!(
-            "NoiseProxy: Downstream disconnected: {}:{}",
+    }
+
+    async fn handle(mut self) -> Result<()> {
+        // Run the HAProxy protocol
+        let proxy_protocol_acceptor = self
+            .proxy_protocol_acceptor
+            .take()
+            .expect("BUG: Missing proxy protocol acceptor");
+        let proxy_stream = proxy_protocol_acceptor.await?;
+        let proxy_info = proxy_stream.proxy_info()?;
+        // Allows access to the peer address from both tasks
+        let direct_downstream_peer_addr = self.direct_downstream_peer_addr;
+
+        let up_peer = self.upstream.to_string();
+
+        let downstream_framed = self
+            .security_context
+            .build_framed_tcp_from_parts::<v1::Codec, v1::Frame, _>(
+                proxy_stream.into_framed_parts(),
+            )
+            .await?;
+
+        debug!(
+            "NoiseProxy: Established secure V1 connection with {}:{}",
             direct_downstream_peer_addr, proxy_info
         );
-        if upstream_sink.close().await.is_err() {
-            warn!(
-                "NoiseProxy: Error closing upstream channel for {}:{}",
+        let upstream_framed = tokio_util::codec::Framed::new(
+            TcpStream::connect(self.upstream).await?,
+            v1::Codec::default(),
+        );
+
+        let (mut downstream_sink, downstream_stream) = downstream_framed.split();
+        let (mut upstream_sink, upstream_stream) = upstream_framed.split();
+        let tripwire1 = self.tripwire.clone();
+        let down_to_up = async move {
+            let mut str1 = downstream_stream.take_until(tripwire1);
+            while let Some(x) = str1.next().await {
+                if let Ok(frame) = x {
+                    if let Err(e) = upstream_sink.send(frame).await {
+                        warn!(
+                            "NoiseProxy: {}:{} Upstream error: {}",
+                            direct_downstream_peer_addr, proxy_info, e
+                        );
+                    } else {
+                        trace!("-> Frame")
+                    }
+                }
+            }
+            info!(
+                "NoiseProxy: Downstream disconnected: {}:{}",
+                direct_downstream_peer_addr, proxy_info
+            );
+            if upstream_sink.close().await.is_err() {
+                warn!(
+                    "NoiseProxy: Error closing upstream channel for {}:{}",
+                    direct_downstream_peer_addr, proxy_info
+                );
+            };
+        };
+        let up_to_down = async move {
+            let mut str1 = upstream_stream.take_until(self.tripwire);
+
+            while let Some(x) = str1.next().await {
+                if let Ok(frame) = x {
+                    if let Err(e) = downstream_sink.send(frame).await {
+                        warn!(
+                            "NoiseProxy: {}:{} Downstream error: {}",
+                            direct_downstream_peer_addr, proxy_info, e
+                        );
+                    } else {
+                        trace!("<- Frame")
+                    }
+                }
+            }
+            debug!(
+                "NoiseProxy: Upstream disconnected: {}:{}",
                 direct_downstream_peer_addr, proxy_info
             );
         };
-    };
-    let up_to_down = async move {
-        let mut str1 = upstream_stream.take_until(tripwire);
-
-        while let Some(x) = str1.next().await {
-            if let Ok(frame) = x {
-                if let Err(e) = downstream_sink.send(frame).await {
-                    warn!(
-                        "NoiseProxy: {}:{} Downstream error: {}",
-                        direct_downstream_peer_addr, proxy_info, e
-                    );
-                } else {
-                    trace!("<- Frame")
-                }
-            }
-        }
+        futures::future::join(down_to_up, up_to_down).await;
         debug!(
-            "NoiseProxy: Upstream disconnected: {}:{}",
-            direct_downstream_peer_addr, proxy_info
+            "NoiseProxy: Session {}:{}->{} closed",
+            direct_downstream_peer_addr, proxy_info, up_peer
         );
-    };
-    futures::future::join(down_to_up, up_to_down).await;
-    debug!(
-        "NoiseProxy: Session {}:{}->{} closed",
-        direct_downstream_peer_addr, proxy_info, up_peer
-    );
-    Ok(())
+        Ok(())
+    }
 }
 
 #[cfg(test)]
