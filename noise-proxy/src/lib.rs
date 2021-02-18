@@ -83,19 +83,19 @@ impl NoiseProxy {
 
     pub async fn main_loop(mut self, tripwire: Tripwire) {
         let listener = self.listener.take().expect("BUG: missing tcp listener");
-
+        info!("NoiseProxy: starting main loop");
         loop {
             tokio::select! {
                 tcp_accept_result = listener.accept() => {
                     let (tcp_stream, peer_socket) = match tcp_accept_result {
                         Ok(x) => x,
                         Err(e) => {
-                            warn!("TCP Error, disconnecting from client: {}", e);
+                            warn!("NoiseProxy: TCP Error, disconnecting from client: {}", e);
                             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                             continue;
                         }
                     };
-                    info!("Spawning noise connection task from peer {}", peer_socket);
+                    debug!("NoiseProxy: Spawning connection task from peer {}", peer_socket);
                     tokio::spawn(encrypt_v1_connection(
                         self.proxy_protocol_acceptor_builder.build(tcp_stream),
                         peer_socket,
@@ -105,7 +105,7 @@ impl NoiseProxy {
                     ));
                 }
                 _ = tripwire.clone() => {
-                    info!("Terminating noise proxy");
+                    info!("NoiseProxy: terminating");
                     break;
                 }
             }
@@ -138,7 +138,7 @@ async fn encrypt_v1_connection(
         .await?;
 
     debug!(
-        "Established secure V1 connection with {}:{}",
+        "NoiseProxy: Established secure V1 connection with {}:{}",
         direct_downstream_peer_addr, proxy_info
     );
     let upstream_framed =
@@ -152,15 +152,24 @@ async fn encrypt_v1_connection(
         while let Some(x) = str1.next().await {
             if let Ok(frame) = x {
                 if let Err(e) = upstream_sink.send(frame).await {
-                    warn!("Upstream error: {}", e);
+                    warn!(
+                        "NoiseProxy: {}:{} Upstream error: {}",
+                        direct_downstream_peer_addr, proxy_info, e
+                    );
                 } else {
                     trace!("-> Frame")
                 }
             }
         }
-        info!("Downstream disconnected");
+        info!(
+            "NoiseProxy: Downstream disconnected: {}:{}",
+            direct_downstream_peer_addr, proxy_info
+        );
         if upstream_sink.close().await.is_err() {
-            warn!("Error closing upstream channel");
+            warn!(
+                "NoiseProxy: Error closing upstream channel for {}:{}",
+                direct_downstream_peer_addr, proxy_info
+            );
         };
     };
     let up_to_down = async move {
@@ -169,17 +178,23 @@ async fn encrypt_v1_connection(
         while let Some(x) = str1.next().await {
             if let Ok(frame) = x {
                 if let Err(e) = downstream_sink.send(frame).await {
-                    warn!("Error: {}", e);
+                    warn!(
+                        "NoiseProxy: {}:{} Downstream error: {}",
+                        direct_downstream_peer_addr, proxy_info, e
+                    );
                 } else {
                     trace!("<- Frame")
                 }
             }
         }
-        info!("Upstream disconnected");
+        debug!(
+            "NoiseProxy: Upstream disconnected: {}:{}",
+            direct_downstream_peer_addr, proxy_info
+        );
     };
     futures::future::join(down_to_up, up_to_down).await;
     debug!(
-        "Session {}:{}->{} closed",
+        "NoiseProxy: Session {}:{}->{} closed",
         direct_downstream_peer_addr, proxy_info, up_peer
     );
     Ok(())
