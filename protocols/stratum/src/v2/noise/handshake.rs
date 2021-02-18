@@ -47,6 +47,7 @@ impl Message {
 /// Describes the step result what the relevant party should do after sending out the
 /// provided message (if any)
 #[derive(Debug, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub(super) enum StepResult {
     /// The object should receive a noise message and pass it for processing in the next step
     ReceiveMessage,
@@ -178,6 +179,6 @@ where
             .into_handshake_state()
             .into_transport_mode()
             .map_err(Into::into)
-            .map(|state| (super::TransportMode::new(state)))
+            .map(super::TransportMode::new)
     }
 }
