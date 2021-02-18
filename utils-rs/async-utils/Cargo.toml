@@ -1,6 +1,6 @@
 [package]
 name = "ii-async-utils"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Braiins <braiins@braiins.com>"]
 license = "GPL-3.0-or-later"
 edition = "2018"
@@ -9,8 +9,11 @@ edition = "2018"
 futures = "0.3.7"
 once_cell = "1.5.2"
 pin-project-lite = "0.2.0"
+tokio12 = { package = "tokio", version = "1.2.0", features = ["full"], optional = true }
 tokio = { version = "0.3.2", features = ["full"], optional = true }
 tokio02 = { package = "tokio", version = "0.2.22", features = ["full"], optional = true }
+# we need tokio-stream to support stream wrappers for Signals, not in the latest version yet
+tokio-stream = { git = "https://github.com/tokio-rs/tokio", rev="6fd06aaeecce21bcf31cbe485fe0060e3f07e983", features = ["default", "signal"] }
 
 [features]
 default = ["tokio03"]

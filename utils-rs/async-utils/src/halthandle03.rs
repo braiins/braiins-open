@@ -29,47 +29,10 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures::prelude::*;
-
-pub use tokio12 as tokio;
-
+use tokio::signal::unix::{self, SignalKind};
 use tokio::sync::{mpsc, watch, Notify};
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time;
-use tokio_stream::wrappers::SignalStream;
-use tokio_stream::wrappers::UnboundedReceiverStream;
-
-#[cfg(target_family = "unix")]
-async fn interrupt_signal<FT>(ft: FT)
-where
-    FT: Future + Send + 'static,
-{
-    use tokio::signal::unix;
-    let sigterm = SignalStream::new(
-        unix::signal(unix::SignalKind::terminate()).expect("BUG: Error listening for SIGTERM"),
-    );
-    let sigint = SignalStream::new(
-        unix::signal(unix::SignalKind::interrupt()).expect("BUG: Error listening for SIGINT"),
-    );
-
-    future::select(sigterm.into_future(), sigint.into_future()).await;
-    ft.await;
-}
-
-#[cfg(target_family = "windows")]
-async fn interrupt_signal<FT>(ft: FT)
-where
-    FT: Future + Send + 'static,
-{
-    use tokio::signal::windows;
-    let sigterm = SignalStream::new(windows::ctrl_c().expect("BUG: Error listening for SIGTERM"));
-    let sigint = SignalStream::new(windows::ctrl_break().expect("BUG: Error listening for SIGINT"));
-
-    future::select(sigterm.into_future(), sigint.into_future()).await;
-    ft.await;
-}
-
-#[cfg(all(not(target_family = "unix"), not(target_family = "windows")))]
-compile_error!("Unsupported OS family");
 
 pub trait Spawnable {
     fn run(self, tripwire: Tripwire) -> JoinHandle<()>;
@@ -102,7 +65,7 @@ enum TaskMsg {
 /// and then collect halting tasks' join handles.
 #[derive(Debug)]
 struct Tasks {
-    tasks_rx: UnboundedReceiverStream<TaskMsg>,
+    tasks_rx: mpsc::UnboundedReceiver<TaskMsg>,
     notify_join: Arc<Notify>,
 }
 
@@ -271,7 +234,7 @@ impl Default for HaltHandle {
             })),
             tasks_tx,
             tasks: Mutex::new(Some(Tasks {
-                tasks_rx: UnboundedReceiverStream::new(tasks_rx),
+                tasks_rx,
                 notify_join,
             })),
             signal_task_spawned: AtomicBool::new(false),
@@ -358,7 +321,15 @@ impl HaltHandle {
             .is_ok()
         {
             let ft = f(self);
-            tokio::spawn(interrupt_signal(ft));
+            tokio::spawn(async move {
+                let sigterm = unix::signal(SignalKind::terminate())
+                    .expect("BUG: Error listening for SIGTERM");
+                let sigint =
+                    unix::signal(SignalKind::interrupt()).expect("BUG: Error listening for SIGINT");
+
+                future::select(sigterm.into_future(), sigint.into_future()).await;
+                ft.await;
+            });
         }
     }
 
@@ -431,11 +402,11 @@ mod test {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use tokio::time;
+    use tokio::{stream, time};
 
     /// Wait indefinitely on a stream with a `Tripwire` for cancellation.
     async fn forever_stream(tripwire: Tripwire) {
-        let mut stream = tokio_stream::pending::<()>().take_until(tripwire);
+        let mut stream = stream::pending::<()>().take_until(tripwire);
 
         // The pending stream never actually yields a value,
         // ie. next() resolves to None only in the canelled case,

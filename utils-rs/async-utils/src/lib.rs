@@ -25,10 +25,21 @@
 #[cfg(all(feature = "tokio03", feature = "tokio02"))]
 compile_error!("You can't use both Tokio 0.3 and 0.2. Note: The `tokio02` feature requires default features to be turned off");
 
-#[cfg(feature = "tokio03")]
+#[cfg(all(feature = "tokio12", feature = "tokio02"))]
+compile_error!("You can't use both Tokio 1.2 and 0.2. Note: The `tokio02` feature requires default features to be turned off");
+
+#[cfg(all(feature = "tokio12", feature = "tokio03"))]
+compile_error!("You can't use both Tokio 1.2 and 0.3. Note: The `tokio02` feature requires default features to be turned off");
+
+#[cfg(feature = "tokio12")]
 mod halthandle;
-#[cfg(feature = "tokio03")]
+#[cfg(feature = "tokio12")]
 pub use halthandle::*;
+
+#[cfg(feature = "tokio03")]
+mod halthandle03;
+#[cfg(feature = "tokio03")]
+pub use halthandle03::*;
 
 #[cfg(feature = "tokio02")]
 mod halthandle02;
@@ -94,8 +105,6 @@ impl<F: Future> FutureExt for F {}
 mod test {
     use super::*;
 
-    use tokio::stream;
-
     #[tokio::test]
     async fn timeout() {
         let timeout = Duration::from_millis(100);
@@ -103,7 +112,7 @@ mod test {
         let future = future::pending::<()>().timeout(timeout);
         future.await.expect_err("BUG: Timeout expected");
 
-        let mut stream = stream::pending::<()>();
+        let mut stream = tokio_stream::pending::<()>();
         let future = stream.next().timeout(timeout);
         future.await.expect_err("BUG: Timeout expected");
     }
@@ -165,8 +174,7 @@ impl<F: Future> GrainyTimeout for F {}
 
 #[cfg(test)]
 mod test2 {
-    use super::{initialize_grainy_timer, make_grainy};
-    use tokio::time::Instant;
+    use super::{initialize_grainy_timer, make_grainy, Instant};
 
     #[test]
     fn grainy() {
