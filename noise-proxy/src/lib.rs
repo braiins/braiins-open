@@ -29,6 +29,7 @@ extern crate ii_logging;
 use anyhow::{anyhow, Result};
 use ii_async_utils::{Spawnable, Tripwire};
 use ii_stratum::v1;
+use ii_wire::proxy::{self, WithProxyInfo};
 use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
     task::JoinHandle,
@@ -44,13 +45,21 @@ pub struct NoiseProxy {
     upstream: SocketAddr,
     security_context: Arc<SecurityContext>,
     listener: Option<TcpListener>,
+    /// Builds PROXY protocol acceptor for a specified configuration
+    proxy_protocol_acceptor_builder: proxy::AcceptorBuilder<TcpStream>,
+    /// Server will use this version for talking to upstream server (when defined)
+    _proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
 }
 
 impl NoiseProxy {
+    /// `proxy_protocol_upstream_version` - If proxy protocol information is available from
+    /// downstream connection this option specifies what upstream version to use
     pub async fn new<P>(
         listen_on: P,
         upstream: P,
         security_context: Arc<SecurityContext>,
+        proxy_protocol_downstream_config: proxy::ProtocolConfig,
+        proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
     ) -> Result<Self>
     where
         P: ToSocketAddrs,
@@ -65,6 +74,10 @@ impl NoiseProxy {
             upstream,
             security_context,
             listener,
+            proxy_protocol_acceptor_builder: proxy::AcceptorBuilder::new(
+                proxy_protocol_downstream_config,
+            ),
+            _proxy_protocol_upstream_version: proxy_protocol_upstream_version,
         })
     }
 
@@ -84,7 +97,8 @@ impl NoiseProxy {
                     };
                     info!("Spawning noise connection task from peer {}", peer_socket);
                     tokio::spawn(encrypt_v1_connection(
-                        tcp_stream,
+                        self.proxy_protocol_acceptor_builder.build(tcp_stream),
+                        peer_socket,
                         self.security_context.clone(),
                         self.upstream,
                         tripwire.clone(),
@@ -106,24 +120,27 @@ impl Spawnable for NoiseProxy {
 }
 
 async fn encrypt_v1_connection(
-    tcp_stream: TcpStream,
+    proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
+    direct_downstream_peer_addr: SocketAddr,
     security_context: Arc<SecurityContext>,
     upstream: SocketAddr,
     tripwire: Tripwire,
 ) -> Result<()> {
     use futures::{sink::SinkExt, stream::StreamExt};
 
-    let down_peer = tcp_stream
-        .peer_addr()
-        .map(|a| a.to_string())
-        .unwrap_or_else(|_| "??".to_owned());
+    let proxy_stream = proxy_protocol_acceptor.await?;
+    let proxy_info = proxy_stream.proxy_info()?;
+
     let up_peer = upstream.to_string();
 
     let downstream_framed = security_context
-        .build_framed_tcp::<v1::Codec, v1::Frame>(tcp_stream)
+        .build_framed_tcp_from_parts::<v1::Codec, v1::Frame, _>(proxy_stream.into_framed_parts())
         .await?;
 
-    debug!("Established secure V1 connection with {}", down_peer);
+    debug!(
+        "Established secure V1 connection with {}:{}",
+        direct_downstream_peer_addr, proxy_info
+    );
     let upstream_framed =
         tokio_util::codec::Framed::new(TcpStream::connect(upstream).await?, v1::Codec::default());
 
@@ -161,7 +178,10 @@ async fn encrypt_v1_connection(
         info!("Upstream disconnected");
     };
     futures::future::join(down_to_up, up_to_down).await;
-    debug!("Session {}->{} closed", down_peer, up_peer);
+    debug!(
+        "Session {}:{}->{} closed",
+        direct_downstream_peer_addr, proxy_info, up_peer
+    );
     Ok(())
 }
 

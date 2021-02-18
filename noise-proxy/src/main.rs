@@ -28,6 +28,8 @@ use futures::TryFutureExt;
 use ii_async_utils::HaltHandle;
 use ii_logging::macros::*;
 use ii_noise_proxy::{NoiseProxy, SecurityContext};
+use ii_wire::proxy;
+
 use tokio::prelude::*;
 
 #[derive(serde::Deserialize, Debug)]
@@ -72,8 +74,17 @@ async fn main() -> Result<()> {
     let key_path = Path::new(&config.server_key);
     let ctx = SecurityContext::read_from_file(cert_path, key_path).await?;
     let halt_handle = HaltHandle::arc();
-    let noise_proxy =
-        NoiseProxy::new(config.listen, config.upstream, std::sync::Arc::new(ctx)).await?;
+    let noise_proxy = NoiseProxy::new(
+        config.listen,
+        config.upstream,
+        std::sync::Arc::new(ctx),
+        proxy::ProtocolConfig::new(
+            false,
+            vec![proxy::ProtocolVersion::V1, proxy::ProtocolVersion::V2],
+        ),
+        None,
+    )
+    .await?;
     halt_handle.spawn_object(noise_proxy);
     halt_handle.ready();
     halt_handle.clone().halt_on_signal();
