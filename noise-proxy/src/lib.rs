@@ -85,7 +85,11 @@ impl NoiseProxy {
 
     pub async fn main_loop(mut self, tripwire: Tripwire) {
         let listener = self.listener.take().expect("BUG: missing tcp listener");
-        info!("NoiseProxy: starting main loop");
+        info!(
+            "NoiseProxy: starting main loop @ {:?} -> {:?}",
+            listener.local_addr(),
+            self.upstream
+        );
         loop {
             tokio::select! {
                 tcp_accept_result = listener.accept() => {
