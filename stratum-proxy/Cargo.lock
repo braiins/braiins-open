@@ -733,6 +733,7 @@ dependencies = [
  "ii-async-utils",
  "ii-logging",
  "ii-stratum",
+ "ii-wire",
  "serde",
  "structopt",
  "thiserror",
