@@ -30,11 +30,12 @@ use anyhow::{anyhow, Result};
 use futures::{sink::SinkExt, stream::StreamExt};
 use ii_async_utils::{Spawnable, Tripwire};
 use ii_stratum::v1;
-use ii_wire::proxy::{self, WithProxyInfo};
+use ii_wire::proxy::{self, Connector, ProxyInfo, WithProxyInfo};
 use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
     task::JoinHandle,
 };
+use tokio_util::codec::{Decoder, Encoder, Framed};
 
 pub mod connector;
 mod framing;
@@ -124,7 +125,7 @@ impl Spawnable for NoiseProxy {
 
 struct NoiseProxyConnection {
     /// Server will use this version for talking to upstream server (when defined)
-    _proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
+    proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
     security_context: Arc<SecurityContext>,
     direct_downstream_peer_addr: SocketAddr,
     upstream: SocketAddr,
@@ -140,7 +141,7 @@ impl NoiseProxyConnection {
         tripwire: Tripwire,
     ) -> Self {
         Self {
-            _proxy_protocol_upstream_version: proxy_protocol_upstream_version,
+            proxy_protocol_upstream_version,
             security_context,
             direct_downstream_peer_addr,
             upstream,
@@ -152,6 +153,7 @@ impl NoiseProxyConnection {
         // Run the HAProxy protocol
         let proxy_stream = proxy_protocol_acceptor.await?;
         let proxy_info = proxy_stream.proxy_info()?;
+        let local_addr = proxy_stream.local_addr()?;
         // Allows access to the peer address from both tasks
         let direct_downstream_peer_addr = self.direct_downstream_peer_addr;
 
@@ -168,10 +170,9 @@ impl NoiseProxyConnection {
             "NoiseProxy: Established secure V1 connection with {}:{}",
             direct_downstream_peer_addr, proxy_info
         );
-        let upstream_framed = tokio_util::codec::Framed::new(
-            TcpStream::connect(self.upstream).await?,
-            v1::Codec::default(),
-        );
+        let upstream_framed = self
+            .connect_upstream::<v1::Codec, v1::Frame>(proxy_info, local_addr)
+            .await?;
 
         let (mut downstream_sink, downstream_stream) = downstream_framed.split();
         let (mut upstream_sink, upstream_stream) = upstream_framed.split();
@@ -227,6 +228,42 @@ impl NoiseProxyConnection {
             direct_downstream_peer_addr, proxy_info, up_peer
         );
         Ok(())
+    }
+
+    /// Connect to upstream server and optional pass proxy information when configured to do so
+    ///
+    /// `proxy_info` - original source and destination addresses will be passed upstream
+    /// `local_addr` - local IP address where this connection has been established is used as a
+    /// failover if upstream proxy protocol is to be executed but `proxy_info` doesn't contain
+    /// any useful information.
+    async fn connect_upstream<C, F>(
+        &self,
+        proxy_info: ProxyInfo,
+        local_addr: SocketAddr,
+    ) -> Result<Framed<TcpStream, C>>
+    where
+        C: Default + Decoder + Encoder<F>,
+    {
+        let mut upstream = TcpStream::connect(self.upstream).await?;
+
+        if let Some(version) = self.proxy_protocol_upstream_version {
+            let (src, dst) = if let (Some(src), Some(dst)) =
+                (proxy_info.original_source, proxy_info.original_destination)
+            {
+                (Some(src), Some(dst))
+            } else {
+                debug!(
+                    "NoiseProxy: Passing of proxy protocol is required, but incoming connection \
+                    from {}, does not contain original addresses, using socket addresses",
+                    self.direct_downstream_peer_addr
+                );
+                (Some(self.direct_downstream_peer_addr), Some(local_addr))
+            };
+            Connector::new(version)
+                .write_proxy_header(&mut upstream, src, dst)
+                .await?;
+        }
+        Ok(tokio_util::codec::Framed::new(upstream, C::default()))
     }
 }
 
