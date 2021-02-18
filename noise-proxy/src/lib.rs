@@ -99,14 +99,13 @@ impl NoiseProxy {
                     };
                     debug!("NoiseProxy: Spawning connection task from peer {}", peer_socket);
                     let connection = NoiseProxyConnection::new(
-                        self.proxy_protocol_acceptor_builder.build(tcp_stream),
                         self.proxy_protocol_upstream_version,
                         peer_socket,
                         self.security_context.clone(),
                         self.upstream,
                         tripwire.clone(),
                     );
-                    tokio::spawn(connection.handle());
+                    tokio::spawn(connection.handle(self.proxy_protocol_acceptor_builder.build(tcp_stream)));
                 }
                 _ = tripwire.clone() => {
                     info!("NoiseProxy: terminating");
@@ -124,9 +123,6 @@ impl Spawnable for NoiseProxy {
 }
 
 struct NoiseProxyConnection {
-    /// The acceptor is a disposable item that will be used only once throughout the connection
-    /// lifetime
-    proxy_protocol_acceptor: Option<proxy::AcceptorFuture<TcpStream>>,
     /// Server will use this version for talking to upstream server (when defined)
     _proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
     security_context: Arc<SecurityContext>,
@@ -137,7 +133,6 @@ struct NoiseProxyConnection {
 
 impl NoiseProxyConnection {
     fn new(
-        proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>,
         proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
         direct_downstream_peer_addr: SocketAddr,
         security_context: Arc<SecurityContext>,
@@ -145,7 +140,6 @@ impl NoiseProxyConnection {
         tripwire: Tripwire,
     ) -> Self {
         Self {
-            proxy_protocol_acceptor: Some(proxy_protocol_acceptor),
             _proxy_protocol_upstream_version: proxy_protocol_upstream_version,
             security_context,
             direct_downstream_peer_addr,
@@ -154,12 +148,8 @@ impl NoiseProxyConnection {
         }
     }
 
-    async fn handle(mut self) -> Result<()> {
+    async fn handle(self, proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>) -> Result<()> {
         // Run the HAProxy protocol
-        let proxy_protocol_acceptor = self
-            .proxy_protocol_acceptor
-            .take()
-            .expect("BUG: Missing proxy protocol acceptor");
         let proxy_stream = proxy_protocol_acceptor.await?;
         let proxy_info = proxy_stream.proxy_info()?;
         // Allows access to the peer address from both tasks
