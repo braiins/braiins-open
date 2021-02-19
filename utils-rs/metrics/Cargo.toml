@@ -1,6 +1,6 @@
 [package]
 name = "ii-metrics"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Jakub Trnka <jakub.trnka@braiins.cz>"]
 edition = "2018"
 

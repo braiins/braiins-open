@@ -20,6 +20,8 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use std::sync::Arc;
+
 pub use prometheus::{
     exponential_buckets, histogram_opts, linear_buckets, opts, Encoder, Histogram, HistogramTimer,
     HistogramVec, IntCounter, IntCounterVec, TextEncoder, DEFAULT_BUCKETS,
@@ -31,7 +33,7 @@ use prometheus::Registry;
 /// Operates with Arc<prometheus::Registry>.
 #[derive(Default, Clone)]
 pub struct MetricsRegistry {
-    registry: std::sync::Arc<Registry>,
+    registry: Arc<Registry>,
 }
 
 /// Provides registry for counting metrics and histograms.
@@ -40,17 +42,48 @@ pub struct MetricsRegistry {
 /// [`prometheus::exponential_buckets`] or [`prometheus::linear_buckets`] that are reexported
 /// for convenience. Alternatively reexported constant [`prometheus::DEFAULT_BUCKETS`] can be used.
 impl MetricsRegistry {
+    /// Creates new metrics registry and provides gauge indicating version of the application.
+    /// The information is slice of ('label', 'value') tuples: e. g.:
+    /// `[("rust", "1.47"), ("version", "1.5.4")]`
+    pub fn new<T: AsRef<str>>(version_details: &[(T, T)]) -> Self {
+        let registry: Arc<Registry> = Default::default();
+        let version_details_gauge = GenericGaugeVec::<prometheus::core::AtomicU64>::new(
+            opts!(
+                "application_version_details",
+                "Version details of the application producing time series"
+            ),
+            &version_details
+                .iter()
+                .map(|(label, _)| label.as_ref())
+                .collect::<Vec<_>>(),
+        )
+        .expect("BUG: Couldn't set up app version details");
+
+        registry
+            .register(Box::new(version_details_gauge.clone()))
+            .expect("BUG: Failed to register version details");
+        version_details_gauge
+            .with_label_values(
+                &version_details
+                    .iter()
+                    .map(|(_, label_values)| label_values.as_ref())
+                    .collect::<Vec<_>>(),
+            )
+            .set(1);
+
+        Self { registry }
+    }
     pub fn register_generic_gauge<T: Atomic + 'static>(
         &self,
         name: &str,
         help: &str,
     ) -> GenericGauge<T> {
-        let counter = GenericGauge::with_opts(opts!(name, help))
+        let gauge = GenericGauge::with_opts(opts!(name, help))
             .expect("BUG: Couldn't build generic_gauge with opts");
         self.registry
-            .register(Box::new(counter.clone()))
+            .register(Box::new(gauge.clone()))
             .expect("BUG: Couldn't register generic_gauge");
-        counter
+        gauge
     }
 
     pub fn register_generic_gauge_vec<T: Atomic + 'static>(
@@ -59,12 +92,12 @@ impl MetricsRegistry {
         help: &str,
         label_names: &[&str],
     ) -> GenericGaugeVec<T> {
-        let counter = GenericGaugeVec::new(opts!(name, help), label_names)
+        let gauge_vec = GenericGaugeVec::new(opts!(name, help), label_names)
             .expect("BUG: Couldn't build generic_gauge with opts");
         self.registry
-            .register(Box::new(counter.clone()))
+            .register(Box::new(gauge_vec.clone()))
             .expect("BUG: Couldn't register generic_gauge");
-        counter
+        gauge_vec
     }
 
     pub fn register_generic_counter<T: Atomic + 'static>(
@@ -86,12 +119,12 @@ impl MetricsRegistry {
         help: &str,
         label_names: &[&str],
     ) -> GenericCounterVec<T> {
-        let counter = GenericCounterVec::new(opts!(name, help), label_names)
+        let counter_vec = GenericCounterVec::new(opts!(name, help), label_names)
             .expect("BUG: Couldn't build generic_counter_vec with opts");
         self.registry
-            .register(Box::new(counter.clone()))
+            .register(Box::new(counter_vec.clone()))
             .expect("BUG: Couldn't register generic_counter_vec");
-        counter
+        counter_vec
     }
 
     pub fn register_histogram(&self, name: &str, help: &str, buckets: Vec<f64>) -> Histogram {
