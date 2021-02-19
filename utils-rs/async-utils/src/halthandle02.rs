@@ -358,16 +358,13 @@ mod test {
 
     use tokio::{stream, time};
 
-    // The pending future or stream never actually yield a value,
-    // they resolve only in the canelled case.
-
-    async fn forever_ft(tripwire: Tripwire) {
-        let _ = future::pending::<()>().cancel(tripwire).await;
-    }
-
     /// Wait indefinitely on a stream with a `Tripwire` for cancellation.
     async fn forever_stream(tripwire: Tripwire) {
         let mut stream = stream::pending::<()>().take_until(tripwire);
+
+        // The pending stream never actually yields a value,
+        // ie. next() resolves to None only in the canelled case,
+        // otherwise it doesn't return at all.
         stream.next().await;
     }
 
@@ -378,7 +375,7 @@ mod test {
 
         // Spawn a couple of tasks on the handle
         for _ in 0..10 {
-            handle.spawn(|tripwire| forever_ft(tripwire));
+            handle.spawn(|tripwire| forever_stream(tripwire));
         }
 
         // Signal ready, halt, and join tasks

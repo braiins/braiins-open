@@ -170,7 +170,7 @@ mod test {
 
     #[tokio::test]
     async fn timeout() {
-        let timeout = Duration::from_millis(10);
+        let timeout = Duration::from_millis(100);
 
         let future = future::pending::<()>().timeout(timeout);
         future.await.expect_err("BUG: Timeout expected");

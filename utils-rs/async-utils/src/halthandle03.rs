@@ -315,6 +315,7 @@ impl HaltHandle {
         FT: Future + Send + 'static,
         FN: FnOnce(Arc<Self>) -> FT,
     {
+
         if self
             .signal_task_spawned
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
