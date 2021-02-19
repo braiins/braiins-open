@@ -50,12 +50,15 @@ mod maybe_future;
 pub use maybe_future::MaybeFuture;
 
 use std::panic::{self, PanicInfo};
+use std::pin::Pin;
 use std::process;
 use std::sync::Once;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures::prelude::*;
 use once_cell::sync::OnceCell;
+use pin_project_lite::pin_project;
 use tokio::time::{self, Instant};
 
 /// This registers a customized panic hook with the stdlib.
@@ -85,9 +88,52 @@ pub fn setup_panic_handling() {
     });
 }
 
+pin_project! {
+    pub struct Cancelable<F, Fc> {
+        #[pin]
+        ft: F,
+        #[pin]
+        cancel_ft: Fc,
+    }
+}
+
+impl<F, Fc> Cancelable<F, Fc>
+where
+    F: Future,
+    Fc: Future,
+{
+    fn new(ft: F, cancel_ft: Fc) -> Self {
+        Self { ft, cancel_ft }
+    }
+
+    pub fn into_inner(self) -> (F, Fc) {
+        (self.ft, self.cancel_ft)
+    }
+}
+
+impl<F, Fc> Future for Cancelable<F, Fc>
+where
+    F: Future,
+    Fc: Future,
+{
+    type Output = Result<F::Output, Fc::Output>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+
+        // First, try polling the cancel future:
+        if let Poll::Ready(res) = this.cancel_ft.poll(cx) {
+            return Poll::Ready(Err(res));
+        }
+
+        // Not cancelled, poll the original future:
+        this.ft.poll(cx).map(Ok)
+    }
+}
+
 /// An extension trait for `Future` goodies,
 /// currently this only entails the `timeout()` function.
-pub trait FutureExt: Future {
+pub trait FutureExt: Future + Sized {
     /// Require a `Future` to complete before the specified duration has elapsed.
     ///
     /// This is a chainable alias for `tokio::time::timeout()`.
@@ -96,6 +142,23 @@ pub trait FutureExt: Future {
         Self: Sized,
     {
         time::timeout(timeout, self)
+    }
+
+    /// Make this future cancelable: The future is cancelled
+    /// when the `cancel_ft` resolves before the wrapped
+    /// future itself resolves.
+    ///
+    /// If the original future resolves, its value is yielded as `Ok(value)`.
+    /// If cancelled, `Err(e)` is yielded,
+    /// where `e` is the value yielded by `cancel_ft`.
+    ///
+    /// This is basically the same operation as `select()`
+    /// but yielding a `Result` and with a clearer intent of cancelation.
+    fn cancel<Fc>(self, cancel_ft: Fc) -> Cancelable<Self, Fc>
+    where
+        Fc: Future,
+    {
+        Cancelable::new(self, cancel_ft)
     }
 }
 
@@ -115,6 +178,21 @@ mod test {
         let mut stream = tokio_stream::pending::<()>();
         let future = stream.next().timeout(timeout);
         future.await.expect_err("BUG: Timeout expected");
+    }
+
+    #[tokio::test]
+    async fn cancel() {
+        // Verify cancelling:
+        let cancel = future::ready(1);
+        let fut = future::pending::<()>().cancel(cancel);
+        assert_eq!(fut.await, Result::<(), u32>::Err(1));
+
+        // Verify not cancelling:
+        let cancel = future::pending::<()>();
+        let fut = future::ready(2).cancel(cancel);
+        assert_eq!(fut.await, Result::<u32, ()>::Ok(2));
+
+        // Usage with Tripwire is verified in halthandle...
     }
 }
 
