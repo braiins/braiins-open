@@ -1,11 +1,13 @@
 [package]
 name = "ii-metrics"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Jakub Trnka <jakub.trnka@braiins.cz>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ii-scm = { path = "../scm/scm" }
 prometheus = { version = "0.11", features = ["process"]}
+rustc_version = "0.2"
 thiserror = { version = "1.0" }

@@ -31,9 +31,24 @@ use prometheus::core::{Atomic, GenericCounter, GenericCounterVec, GenericGauge, 
 use prometheus::Registry;
 
 /// Operates with Arc<prometheus::Registry>.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct MetricsRegistry {
     registry: Arc<Registry>,
+}
+
+impl Default for MetricsRegistry {
+    fn default() -> Self {
+        let toolchain_version =
+            rustc_version::version().map_or_else(|_| String::from("unknown"), |t| t.to_string());
+        Self::new(&[
+            (
+                &"semantic",
+                &std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "Unknown".to_string()),
+            ),
+            (&"revision", &ii_scm::version_git!()),
+            (&"toolchain", &toolchain_version),
+        ])
+    }
 }
 
 /// Provides registry for counting metrics and histograms.
@@ -42,19 +57,25 @@ pub struct MetricsRegistry {
 /// [`prometheus::exponential_buckets`] or [`prometheus::linear_buckets`] that are reexported
 /// for convenience. Alternatively reexported constant [`prometheus::DEFAULT_BUCKETS`] can be used.
 impl MetricsRegistry {
-    /// Creates new metrics registry and provides gauge indicating version of the application.
+    /// Creates new metrics registry and provides associated metadata to the application.
     /// The information is slice of ('label', 'value') tuples: e. g.:
     /// `[("rust", "1.47"), ("version", "1.5.4")]`
-    pub fn new<T: AsRef<str>>(version_details: &[(T, T)]) -> Self {
+    /// This metadata can be extracted or joined with prometheus query
+    /// ```text
+    ///   some_metric{job="static"}
+    /// * on (instance, job) group_left(version)
+    ///   application_version_details{job="static"}
+    /// ```
+    pub fn new(application_version_details: &[(&str, &str)]) -> Self {
         let registry: Arc<Registry> = Default::default();
         let version_details_gauge = GenericGaugeVec::<prometheus::core::AtomicU64>::new(
             opts!(
                 "application_version_details",
                 "Version details of the application producing time series"
             ),
-            &version_details
+            &application_version_details
                 .iter()
-                .map(|(label, _)| label.as_ref())
+                .map(|(label, _)| *label)
                 .collect::<Vec<_>>(),
         )
         .expect("BUG: Couldn't set up app version details");
@@ -64,15 +85,16 @@ impl MetricsRegistry {
             .expect("BUG: Failed to register version details");
         version_details_gauge
             .with_label_values(
-                &version_details
+                &application_version_details
                     .iter()
-                    .map(|(_, label_values)| label_values.as_ref())
+                    .map(|(_, label_values)| *label_values)
                     .collect::<Vec<_>>(),
             )
             .set(1);
 
         Self { registry }
     }
+
     pub fn register_generic_gauge<T: Atomic + 'static>(
         &self,
         name: &str,
@@ -150,6 +172,7 @@ impl MetricsRegistry {
             .expect("BUG: Couldn't register histogram_vec");
         histogram
     }
+
     pub fn to_text(&self) -> crate::Result<(Vec<u8>, String)> {
         let mut buffer = vec![];
         let mut metric_families = self.registry.gather();
