@@ -29,10 +29,40 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures::prelude::*;
-use tokio::signal::unix::{self, SignalKind};
 use tokio::sync::{mpsc, watch, Notify};
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time;
+
+#[cfg(target_family = "unix")]
+async fn interrupt_signal<FT>(ft: FT)
+where
+    FT: Future + Send + 'static,
+{
+    use tokio::signal::unix;
+    let sigterm =
+        unix::signal(unix::SignalKind::terminate()).expect("BUG: Error listening for SIGTERM");
+    let sigint =
+        unix::signal(unix::SignalKind::interrupt()).expect("BUG: Error listening for SIGINT");
+
+    future::select(sigterm.into_future(), sigint.into_future()).await;
+    ft.await;
+}
+
+#[cfg(target_family = "windows")]
+async fn interrupt_signal<FT>(ft: FT)
+where
+    FT: Future + Send + 'static,
+{
+    use tokio::signal::windows;
+    let sigterm = windows::ctrl_c().expect("BUG: Error listening for SIGTERM");
+    let sigint = windows::ctrl_break().expect("BUG: Error listening for SIGINT");
+
+    future::select(sigterm.into_future(), sigint.into_future()).await;
+    ft.await;
+}
+
+#[cfg(all(not(target_family = "unix"), not(target_family = "windows")))]
+compile_error!("Unsupported OS family");
 
 pub trait Spawnable {
     fn run(self, tripwire: Tripwire) -> JoinHandle<()>;
@@ -320,15 +350,7 @@ impl HaltHandle {
             .compare_and_swap(false, true, Ordering::SeqCst)
         {
             let ft = f(self);
-            tokio::spawn(async move {
-                let sigterm = unix::signal(SignalKind::terminate())
-                    .expect("BUG: Error listening for SIGTERM");
-                let sigint =
-                    unix::signal(SignalKind::interrupt()).expect("BUG: Error listening for SIGINT");
-
-                future::select(sigterm.into_future(), sigint.into_future()).await;
-                ft.await;
-            });
+            tokio::spawn(interrupt_signal(ft));
         }
     }
 
