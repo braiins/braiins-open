@@ -56,55 +56,48 @@ impl TcpConnectionCloseTotal {
     }
 }
 
-#[derive(Default, Clone)]
-pub struct ProxyCollectorBuilder(MetricsRegistry);
-
-impl ProxyCollectorBuilder {
-    pub fn new(registry: MetricsRegistry) -> Self {
-        Self(registry)
-    }
-
-    pub fn build_metrics_collector(&self) -> Arc<ProxyMetrics> {
+impl ProxyMetrics {
+    pub fn from_registry(registry: &MetricsRegistry) -> Arc<Self> {
         let variable_label_names = &["direction", "status"];
 
-        Arc::new(ProxyMetrics {
-            tokio_tasks: self.0.register_generic_gauge(
+        Arc::new(Self {
+            tokio_tasks: registry.register_generic_gauge(
                 "mining_session_tokio_tasks",
                 "Number of running tokio tasks related to translation sessions",
             ),
-            tcp_connection_open_total: self.0.register_generic_counter(
+            tcp_connection_open_total: registry.register_generic_counter(
                 "tcp_connection_open_total",
                 "Number of connection open events",
             ),
-            tcp_connection_close_stage: TcpConnectionCloseTotal::new(&self.0),
-            tcp_connection_duration_seconds: self.0.register_histogram(
+            tcp_connection_close_stage: TcpConnectionCloseTotal::new(registry),
+            tcp_connection_duration_seconds: registry.register_histogram(
                 "tcp_connection_duration_seconds",
                 "Histogram of how long each connection has lived for",
                 ii_metrics::exponential_buckets(0.01, 10.0, 9)
                     .expect("BUG: invalid buckets definition"),
             ),
-            shares_total: self.0.register_generic_counter_vec(
+            shares_total: registry.register_generic_counter_vec(
                 "shares_total",
                 "Sum of shares difficulty that have been processed",
                 variable_label_names,
             ),
-            submits_total: self.0.register_generic_counter_vec(
+            submits_total: registry.register_generic_counter_vec(
                 "submits_total",
                 "Sum of submits that have processed",
                 variable_label_names,
             ),
-            v1_request_duration_seconds: self.0.register_histogram_vec(
+            v1_request_duration_seconds: registry.register_histogram_vec(
                 "v1_request_duration_seconds",
                 "Histogram of duration if stratum V1 requests",
                 &["type", "status"],
                 ii_metrics::DEFAULT_BUCKETS.to_vec(),
             ),
-            tcp_connection_accepts_per_socket: self.0.register_generic_counter_vec(
+            tcp_connection_accepts_per_socket: registry.register_generic_counter_vec(
                 "tcp_connection_accepts_per_tcp_socket",
                 "Total of TCP connections classified by 'accept' result",
                 &["result"], // Successful or Unsuccessful
             ),
-            tcp_socket_failure_threshold: self.0.register_histogram_vec(
+            tcp_socket_failure_threshold: registry.register_histogram_vec(
                 "tcp_socket_failure_threshold",
                 "Number of tcp connection accept events before failure occurs",
                 &["result"],
