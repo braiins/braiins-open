@@ -12,12 +12,17 @@ bytes = "0.6"
 structopt = "0.3.20"
 clap = "2.33"
 futures = "0.3"
-ii-async-utils = {path = "../utils-rs/async-utils"}
-ii-logging = {path = "../utils-rs/logging"}
-ii-wire = { path = "../protocols/wire"}
-ii-stratum = {path = "../protocols/stratum"}
+ii-async-utils = { path = "../utils-rs/async-utils" }
+ii-logging = { path = "../utils-rs/logging" }
+ii-metrics = { path = "../utils-rs/metrics", optional = true }
+ii-wire = { path = "../protocols/wire" }
+ii-stratum = { path = "../protocols/stratum" }
+prometheus = { version = "0.11.0", optional = true }
 serde = { version = "1.0.123", features = ["derive"] }
 thiserror = "1.0.23"
-tokio = {version = "0.3", features = ["full"]}
-tokio-util = {version = "0.5", features = ["codec"]}
+tokio = { version = "0.3", features = ["full"] }
+tokio-util = { version = "0.5", features = ["codec"] }
 toml = "0.5.8"
+
+[features]
+prometheus_metrics = ["prometheus", "ii-metrics"]

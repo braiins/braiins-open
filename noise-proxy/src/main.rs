@@ -83,6 +83,7 @@ async fn main() -> Result<()> {
             vec![proxy::ProtocolVersion::V1, proxy::ProtocolVersion::V2],
         ),
         None,
+        None,
     )
     .await?;
     halt_handle.spawn_object(noise_proxy);

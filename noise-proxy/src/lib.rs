@@ -40,6 +40,8 @@ use tokio_util::codec::{Decoder, Encoder, Framed};
 pub mod connector;
 mod framing;
 mod frontend;
+#[cfg_attr(not(feature = "prometheus_metrics"), path = "dummy_metrics.rs")]
+pub mod metrics;
 
 pub use frontend::{Error, SecurityContext};
 
@@ -51,6 +53,7 @@ pub struct NoiseProxy {
     proxy_protocol_acceptor_builder: proxy::AcceptorBuilder<TcpStream>,
     /// Server will use this version for talking to upstream server (when defined)
     proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
+    metrics: Option<Arc<metrics::NoiseProxyMetrics>>,
 }
 
 impl NoiseProxy {
@@ -62,6 +65,7 @@ impl NoiseProxy {
         security_context: Arc<SecurityContext>,
         proxy_protocol_downstream_config: proxy::ProtocolConfig,
         proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
+        metrics: Option<Arc<metrics::NoiseProxyMetrics>>,
     ) -> Result<Self>
     where
         P: ToSocketAddrs,
@@ -80,6 +84,7 @@ impl NoiseProxy {
                 proxy_protocol_downstream_config,
             ),
             proxy_protocol_upstream_version,
+            metrics,
         })
     }
 
@@ -94,8 +99,16 @@ impl NoiseProxy {
             tokio::select! {
                 tcp_accept_result = listener.accept() => {
                     let (tcp_stream, peer_socket) = match tcp_accept_result {
-                        Ok(x) => x,
+                        Ok(stream_and_peer) => {
+                            if let Some(metrics) = self.metrics.as_ref() {
+                                metrics.account_successful_tcp_open();
+                            }
+                            stream_and_peer
+                        }
                         Err(e) => {
+                            if let Some(metrics) = self.metrics.as_ref() {
+                                metrics.account_failed_tcp_open();
+                            }
                             warn!("NoiseProxy: TCP Error, disconnecting from client: {}", e);
                             // Why the sleep here?
                             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -109,6 +122,7 @@ impl NoiseProxy {
                         self.security_context.clone(),
                         self.upstream,
                         tripwire.clone(),
+                        self.metrics.clone(),
                     );
                     tokio::spawn(connection.handle(self.proxy_protocol_acceptor_builder.build(tcp_stream)));
                 }
@@ -134,6 +148,7 @@ struct NoiseProxyConnection {
     direct_downstream_peer_addr: SocketAddr,
     upstream: SocketAddr,
     tripwire: Tripwire,
+    metrics: Option<Arc<metrics::NoiseProxyMetrics>>,
 }
 
 impl NoiseProxyConnection {
@@ -143,6 +158,7 @@ impl NoiseProxyConnection {
         security_context: Arc<SecurityContext>,
         upstream: SocketAddr,
         tripwire: Tripwire,
+        metrics: Option<Arc<metrics::NoiseProxyMetrics>>,
     ) -> Self {
         Self {
             proxy_protocol_upstream_version,
@@ -150,6 +166,7 @@ impl NoiseProxyConnection {
             direct_downstream_peer_addr,
             upstream,
             tripwire,
+            metrics,
         }
     }
 
@@ -180,9 +197,9 @@ impl NoiseProxyConnection {
 
         let (mut downstream_sink, downstream_stream) = downstream_framed.split();
         let (mut upstream_sink, upstream_stream) = upstream_framed.split();
-        let tripwire1 = self.tripwire.clone();
+        let tripwire_clone = self.tripwire.clone();
         let down_to_up = async move {
-            let mut str1 = downstream_stream.take_until(tripwire1);
+            let mut str1 = downstream_stream.take_until(tripwire_clone);
             while let Some(x) = str1.next().await {
                 if let Ok(frame) = x {
                     if let Err(e) = upstream_sink.send(frame).await {
@@ -190,8 +207,6 @@ impl NoiseProxyConnection {
                             "NoiseProxy: {}:{} Upstream error: {}",
                             direct_downstream_peer_addr, proxy_info, e
                         );
-                    } else {
-                        trace!("-> Frame")
                     }
                 }
             }
@@ -206,8 +221,9 @@ impl NoiseProxyConnection {
                 );
             };
         };
+        let tripwire_clone = self.tripwire.clone();
         let up_to_down = async move {
-            let mut str1 = upstream_stream.take_until(self.tripwire);
+            let mut str1 = upstream_stream.take_until(tripwire_clone);
 
             while let Some(x) = str1.next().await {
                 if let Ok(frame) = x {
@@ -216,8 +232,6 @@ impl NoiseProxyConnection {
                             "NoiseProxy: {}:{} Downstream error: {}",
                             direct_downstream_peer_addr, proxy_info, e
                         );
-                    } else {
-                        trace!("<- Frame")
                     }
                 }
             }
@@ -227,6 +241,9 @@ impl NoiseProxyConnection {
             );
         };
         futures::future::join(down_to_up, up_to_down).await;
+        if let Some(metrics) = self.metrics.as_ref() {
+            metrics.account_normal_tcp_close()
+        }
         debug!(
             "NoiseProxy: Session {}:{}->{} closed",
             direct_downstream_peer_addr, proxy_info, up_peer
