@@ -41,11 +41,7 @@ impl Default for MetricsRegistry {
         let toolchain_version =
             rustc_version::version().map_or_else(|_| String::from("unknown"), |t| t.to_string());
         Self::new(&[
-            (
-                &"semantic",
-                &std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "Unknown".to_string()),
-            ),
-            (&"revision", &ii_scm::version_git!()),
+            (&"version_full", ii_scm::global::Version::full()),
             (&"toolchain", &toolchain_version),
         ])
     }
