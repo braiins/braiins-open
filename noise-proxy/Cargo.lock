@@ -696,9 +696,11 @@ dependencies = [
 
 [[package]]
 name = "ii-metrics"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "ii-scm",
  "prometheus",
+ "rustc_version",
  "thiserror",
 ]
 
@@ -722,6 +724,23 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml",
+]
+
+[[package]]
+name = "ii-scm"
+version = "0.1.0"
+dependencies = [
+ "ii-scm-macros",
+ "once_cell",
+]
+
+[[package]]
+name = "ii-scm-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.9",
+ "syn 1.0.60",
 ]
 
 [[package]]
