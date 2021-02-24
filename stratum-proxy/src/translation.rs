@@ -252,6 +252,7 @@ pub struct V2ToV1Translation {
     options: V2ToV1TranslationOptions,
     v1_password: String,
     metrics: Option<Arc<ProxyMetrics>>,
+    last_submit: Option<Instant>,
 }
 
 impl V2ToV1Translation {
@@ -315,6 +316,7 @@ impl V2ToV1Translation {
             options,
             v1_password,
             metrics,
+            last_submit: None,
         }
     }
 
@@ -723,7 +725,7 @@ impl V2ToV1Translation {
                 );
 
                 if bool_result.0 {
-                    self.log_session_details("Share accepted");
+                    debug!("Share accepted: SESSION {}", self.session_details());
                     if let Some(metrics) = self.metrics.as_ref() {
                         metrics.account_accepted_share(self.v2_target);
                     }
@@ -1098,30 +1100,23 @@ impl V2ToV1Translation {
         Ok((new_host, new_port))
     }
 
-    fn log_session_details(&self, msg: &str) {
-        let v2_channel_details = self
+    pub fn session_details(&self) -> String {
+        let user = self
             .v2_channel_details
             .as_ref()
-            .expect("BUG: V2 channel details missing");
+            .map_or_else(|| String::from("N/A"), |d| d.user.to_string());
         let v2_connection_details = self
             .v2_conn_details
             .as_ref()
-            .expect("BUG: V2 channel details present but connection details missing?");
-        debug!(
-            "{} SESSION;{};{};{};{};{:x};{};{};{};{};{};{};",
-            msg,
-            v2_channel_details.user.to_string(),
-            v2_connection_details.protocol,
-            v2_connection_details.min_version,
-            v2_connection_details.max_version,
-            v2_connection_details.flags,
-            v2_connection_details.endpoint_host.to_string(),
-            v2_connection_details.endpoint_port,
-            v2_connection_details.device.vendor.to_string(),
-            v2_connection_details.device.hw_rev.to_string(),
-            v2_connection_details.device.fw_ver.to_string(),
-            v2_connection_details.device.dev_id.to_string(),
+            .map_or_else(|| String::from("N/A"), |d| format!("{:x?}", d));
+        let last_submit = self.last_submit.as_ref().map_or_else(
+            || String::from("N/A"),
+            |t| format!("{:.1}secs", t.elapsed().as_secs_f64()),
         );
+        format!(
+            "User:{},ConnectionDetails:{:x?};since_last_submit:{}",
+            user, v2_connection_details, last_submit,
+        )
     }
 }
 
@@ -1442,6 +1437,7 @@ impl V2ToV1Translation {
             self.state,
             msg,
         );
+        self.last_submit = Some(Instant::now());
         // Report invalid channel ID
         if msg.channel_id != Self::CHANNEL_ID {
             let _ = self.reject_shares(
