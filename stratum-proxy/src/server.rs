@@ -563,7 +563,7 @@ where
     }
 
     /// Helper method for accepting incoming connections
-    fn accept(&self, connection: TcpStream, peer: SocketAddr) -> Result<()> {
+    fn accept(&self, connection: TcpStream, peer: SocketAddr) {
         trace!("stratum proxy: Handling connection from: {:?}", peer);
         // Fully secured connection has been established
         let proxy_connection = ProxyConnection::new(self, connection, peer);
@@ -572,7 +572,6 @@ where
         } else {
             tokio::spawn(proxy_connection.handle());
         }
-        Ok(())
     }
 
     /// Creates a proxy server task that calls `.next()`
@@ -617,9 +616,7 @@ where
                         //  to the caller. The problem is that it would not be as transparent due to
                         metrics.account_successful_tcp_open();
                     }
-                    if let Err(err) = self.accept(stream, peer) {
-                        debug!("Connection error: {}", err);
-                    }
+                    self.accept(stream, peer);
                 }
                 Err(accept_error) => {
                     warn!(
