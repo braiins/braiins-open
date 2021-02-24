@@ -20,6 +20,7 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+/// "<CARGO_PKG_NAME> <version-semantic>-<revision-git>"
 #[macro_export]
 macro_rules! version_full {
     ($($tt:tt)*) => {

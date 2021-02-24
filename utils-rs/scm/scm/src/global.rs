@@ -31,6 +31,7 @@ pub struct Version {
 }
 
 impl Version {
+    /// Example values: `Version::set("StratumProxy", ii_scm::version_full!().as_str())`
     pub fn set(signature: &str, full: &str) {
         VERSION
             .set(Self {
