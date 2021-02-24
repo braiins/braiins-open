@@ -31,6 +31,12 @@ pub struct NoiseProxyMetrics {
 }
 
 impl NoiseProxyMetrics {
+    pub fn new() -> (Arc<Self>, MetricsRegistry) {
+        let registry = MetricsRegistry::default();
+        let collector = Self::from_registry(&registry);
+        (collector, registry)
+    }
+
     pub fn from_registry(registry: &MetricsRegistry) -> Arc<Self> {
         Arc::new(NoiseProxyMetrics {
             tcp_connection_open_total: registry.register_generic_counter_vec(

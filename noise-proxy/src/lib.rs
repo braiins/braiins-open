@@ -53,7 +53,7 @@ pub struct NoiseProxy {
     proxy_protocol_acceptor_builder: proxy::AcceptorBuilder<TcpStream>,
     /// Server will use this version for talking to upstream server (when defined)
     proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
-    metrics: Option<Arc<metrics::NoiseProxyMetrics>>,
+    metrics: Arc<metrics::NoiseProxyMetrics>,
 }
 
 impl NoiseProxy {
@@ -65,7 +65,7 @@ impl NoiseProxy {
         security_context: Arc<SecurityContext>,
         proxy_protocol_downstream_config: proxy::ProtocolConfig,
         proxy_protocol_upstream_version: Option<proxy::ProtocolVersion>,
-        metrics: Option<Arc<metrics::NoiseProxyMetrics>>,
+        metrics: Arc<metrics::NoiseProxyMetrics>,
     ) -> Result<Self>
     where
         P: ToSocketAddrs,
@@ -100,15 +100,11 @@ impl NoiseProxy {
                 tcp_accept_result = listener.accept() => {
                     let (tcp_stream, peer_socket) = match tcp_accept_result {
                         Ok(stream_and_peer) => {
-                            if let Some(metrics) = self.metrics.as_ref() {
-                                metrics.account_successful_tcp_open();
-                            }
+                            self.metrics.account_successful_tcp_open();
                             stream_and_peer
                         }
                         Err(e) => {
-                            if let Some(metrics) = self.metrics.as_ref() {
-                                metrics.account_failed_tcp_open();
-                            }
+                            self.metrics.account_failed_tcp_open();
                             warn!("NoiseProxy: TCP Error, disconnecting from client: {}", e);
                             // Why the sleep here?
                             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -148,7 +144,7 @@ struct NoiseProxyConnection {
     direct_downstream_peer_addr: SocketAddr,
     upstream: SocketAddr,
     tripwire: Tripwire,
-    metrics: Option<Arc<metrics::NoiseProxyMetrics>>,
+    metrics: Arc<metrics::NoiseProxyMetrics>,
 }
 
 impl NoiseProxyConnection {
@@ -158,7 +154,7 @@ impl NoiseProxyConnection {
         security_context: Arc<SecurityContext>,
         upstream: SocketAddr,
         tripwire: Tripwire,
-        metrics: Option<Arc<metrics::NoiseProxyMetrics>>,
+        metrics: Arc<metrics::NoiseProxyMetrics>,
     ) -> Self {
         Self {
             proxy_protocol_upstream_version,
@@ -241,9 +237,7 @@ impl NoiseProxyConnection {
             );
         };
         futures::future::join(down_to_up, up_to_down).await;
-        if let Some(metrics) = self.metrics.as_ref() {
-            metrics.account_normal_tcp_close()
-        }
+        self.metrics.account_normal_tcp_close();
         debug!(
             "NoiseProxy: Session {}:{}->{} closed",
             direct_downstream_peer_addr, proxy_info, up_peer

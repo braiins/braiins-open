@@ -20,9 +20,16 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use std::sync::Arc;
+
+pub struct MetricsRegistry;
 pub struct NoiseProxyMetrics;
 
 impl NoiseProxyMetrics {
+    pub fn new() -> (Arc<Self>, MetricsRegistry) {
+        (Arc::new(NoiseProxyMetrics), MetricsRegistry)
+    }
+
     pub fn account_successful_tcp_open(&self) {}
 
     pub fn account_failed_tcp_open(&self) {}
