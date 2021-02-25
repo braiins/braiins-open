@@ -75,10 +75,8 @@ fn get_git_hash(input: GitHashInput) -> std::io::Result<String> {
     let object = input.object.as_deref().unwrap_or("HEAD");
     let output = Command::new("git").arg("rev-parse").arg(object).output()?;
     if !output.status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "command 'git rev-parse' failed".to_string(),
-        ));
+        return std::env::var("GIT_HASH")
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
     }
 
     let output = String::from_utf8_lossy(&output.stdout);
