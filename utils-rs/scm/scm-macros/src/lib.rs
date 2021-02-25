@@ -28,6 +28,7 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::parse_macro_input;
 
+use std::io::{Error, ErrorKind, Result};
 use std::process::Command;
 
 macro_rules! error {
@@ -71,24 +72,38 @@ impl Parse for GitHashInput {
     }
 }
 
-fn get_git_hash(input: GitHashInput) -> std::io::Result<String> {
+fn get_git_hash(
+    git_executable_path: &str,
+    default_var: &str,
+    input: GitHashInput,
+) -> Result<String> {
     let object = input.object.as_deref().unwrap_or("HEAD");
-    let output = Command::new("git").arg("rev-parse").arg(object).output()?;
-    if !output.status.success() {
-        return std::env::var("GIT_HASH")
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
-    }
-
-    let output = String::from_utf8_lossy(&output.stdout);
-    let mut hash = output.trim_end().to_string();
-    if let Some(length) = input.length {
-        hash.truncate(length);
-    }
-    Ok(hash)
+    Command::new(git_executable_path)
+        .arg("rev-parse")
+        .arg(object)
+        .output()
+        .and_then(|output| {
+            if output.status.success() {
+                let output = String::from_utf8_lossy(&output.stdout);
+                let mut hash = output.trim_end().to_string();
+                if let Some(length) = input.length {
+                    hash.truncate(length);
+                }
+                Ok(hash)
+            } else {
+                Err(Error::new(
+                    ErrorKind::Other,
+                    "Invalid git revision requested".to_string(),
+                ))
+            }
+        })
+        .or_else(|_| {
+            std::env::var(default_var).map_err(|e| Error::new(ErrorKind::Other, e.to_string()))
+        })
 }
 
 fn impl_git_hash(input: GitHashInput) -> syn::Result<proc_macro2::TokenStream> {
-    match get_git_hash(input) {
+    match get_git_hash("git", "GIT_HASH", input) {
         Ok(hash) => Ok(quote!(#hash)),
         Err(e) => Err(error!("{}", e)),
     }
@@ -104,4 +119,43 @@ pub fn git_hash(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(tokens)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_git_hash;
+    use crate::GitHashInput;
+
+    #[test]
+    fn failing_git_command() {
+        get_git_hash(
+            "git",
+            "CARGO_PKG_NAME",
+            GitHashInput {
+                object: Some("HEAD".to_string()),
+                length: None,
+            },
+        )
+        .expect("BUG: Failed to extract revision number from git");
+
+        get_git_hash(
+            "some-non-existing-command",
+            "CARGO_PKG_NAME",
+            GitHashInput {
+                object: Some("HEAD".to_string()),
+                length: None,
+            },
+        )
+        .expect("BUG: Failed to extract revision number from variable");
+
+        get_git_hash(
+            "some-non-existing-command",
+            "SOME_NONEXISTING_VARIABLE",
+            GitHashInput {
+                object: Some("HEAD".to_string()),
+                length: None,
+            },
+        )
+        .expect_err("BUG: Failed to fail to extract version");
+    }
 }
