@@ -345,9 +345,10 @@ impl HaltHandle {
         FT: Future + Send + 'static,
         FN: FnOnce(Arc<Self>) -> FT,
     {
-        if !self
+        if self
             .signal_task_spawned
-            .compare_and_swap(false, true, Ordering::SeqCst)
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+            .is_ok()
         {
             let ft = f(self);
             tokio::spawn(interrupt_signal(ft));

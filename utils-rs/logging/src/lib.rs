@@ -203,7 +203,10 @@ pub fn init_test_logging() -> Option<FlushGuard> {
 
     // Tests are run typically in random order in multiple threads,
     // make sure the initialization is only run once:
-    if !INITIALIZED.compare_and_swap(false, true, Ordering::SeqCst) {
+    if INITIALIZED
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+        .is_ok()
+    {
         Some(setup_for_app(
             LoggingConfig::ASYNC_LOGGER_DRAIN_CHANNEL_SIZE,
         ))
