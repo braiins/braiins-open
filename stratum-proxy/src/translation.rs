@@ -252,7 +252,7 @@ pub struct V2ToV1Translation {
     options: V2ToV1TranslationOptions,
     v1_password: String,
     metrics: Option<Arc<ProxyMetrics>>,
-    last_submit: Option<Instant>,
+    pub last_submit: Option<Instant>,
 }
 
 impl V2ToV1Translation {
