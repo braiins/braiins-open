@@ -16,5 +16,5 @@ tokio02 = { package = "tokio", version = "0.2.22", features = ["full"], optional
 tokio-stream = { git = "https://github.com/tokio-rs/tokio", rev="6fd06aaeecce21bcf31cbe485fe0060e3f07e983", features = ["default", "signal"] }
 
 [features]
-default = ["tokio03"]
+default = ["tokio12"]
 tokio03 = ["tokio"]
