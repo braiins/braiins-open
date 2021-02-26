@@ -182,8 +182,6 @@ impl NoiseProxyConnection {
         // Allows access to the peer address from both tasks
         let direct_downstream_peer_addr = self.direct_downstream_peer_addr;
 
-        let up_peer = self.upstream.to_string();
-
         let downstream_framed = self
             .security_context
             .build_framed_tcp_from_parts::<v1::Codec, v1::Frame, _>(
@@ -214,6 +212,7 @@ impl NoiseProxyConnection {
             let mut str1 = downstream_stream.take_until(tripwire_clone);
             while let Some(x) = str1.next().await {
                 if let Ok(frame) = x {
+                    trace!("{} frame: {:?}", proxy_info, frame);
                     if let Err(e) = upstream_sink.send(frame).await {
                         warn!(
                             "NoiseProxy: {}:{} Upstream error: {}",
@@ -239,6 +238,7 @@ impl NoiseProxyConnection {
 
             while let Some(x) = str1.next().await {
                 if let Ok(frame) = x {
+                    trace!("{} frame: {:?}", proxy_info, frame);
                     if let Err(e) = downstream_sink.send(frame).await {
                         warn!(
                             "NoiseProxy: {}:{} Downstream error: {}",
@@ -256,7 +256,7 @@ impl NoiseProxyConnection {
         self.metrics.account_tcp_close_in_stage("ok");
         debug!(
             "NoiseProxy: Session {}:{}->{} closed",
-            direct_downstream_peer_addr, proxy_info, up_peer
+            direct_downstream_peer_addr, proxy_info, self.upstream
         );
         Ok(())
     }
