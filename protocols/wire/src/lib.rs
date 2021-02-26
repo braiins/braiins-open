@@ -24,15 +24,27 @@
 #[cfg(all(feature = "tokio03", feature = "tokio02"))]
 compile_error!("You can't use both Tokio 0.3 and 0.2. Note: The `tokio02` feature requires default features to be turned off");
 
-#[cfg(feature = "tokio03")]
+#[cfg(feature = "tokio12")]
 pub(crate) use tokio;
-#[cfg(feature = "tokio03")]
+#[cfg(feature = "tokio12")]
 pub(crate) use tokio_util;
 
+#[cfg(feature = "tokio03")]
+pub(crate) use tokio03_core as tokio;
+#[cfg(feature = "tokio03")]
+pub(crate) use tokio03_util as tokio_util;
+
 #[cfg(feature = "tokio02")]
-pub(crate) use tokio02_ as tokio;
+pub(crate) use tokio02_core as tokio;
 #[cfg(feature = "tokio02")]
 pub(crate) use tokio02_util as tokio_util;
+
+#[cfg(feature = "bytes")]
+pub(crate) use bytes;
+#[cfg(feature = "bytes05")]
+pub(crate) use bytes05 as bytes;
+#[cfg(feature = "bytes06")]
+pub(crate) use bytes06 as bytes;
 
 #[macro_use]
 extern crate ii_logging;

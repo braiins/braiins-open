@@ -21,9 +21,14 @@
 // contact us at opensource@braiins.com.
 
 #![allow(dead_code)]
-use super::{SocketType, SIGNATURE};
-use bytes::{Buf, BufMut, BytesMut};
+
 use std::net::{SocketAddrV4, SocketAddrV6};
+
+use super::{SocketType, SIGNATURE};
+
+use crate::bytes;
+
+use bytes::{Buf, BufMut, BytesMut};
 use thiserror::Error;
 
 // PROXY Protocol version

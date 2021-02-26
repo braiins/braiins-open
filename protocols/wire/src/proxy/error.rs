@@ -20,6 +20,8 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use crate::tokio;
+
 use thiserror::Error;
 
 /// Error type for this module

@@ -20,11 +20,15 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
-use super::{ProxyInfo, SocketType, MAX_HEADER_SIZE};
-use crate::proxy::error::{Error, Result};
-use bytes::{Buf, BufMut, BytesMut};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::str::FromStr;
+
+use super::{ProxyInfo, SocketType, MAX_HEADER_SIZE};
+use crate::proxy::error::{Error, Result};
+
+use crate::{bytes, tokio_util};
+
+use bytes::{Buf, BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
 /// Encoder and Decoder for PROXY protocol v1
@@ -180,9 +184,10 @@ impl Encoder<ProxyInfo> for V1Codec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{bytes, tokio};
     use bytes::{BufMut, BytesMut};
-    use tokio::prelude::*;
-    use tokio::stream::StreamExt;
+    use futures::StreamExt;
+    use tokio::io::{AsyncRead, AsyncWrite};
     use tokio_util::codec::{Framed, FramedParts};
 
     /// Helper function to accept stream with PROXY protocol header v1

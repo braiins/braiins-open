@@ -31,7 +31,7 @@ use std::vec;
 use crate::tokio;
 
 use tokio::net::TcpStream;
-#[cfg(feature = "tokio03")]
+#[cfg(any(feature = "tokio12", feature = "tokio03"))]
 use tokio::time;
 
 #[cfg(feature = "tokio02")]

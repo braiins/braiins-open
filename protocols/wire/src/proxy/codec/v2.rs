@@ -20,11 +20,15 @@
 // of such proprietary license or if you have any other questions, please
 // contact us at opensource@braiins.com.
 
+use std::net::SocketAddr;
+
 use super::{ProxyInfo, SocketType};
 use crate::proxy::error::{Error, Result};
+
+use crate::{bytes, tokio_util};
+
 use bytes::BytesMut;
 use proto::*;
-use std::net::SocketAddr;
 use tokio_util::codec::{Decoder, Encoder};
 
 pub mod proto;
@@ -151,9 +155,10 @@ impl Encoder<ProxyInfo> for V2Codec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{bytes, tokio, tokio_util};
     use bytes::BufMut;
-    use tokio::prelude::*;
-    use tokio::stream::StreamExt;
+    use futures::StreamExt;
+    use tokio::io::{AsyncRead, AsyncWrite};
     use tokio_util::codec::{Framed, FramedParts};
 
     /// Helper function to accept stream with PROXY protocol header v2

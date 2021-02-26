@@ -22,15 +22,17 @@
 
 //! Implements  [PROXY protocol](http://www.haproxy.org/download/1.8/doc/proxy-protocol.txt) in tokio
 
-use bytes::Buf;
-use bytes::BytesMut;
-use futures::{Future, FutureExt};
-use pin_project::pin_project;
 use std::convert::TryInto;
 use std::net::SocketAddr;
+
+use crate::{bytes, tokio, tokio_util};
+
+use bytes::Buf;
+use bytes::BytesMut;
+use futures::{Future, FutureExt, StreamExt};
+use pin_project::pin_project;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::prelude::*;
-use tokio::stream::StreamExt;
 use tokio_util::codec::{Decoder, Encoder, Framed, FramedParts};
 
 #[cfg(feature = "serde")]
@@ -515,7 +517,6 @@ mod tests {
     use super::*;
     use std::convert::TryFrom;
     use std::net::IpAddr;
-    use tokio::stream::StreamExt;
 
     /// Test codec for verifying that a message flows correctly through ProxyStream
     struct TestCodec {
