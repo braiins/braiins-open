@@ -66,15 +66,9 @@ impl NoiseProxyMetrics {
             .inc();
     }
 
-    pub fn account_normal_tcp_close(&self) {
+    pub fn account_tcp_close_in_stage(&self, stage: &str) {
         self.tcp_connection_close_stage
-            .with_label_values(&["ok"])
-            .inc();
-    }
-
-    pub fn account_tcp_close_due_error(&self) {
-        self.tcp_connection_close_stage
-            .with_label_values(&["error"])
+            .with_label_values(&[stage])
             .inc();
     }
 }

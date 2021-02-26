@@ -168,9 +168,17 @@ impl NoiseProxyConnection {
 
     async fn handle(self, proxy_protocol_acceptor: proxy::AcceptorFuture<TcpStream>) -> Result<()> {
         // Run the HAProxy protocol
-        let proxy_stream = proxy_protocol_acceptor.await?;
-        let proxy_info = proxy_stream.proxy_info()?;
-        let local_addr = proxy_stream.local_addr()?;
+        let proxy_stream = proxy_protocol_acceptor.await.map_err(|e| {
+            self.metrics.account_tcp_close_in_stage("proxy");
+            e
+        })?;
+        let proxy_info = proxy_stream
+            .proxy_info()
+            .expect("BUG: Inconsistent proxy information");
+        let local_addr = proxy_stream.local_addr().map_err(|e| {
+            self.metrics.account_tcp_close_in_stage("early");
+            e
+        })?;
         // Allows access to the peer address from both tasks
         let direct_downstream_peer_addr = self.direct_downstream_peer_addr;
 
@@ -181,7 +189,11 @@ impl NoiseProxyConnection {
             .build_framed_tcp_from_parts::<v1::Codec, v1::Frame, _>(
                 proxy_stream.into_framed_parts(),
             )
-            .await?;
+            .await
+            .map_err(|e| {
+                self.metrics.account_tcp_close_in_stage("downstream_noise");
+                e
+            })?;
 
         debug!(
             "NoiseProxy: Established secure V1 connection with {}:{}",
@@ -189,7 +201,11 @@ impl NoiseProxyConnection {
         );
         let upstream_framed = self
             .connect_upstream::<v1::Codec, v1::Frame>(proxy_info, local_addr)
-            .await?;
+            .await
+            .map_err(|e| {
+                self.metrics.account_tcp_close_in_stage("upstream_noise");
+                e
+            })?;
 
         let (mut downstream_sink, downstream_stream) = downstream_framed.split();
         let (mut upstream_sink, upstream_stream) = upstream_framed.split();
@@ -206,7 +222,7 @@ impl NoiseProxyConnection {
                     }
                 }
             }
-            info!(
+            debug!(
                 "NoiseProxy: Downstream disconnected: {}:{}",
                 direct_downstream_peer_addr, proxy_info
             );
@@ -237,7 +253,7 @@ impl NoiseProxyConnection {
             );
         };
         futures::future::join(down_to_up, up_to_down).await;
-        self.metrics.account_normal_tcp_close();
+        self.metrics.account_tcp_close_in_stage("ok");
         debug!(
             "NoiseProxy: Session {}:{}->{} closed",
             direct_downstream_peer_addr, proxy_info, up_peer

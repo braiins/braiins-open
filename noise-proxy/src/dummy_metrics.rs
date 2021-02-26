@@ -34,7 +34,5 @@ impl NoiseProxyMetrics {
 
     pub fn account_failed_tcp_open(&self) {}
 
-    pub fn account_normal_tcp_close(&self) {}
-
-    pub fn account_tcp_close_due_error(&self) {}
+    pub fn account_tcp_close_in_stage(&self, _: &str) {}
 }
