@@ -8,4 +8,4 @@ edition = "2018"
 ii-unvariant = { path = "../unvariant" }
 
 [dev-dependencies]
-tokio = { version = "0.3.2", features = ["full"] }
+tokio = { version = "1.2.0", features = ["full"] }
