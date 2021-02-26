@@ -29,7 +29,7 @@ use ii_async_utils::HaltHandle;
 use ii_logging::macros::*;
 use ii_noise_proxy::{metrics::NoiseProxyMetrics, NoiseProxy, SecurityContext};
 use ii_wire::proxy;
-use tokio::prelude::*;
+use tokio::io::AsyncReadExt;
 
 #[derive(serde::Deserialize, Debug)]
 struct Configuration {
