@@ -35,7 +35,6 @@ pub use tokio12 as tokio;
 use tokio::sync::{mpsc, watch, Notify};
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time;
-use tokio_stream::wrappers::SignalStream;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 #[cfg(target_family = "unix")]
@@ -44,6 +43,8 @@ where
     FT: Future + Send + 'static,
 {
     use tokio::signal::unix;
+    use tokio_stream::wrappers::SignalStream;
+
     let sigterm = SignalStream::new(
         unix::signal(unix::SignalKind::terminate()).expect("BUG: Error listening for SIGTERM"),
     );
@@ -61,8 +62,11 @@ where
     FT: Future + Send + 'static,
 {
     use tokio::signal::windows;
-    let sigterm = SignalStream::new(windows::ctrl_c().expect("BUG: Error listening for SIGTERM"));
-    let sigint = SignalStream::new(windows::ctrl_break().expect("BUG: Error listening for SIGINT"));
+    use tokio_stream::wrappers::{CtrlBreakStream, CtrlCStream};
+
+    let sigterm = CtrlCStream::new(windows::ctrl_c().expect("BUG: Error listening for SIGTERM"));
+    let sigint =
+        CtrlBreakStream::new(windows::ctrl_break().expect("BUG: Error listening for SIGINT"));
 
     future::select(sigterm.into_future(), sigint.into_future()).await;
     ft.await;
