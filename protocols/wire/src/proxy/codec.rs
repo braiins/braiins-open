@@ -21,6 +21,7 @@
 // contact us at opensource@braiins.com.
 
 use super::error::{Error, Result};
+use ii_logging::slog::{Record, Serializer, KV};
 use std::convert::TryFrom;
 use std::fmt;
 use std::net::SocketAddr;
@@ -91,5 +92,28 @@ impl fmt::Display for ProxyInfo {
             self.original_destination
                 .map_or_else(|| "N/A".to_string(), |s| s.to_string())
         )
+    }
+}
+
+impl KV for ProxyInfo {
+    fn serialize(
+        &self,
+        _record: &Record<'_>,
+        serializer: &mut dyn Serializer,
+    ) -> ii_logging::slog::Result {
+        const DST_KEY: &str = "PROXY_DST";
+        const SRC_KEY: &str = "PROXY_SRC";
+        if let Some(src) = self.original_source {
+            serializer.emit_str(SRC_KEY, &src.to_string())?;
+        } else {
+            serializer.emit_none(SRC_KEY)?;
+        }
+
+        if let Some(dst) = self.original_destination {
+            serializer.emit_str(DST_KEY, &dst.to_string())?;
+        } else {
+            serializer.emit_none(DST_KEY)?;
+        }
+        Ok(())
     }
 }
