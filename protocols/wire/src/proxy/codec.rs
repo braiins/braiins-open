@@ -53,6 +53,16 @@ pub struct ProxyInfo {
     pub original_destination: Option<SocketAddr>,
 }
 
+impl Default for ProxyInfo {
+    fn default() -> Self {
+        Self {
+            socket_type: SocketType::Unknown,
+            original_source: Default::default(),
+            original_destination: Default::default(),
+        }
+    }
+}
+
 impl TryFrom<(Option<SocketAddr>, Option<SocketAddr>)> for ProxyInfo {
     type Error = Error;
     fn try_from(addrs: (Option<SocketAddr>, Option<SocketAddr>)) -> Result<Self> {
