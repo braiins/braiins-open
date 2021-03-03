@@ -31,19 +31,19 @@ use std::{fmt, net::SocketAddr};
 pub struct DownstreamPeer {
     pub direct_peer: SocketAddr,
     /// Track additional information about the peer
-    pub proxy_info: Option<ii_wire::proxy::ProxyInfo>,
+    pub proxy_info: ii_wire::proxy::ProxyInfo,
 }
 
 impl DownstreamPeer {
     pub fn new(direct_peer: SocketAddr) -> Self {
         Self {
             direct_peer,
-            proxy_info: None,
+            proxy_info: Default::default(),
         }
     }
 
     pub fn set_proxy_info(&mut self, proxy_info: ProxyInfo) {
-        self.proxy_info.replace(proxy_info);
+        self.proxy_info = proxy_info;
     }
 }
 
@@ -53,9 +53,7 @@ impl fmt::Display for DownstreamPeer {
             f,
             "{}({})",
             self.direct_peer.to_string(),
-            self.proxy_info
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "ProxyInfo[N/A]".to_string())
+            self.proxy_info.to_string(),
         )
     }
 }
@@ -77,7 +75,7 @@ mod tests {
         let mut peer = DownstreamPeer::new(SocketAddr::new(IpAddr::from([5, 4, 3, 2]), 5432));
         assert_eq!(
             format!("{}", peer),
-            String::from("5.4.3.2:5432(ProxyInfo[N/A])")
+            String::from("5.4.3.2:5432(ProxyInfo[SRC:N/A, DST:N/A])")
         );
         peer.set_proxy_info(proxy_info);
         assert_eq!(

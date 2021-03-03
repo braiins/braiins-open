@@ -467,7 +467,7 @@ where
                 }
                 debug!(
                     "Connection closed by downstream peer: {}",
-                    self.downstream_peer
+                    self.downstream_peer; self.downstream_peer.proxy_info
                 );
             }
             Err(err) => {
