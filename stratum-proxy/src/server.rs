@@ -396,9 +396,10 @@ where
         self.downstream_peer.set_proxy_info(proxy_info);
 
         debug!(
-            "Received connection from downstream: {}, local destination: {}",
-            self.downstream_peer,
-            local_addr.to_string()
+            "Received connection from: {}, local destination: {}",
+            self.downstream_peer.direct_peer,
+            local_addr.to_string();
+            self.downstream_peer.proxy_info
         );
         // Connect to upstream V1 server
         let mut v1_client = Client::new(self.v1_upstream_addr.clone());
@@ -429,9 +430,9 @@ where
         }
         let v1_framed_stream = Connection::<v1::Framing>::new(v1_conn).into_inner();
         debug!(
-            "Established translation connection with upstream V1 {} for original V2 peer: {:?}",
-            v1_peer_addr,
-            proxy_stream.original_peer_addr()
+            "Established translation connection with upstream V1 {}",
+            v1_peer_addr;
+            proxy_info
         );
         let v2_framed_stream = match self.security_context.as_ref() {
             Some(security_context) => security_context
@@ -476,7 +477,8 @@ where
                 }
                 debug!(
                     "Connection error: {} downstream peer: {}",
-                    err, self.downstream_peer
+                    err, self.downstream_peer;
+                    self.downstream_peer.proxy_info
                 )
             }
         };
