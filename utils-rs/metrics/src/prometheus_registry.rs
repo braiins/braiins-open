@@ -23,8 +23,9 @@
 use std::sync::Arc;
 
 pub use prometheus::{
-    exponential_buckets, histogram_opts, linear_buckets, opts, Encoder, Histogram, HistogramTimer,
-    HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, TextEncoder, DEFAULT_BUCKETS,
+    exponential_buckets, histogram_opts, linear_buckets, opts, Encoder, GaugeVec, Histogram,
+    HistogramTimer, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, TextEncoder,
+    DEFAULT_BUCKETS,
 };
 
 use prometheus::core::{Atomic, GenericCounter, GenericCounterVec, GenericGauge, GenericGaugeVec};
