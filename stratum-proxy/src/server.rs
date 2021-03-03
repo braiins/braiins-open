@@ -229,29 +229,29 @@ impl ConnTranslation {
                 // Receive V1 frame and translate it to V2 message
                 v1_frame = v1_conn_rx.next().timeout(Self::V1_UPSTREAM_TIMEOUT).fuse()=> {
                     // Unwrap the potentially elapsed timeout
-                    match v1_frame.map_err(|e| UpstreamError::Timeout(e))? {
+                    match v1_frame.map_err(UpstreamError::Timeout)? {
                         Some(v1_frame) => {
                             Self::v1_handle_frame(
                                 &mut translation,
-                                v1_frame.map_err(|e| UpstreamError::Stratum(e))?,
+                                v1_frame.map_err(UpstreamError::Stratum)?,
                             )
                             .await?;
                         }
                         None => {
-                            Err(format!(
+                            return Err(format!(
                                 "Upstream V1 stratum connection dropped ({:?})",
                                 self.v1_peer_addr
-                            ))?;
+                            ).into());
                         }
                     }
                 },
                 // Receive V2 frame and translate it to V1 message
                 v2_frame = v2_conn_rx.next().timeout(Self::V2_DOWNSTREAM_TIMEOUT).fuse() => {
-                    match v2_frame.map_err(|e| DownstreamError::Timeout(e))? {
+                    match v2_frame.map_err(DownstreamError::Timeout)? {
                         Some(v2_frame) => {
                             Self::v2_handle_frame(
                                 &mut translation,
-                                v2_frame.map_err(|e| DownstreamError::Stratum(e))?,
+                                v2_frame.map_err(DownstreamError::Stratum)?,
                             )
                             .await?;
                         }
@@ -393,7 +393,7 @@ where
             .map_err(|e| DownstreamError::ProxyProtocol(ii_wire::proxy::error::Error::from(e)))?;
         let proxy_info = proxy_stream
             .proxy_info()
-            .map_err(|e| DownstreamError::ProxyProtocol(e))?;
+            .map_err(DownstreamError::ProxyProtocol)?;
         self.downstream_peer.set_proxy_info(proxy_info);
 
         debug!(

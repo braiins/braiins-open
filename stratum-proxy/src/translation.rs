@@ -33,7 +33,6 @@ use futures::channel::mpsc;
 use primitive_types::U256;
 
 use bitcoin_hashes::{sha256d, Hash, HashEngine};
-use serde_json;
 use serde_json::Value;
 
 use ii_logging::macros::*;
@@ -68,7 +67,7 @@ impl SeqId {
     }
 
     /// Get a new ID, increment internal state
-    pub fn next(&mut self) -> u32 {
+    pub fn next_id(&mut self) -> u32 {
         let current_value = self.0;
         self.0 = self.0.wrapping_add(1);
         current_value
@@ -333,7 +332,7 @@ impl V2ToV1Translation {
         <M as TryInto<v1::rpc::RequestPayload>>::Error: fmt::Debug,
     {
         let (req_id, request_rpc) =
-            self.v1_method_into_message(message.clone(), result_handler, error_handler);
+            self.v1_method_into_message(message, result_handler, error_handler);
 
         util::submit_message(&mut self.v1_tx, request_rpc).map_err(|e| {
             debug!("Cannot submit request upstream: {:?}", e);
@@ -387,7 +386,7 @@ impl V2ToV1Translation {
             .expect("BUG: Cannot convert V1 method into a message");
 
         // TODO: decorate the request with a new unique ID -> this is the request ID
-        let id = self.v1_req_id.next();
+        let id = self.v1_req_id.next_id();
         trace!("Registering v1, request ID: {} method: {:?}", id, payload);
         if self
             .v1_req_map
@@ -426,7 +425,7 @@ impl V2ToV1Translation {
             let msg = v2::messages::OpenStandardMiningChannelSuccess {
                 req_id: v2_channel_details.req_id,
                 channel_id: Self::CHANNEL_ID,
-                target: init_target.clone(),
+                target: init_target,
                 extranonce_prefix: Bytes0_32::new(),
                 group_channel_id: Self::DEFAULT_GROUP_CHANNEL_ID,
             };
@@ -436,7 +435,7 @@ impl V2ToV1Translation {
             if let Some(notify_payload) = self.v1_deferred_notify.take() {
                 self.perform_notify(&notify_payload)?;
             }
-            return Ok(());
+            Ok(())
         } else {
             Err(
                 ii_stratum::error::Error::from(v2::error::Error::ChannelNotOperational(
@@ -588,10 +587,10 @@ impl V2ToV1Translation {
                     error!("Pool refused to enable #xnsub"; self.proxy_info);
                     self.v1_xnsub_enabled = false;
                 }
-                ()
             })
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn handle_extranonce_subscribe_error(
         &mut self,
         _id: &v1::MessageId,
@@ -621,7 +620,7 @@ impl V2ToV1Translation {
         })?;
 
         self.v1_extra_nonce1 = Some(subscribe_result.extra_nonce_1().clone());
-        self.v1_extra_nonce2_size = subscribe_result.extra_nonce_2_size().clone();
+        self.v1_extra_nonce2_size = subscribe_result.extra_nonce_2_size();
 
         // In order to finalize the opening procedure we need 3 items: authorization,
         // subscription and difficulty
@@ -820,7 +819,9 @@ impl V2ToV1Translation {
             trace!("Merkle root calculated: {:x?}", merkle_root);
             Ok(merkle_root)
         } else {
-            Err(Error::General("Extra nonce 1 missing, cannot calculate merkle root".into()).into())
+            Err(Error::General(
+                "Extra nonce 1 missing, cannot calculate merkle root".into(),
+            ))
         }
     }
 
@@ -956,13 +957,14 @@ impl V2ToV1Translation {
         let submit_shares_error_msg = v2::messages::SubmitSharesError {
             channel_id,
             seq_num,
-            code: err_msg[..err_msg.len().min(32)].try_into().expect(
-                format!(
-                    "BUG: cannot convert error message to V2 format: {}",
-                    err_msg
-                )
-                .as_str(),
-            ),
+            code: err_msg[..err_msg.len().min(32)]
+                .try_into()
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "BUG: cannot convert error message to V2 format: {}",
+                        err_msg
+                    )
+                }),
         };
 
         if submit {
@@ -979,7 +981,7 @@ impl V2ToV1Translation {
 
         let v2_job = v2::messages::NewMiningJob {
             channel_id: Self::CHANNEL_ID,
-            job_id: self.v2_job_id.next(),
+            job_id: self.v2_job_id.next_id(),
             future_job: self.v2_to_v1_job_map.is_empty()
                 || payload.clean_jobs()
                 || self.v1_force_future_jobs,
@@ -1048,26 +1050,27 @@ impl V2ToV1Translation {
         ))))
         // find the ID in the request map
         .and_then(|id| {
-            self.v1_req_map
-                .remove(&id)
-                .ok_or(Error::from(stratum::Error::from(v1::error::Error::Rpc(
-                    format!("Received invalid ID {}", id).into(),
+            self.v1_req_map.remove(&id).ok_or_else(|| {
+                Error::from(stratum::Error::from(v1::error::Error::Rpc(format!(
+                    "Received invalid ID {}",
+                    id
                 ))))
+            })
         })
         // run the result through the result handler
         .and_then(|handler| {
             let req_duration = handler.elapsed();
             match payload {
                 V1ResultOrError::Result(r) => {
-                    self.metrics.as_ref().map(|m| {
-                        m.observe_v1_request_success(handler.request_method, req_duration)
-                    });
+                    if let Some(m) = self.metrics.as_ref() {
+                        m.observe_v1_request_success(handler.request_method, req_duration);
+                    };
                     (handler.v1_stratum_result_handler)(self, id, r)
                 }
                 V1ResultOrError::Error(e) => {
-                    self.metrics
-                        .as_ref()
-                        .map(|m| m.observe_v1_request_error(handler.request_method, req_duration));
+                    if let Some(m) = self.metrics.as_ref() {
+                        m.observe_v1_request_error(handler.request_method, req_duration);
+                    };
                     (handler.v1_stratum_error_handler)(self, id, e)
                 }
             }
@@ -1241,7 +1244,7 @@ impl V2ToV1Translation {
 
         // We won't process the job as long as the channel is not operational
         if self.state != V2ToV1TranslationState::Operational {
-            self.v1_deferred_notify = Some(msg.clone());
+            self.v1_deferred_notify = Some(msg);
             debug!(
                 "Mining channel not yet operational, caching latest mining.notify from upstream"
             );
@@ -1345,7 +1348,7 @@ impl V2ToV1Translation {
                 .map_err(V2ProtocolError::setup_connection)?;
         }
 
-        self.v2_conn_details = Some(msg.clone());
+        self.v2_conn_details = Some(msg);
         let mut configure = v1::messages::Configure::new();
         configure
             .add_feature(v1::messages::VersionRolling::new(
@@ -1495,10 +1498,12 @@ impl V2ToV1Translation {
             .v2_to_v1_job_map
             .get(&msg.job_id)
             // convert missing job ID (None) into an error
-            .ok_or(crate::error::Error::General(format!(
-                "V2 Job ID not present {} in registry",
-                msg.job_id
-            )))
+            .ok_or_else(|| {
+                crate::error::Error::General(format!(
+                    "V2 Job ID not present {} in registry",
+                    msg.job_id
+                ))
+            })
             .map(|tmpl| tmpl.clone());
         // TODO validate the job (recalculate the hash and compare the target)
         // Submit upstream V1 job based on the found job ID in the map
@@ -1506,7 +1511,7 @@ impl V2ToV1Translation {
             .and_then(|v1_submit_template| {
                 let submit = v1::messages::Submit::new(
                     v2_channel_details.user.to_string(),
-                    v1_submit_template.job_id.clone(),
+                    v1_submit_template.job_id,
                     Self::channel_to_extra_nonce2_bytes(Self::CHANNEL_ID, v1_extra_nonce2_size)
                         .as_ref(),
                     msg.ntime,
@@ -1521,10 +1526,9 @@ impl V2ToV1Translation {
                     Self::handle_submit_error,
                 )
             })
-            .and_then(|v1_seq_num| {
+            .map(|v1_seq_num| {
                 self.v2_submit_share_queue
                     .push_back(SubmitShare::V1ToV2Mapping(v1_seq_num, msg.seq_num));
-                Ok(())
             });
         if let Err(e) = submit_result {
             self.reject_shares(msg.channel_id, SeqNum::V2(msg.seq_num), format!("{}", e))
@@ -1545,7 +1549,8 @@ impl V2ToV1Translation {
             Err(e) => Err(V2ProtocolError::Other(format!(
                 "Broken stratum v2 frame received: {:?}",
                 e
-            )))?,
+            ))
+            .into()),
         }
     }
 }
