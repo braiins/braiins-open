@@ -94,6 +94,7 @@ impl ConnTranslation {
             v2_translation_tx,
             Default::default(),
             metrics.clone(),
+            v2_peer_addr.proxy_info,
         );
 
         Self {
@@ -399,7 +400,7 @@ where
             "Received connection from: {}, local destination: {}",
             self.downstream_peer.direct_peer,
             local_addr.to_string();
-            self.downstream_peer.proxy_info
+            proxy_info
         );
         // Connect to upstream V1 server
         let mut v1_client = Client::new(self.v1_upstream_addr.clone());
@@ -461,6 +462,7 @@ where
         let timer = std::time::Instant::now();
         // TODO report full address info here once ProxyConnection has internal information about
         // (possible provide full 'ProxyInfo')
+        let proxy_info = self.downstream_peer.proxy_info;
         match self.do_handle().await {
             Ok(()) => {
                 if let Some(x) = metrics.as_ref() {
@@ -468,7 +470,7 @@ where
                 }
                 debug!(
                     "Connection closed by downstream peer: {}",
-                    self.downstream_peer; self.downstream_peer.proxy_info
+                    self.downstream_peer; proxy_info
                 );
             }
             Err(err) => {
@@ -478,7 +480,7 @@ where
                 debug!(
                     "Connection error: {} downstream peer: {}",
                     err, self.downstream_peer;
-                    self.downstream_peer.proxy_info
+                    proxy_info
                 )
             }
         };

@@ -36,15 +36,14 @@ use bitcoin_hashes::{sha256d, Hash, HashEngine};
 use serde_json;
 use serde_json::Value;
 
+use ii_logging::macros::*;
 use ii_stratum::v1::{self, MessageId};
 use ii_stratum::v2::{
     self,
     types::{Bytes0_32, Str0_255, Uint256Bytes},
 };
-
 use ii_unvariant::handler;
-
-use ii_logging::macros::*;
+use ii_wire::proxy::ProxyInfo;
 
 use crate::error::{DownstreamError, Error, Result, UpstreamError, V2ProtocolError};
 use crate::metrics::ProxyMetrics;
@@ -253,6 +252,7 @@ pub struct V2ToV1Translation {
     v1_password: String,
     metrics: Option<Arc<ProxyMetrics>>,
     pub last_submit: Option<Instant>,
+    proxy_info: ProxyInfo,
 }
 
 impl V2ToV1Translation {
@@ -292,6 +292,7 @@ impl V2ToV1Translation {
         v2_tx: mpsc::Sender<v2::Frame>,
         options: V2ToV1TranslationOptions,
         metrics: Option<Arc<ProxyMetrics>>,
+        proxy_info: ProxyInfo,
     ) -> Self {
         let v1_password = options.password.to_string();
         Self {
@@ -317,6 +318,7 @@ impl V2ToV1Translation {
             v1_password,
             metrics,
             last_submit: None,
+            proxy_info,
         }
     }
 
@@ -411,7 +413,7 @@ impl V2ToV1Translation {
 
     /// Sets the current pending channel to operational state and submits success message
     fn finalize_open_channel(&mut self) -> Result<()> {
-        trace!("finalize_open_channel()");
+        trace!("finalize_open_channel()"; self.proxy_info);
         let mut init_target: Uint256Bytes = Uint256Bytes([0; 32]);
         self.v2_target
             .expect("BUG: initial target still not defined when attempting to finalize OpenStandardMiningChannel")
@@ -420,7 +422,7 @@ impl V2ToV1Translation {
         // when V1 authorization has already taken place, report channel opening success
         if let Some(v2_channel_details) = self.v2_channel_details.as_ref() {
             self.state = V2ToV1TranslationState::Operational;
-            debug!("Switching mining channel to operational mode");
+            debug!("Switching mining channel to operational mode"; self.proxy_info);
             let msg = v2::messages::OpenStandardMiningChannelSuccess {
                 req_id: v2_channel_details.req_id,
                 channel_id: Self::CHANNEL_ID,
@@ -448,7 +450,7 @@ impl V2ToV1Translation {
     /// Send new target
     /// TODO extend the translation unit test accordingly
     fn send_set_target(&mut self) -> Result<()> {
-        trace!("send_set_target()");
+        trace!("send_set_target()"; self.proxy_info);
         let max_target = Uint256Bytes::from(self.v2_target.expect(
             "BUG: initial target still not defined when attempting to finalize \
              OpenStandardMiningChannel",
@@ -468,7 +470,8 @@ impl V2ToV1Translation {
         trace!(
             "abort_open_channel() - channel details: {:?}, msg: {}",
             self.v2_channel_details,
-            err_msg
+            err_msg;
+            self.proxy_info
         );
         self.state = V2ToV1TranslationState::V1SubscribeOrAuthorizeFail;
 
@@ -487,7 +490,7 @@ impl V2ToV1Translation {
             if let Err(submit_err) = self.submit_v2_message(msg) {
                 info!(
                     "abort_open_channel() failed: {:?}, abort message: {}",
-                    submit_err, err_msg
+                    submit_err, err_msg; self.proxy_info
                 );
             }
         } else {
@@ -510,7 +513,8 @@ impl V2ToV1Translation {
             "handle_configure_result() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            payload,
+            payload;
+            self.proxy_info
         );
 
         // TODO review the use of serde_json here, it may be possible to eliminate this dependency
@@ -521,7 +525,8 @@ impl V2ToV1Translation {
         trace!(
             "Evaluating: version-rolling state == {:?} && mask=={:x?}",
             payload.0["version-rolling"].as_bool(),
-            proposed_version_mask
+            proposed_version_mask;
+            self.proxy_info
         );
         if payload.0["version-rolling"].as_bool() == Some(true)
             && (proposed_version_mask.0).0 == ii_stratum::BIP320_N_VERSION_MASK
@@ -553,7 +558,8 @@ impl V2ToV1Translation {
             "handle_configure_error() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            payload,
+            payload;
+            self.proxy_info
         );
         // TODO consolidate into abort_connection() + communicate shutdown of this
         // connection similarly everywhere in the code
@@ -576,10 +582,10 @@ impl V2ToV1Translation {
             // Handle the actual submission result
             .map(|bool_result| {
                 if bool_result.0 {
-                    info!("Support for #xnsub enabled");
+                    info!("Support for #xnsub enabled"; self.proxy_info);
                     self.v1_xnsub_enabled = true;
                 } else {
-                    error!("Pool refused to enable #xnsub");
+                    error!("Pool refused to enable #xnsub"; self.proxy_info);
                     self.v1_xnsub_enabled = false;
                 }
                 ()
@@ -605,7 +611,8 @@ impl V2ToV1Translation {
             "handle_subscribe_result() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            payload,
+            payload;
+            self.proxy_info
         );
         let subscribe_result = v1::messages::SubscribeResult::try_from(payload).map_err(|e| {
             // Aborting channel failed, we can only log about it
@@ -637,14 +644,15 @@ impl V2ToV1Translation {
             "handle_authorize_result() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            payload,
+            payload;
+            self.proxy_info
         );
         // Authorize is expected as a plain boolean answer
         v1::messages::BooleanResult::try_from(payload)
             // Convert ii-stratum error to proxy error
             .map_err(Into::into)
             .and_then(|bool_result| {
-                trace!("Authorize result: {:?}", bool_result);
+                trace!("Authorize result: {:?}", bool_result; self.proxy_info);
                 self.v1_authorized = bool_result.0;
                 if self.v1_authorized {
                     // Subscribe result already received (since extra nonce 1 is present), let's
@@ -679,20 +687,27 @@ impl V2ToV1Translation {
             "handle_authorize_or_subscribe_error() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            payload,
+            payload;
+            self.proxy_info
         );
         // Only the first of authorize or subscribe error issues the OpenMiningChannelError message
         if self.state != V2ToV1TranslationState::V1SubscribeOrAuthorizeFail {
             trace!(
                 "Upstream connection init failed, dropping channel: {:?}",
-                payload
+                payload;
+                self.proxy_info
             );
             self.abort_open_channel("Service not ready");
             Err(Error::from(ii_stratum::error::Error::from(
                 v1::error::Error::Subscribe(format!("{:?}", payload)),
             )))
         } else {
-            trace!("Ok, received the second of subscribe/authorize failures, channel is already closed: {:?}", payload);
+            trace!(
+                "Ok, received the second of subscribe/authorize failures, \
+                channel is already closed: {:?}",
+                payload;
+                self.proxy_info
+            );
             Ok(())
         }
     }
@@ -706,7 +721,8 @@ impl V2ToV1Translation {
             "handle_submit_result() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            payload,
+            payload;
+            self.proxy_info
         );
         // mining.submit response is expected as a plain boolean answer
         v1::messages::BooleanResult::try_from(payload)
@@ -721,11 +737,12 @@ impl V2ToV1Translation {
                 trace!(
                     "Submit result: {:?}, V2 channel: {:?}",
                     bool_result,
-                    v2_channel_details
+                    v2_channel_details;
+                    self.proxy_info
                 );
 
                 if bool_result.0 {
-                    debug!("Share accepted: SESSION {}", self.session_details());
+                    debug!("Share accepted: SESSION {}", self.session_details(); self.proxy_info);
                     if let Some(metrics) = self.metrics.as_ref() {
                         metrics.account_accepted_share(self.v2_target);
                     }
@@ -735,7 +752,7 @@ impl V2ToV1Translation {
                         self.v2_target.expect("BUG: difficulty missing").low_u64(),
                     )
                 } else {
-                    info!("Share rejected for {}", v2_channel_details.user.to_string());
+                    info!("Share rejected for {}", v2_channel_details.user.to_string(); self.proxy_info);
                     self.reject_shares(
                         Self::CHANNEL_ID,
                         SeqNum::V1(*id),
@@ -757,7 +774,8 @@ impl V2ToV1Translation {
             "handle_submit_error() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            payload,
+            payload;
+            self.proxy_info
         );
         self.reject_shares(
             Self::CHANNEL_ID,
@@ -927,7 +945,7 @@ impl V2ToV1Translation {
         seq_num_variant: SeqNum,
         err_msg: String,
     ) -> Result<()> {
-        trace!("{}", err_msg);
+        trace!("{}", err_msg; self.proxy_info);
         let (seq_num, submit) = match seq_num_variant {
             SeqNum::V1(id) => (self.get_v2_submit_shares_seq_num(&id)?, true),
             SeqNum::V2(value) => (value, self.v2_submit_share_queue.is_empty()),
@@ -986,7 +1004,8 @@ impl V2ToV1Translation {
         trace!(
             "Registering V2 job ID {:x?} -> V1 job ID {:x?}",
             v2_job.job_id,
-            payload.job_id(),
+            payload.job_id();
+            self.proxy_info
         );
         // TODO extract this duplicate code, turn the map into a new type with this
         // custom policy (attempt to insert with the same key is a bug)
@@ -1131,7 +1150,8 @@ impl V2ToV1Translation {
             "visit_stratum_result() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            &msg,
+            &msg;
+            self.proxy_info
         );
         self.visit_stratum_result_or_error(&id, V1ResultOrError::Result(&msg))
             .await
@@ -1146,7 +1166,8 @@ impl V2ToV1Translation {
             "visit_stratum_error() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            msg,
+            msg;
+            self.proxy_info
         );
         self.visit_stratum_result_or_error(&id, V1ResultOrError::Error(&msg))
             .await
@@ -1161,7 +1182,8 @@ impl V2ToV1Translation {
             "visit_set_difficulty() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            msg,
+            msg;
+            self.proxy_info
         );
         let diff = msg.value() as u32;
         self.v2_target = Some(Self::diff_to_target(diff));
@@ -1193,7 +1215,8 @@ impl V2ToV1Translation {
             "visit_set_extranonce() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            msg,
+            msg;
+            self.proxy_info
         );
 
         // Update extranonces.
@@ -1212,7 +1235,8 @@ impl V2ToV1Translation {
             "visit_notify() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            msg,
+            msg;
+            self.proxy_info
         );
 
         // We won't process the job as long as the channel is not operational
@@ -1227,7 +1251,7 @@ impl V2ToV1Translation {
             Error::General(format!(
                 "visit_notify: Sending new mining job failed error={:?} id={:?} state={:?} \
                  payload:{:?}",
-                e, id, self.state, msg,
+                e, id, self.state, msg
             ))
         })?;
         Ok(())
@@ -1245,7 +1269,8 @@ impl V2ToV1Translation {
             "visit_set_version_mask() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            msg,
+            msg;
+            self.proxy_info
         );
         Ok(())
     }
@@ -1259,7 +1284,8 @@ impl V2ToV1Translation {
             "visit_client_reconnect() id={:?} state={:?} payload:{:?}",
             id,
             self.state,
-            msg,
+            msg;
+            self.proxy_info
         );
         // Propagate the reconnect only if configured so
         if self.options.propagate_reconnect_downstream {
@@ -1273,7 +1299,7 @@ impl V2ToV1Translation {
 
     async fn handle_ping(&mut self, payload: (MessageId, v1::messages::Ping)) -> Result<()> {
         let msg = v1::messages::Pong("pong".into());
-        debug!("Received {:?} message, sending {:?} response", payload, msg);
+        debug!("Received {:?} message, sending {:?} response", payload, msg; self.proxy_info);
         let stratum_result = v1::rpc::ResponsePayload::try_from(msg)
             .expect("BUG: Pong response to ping couldn't be serialized")
             .ok();
@@ -1290,10 +1316,10 @@ impl V2ToV1Translation {
         // the connection
         match parsed_frame {
             Ok(rpc_msg) => {
-                warn!("Unknown stratum v1 message received: {:?}", rpc_msg);
+                warn!("Unknown stratum v1 message received: {:?}", rpc_msg; self.proxy_info);
             }
             Err(e) => {
-                warn!("Broken stratum v1 Rpc frame received: {:?}", e);
+                warn!("Broken stratum v1 Rpc frame received: {:?}", e; self.proxy_info);
             }
         }
         Ok(())
@@ -1303,10 +1329,10 @@ impl V2ToV1Translation {
 #[handler(async try v2::framing::Frame suffix _v2)]
 impl V2ToV1Translation {
     async fn handle_setup_connection(&mut self, msg: v2::messages::SetupConnection) -> Result<()> {
-        trace!("handle_setup_connection(): {:?}", msg);
+        trace!("handle_setup_connection(): {:?}", msg; self.proxy_info);
 
         if self.state != V2ToV1TranslationState::Init {
-            trace!("Cannot setup connection again, received: {:?}", msg);
+            trace!("Cannot setup connection again, received: {:?}", msg; self.proxy_info);
 
             let err_msg = v2::messages::SetupConnectionError {
                 code: "Connection can be setup only once"
@@ -1353,14 +1379,16 @@ impl V2ToV1Translation {
         trace!(
             "handle_open_standard_mining_channel() state={:?} payload:{:?}",
             self.state,
-            msg,
+            msg;
+            self.proxy_info
         );
         if self.state != V2ToV1TranslationState::ConnectionSetup
             && self.state != V2ToV1TranslationState::V1SubscribeOrAuthorizeFail
         {
             trace!(
                 "Out of sequence OpenStandardMiningChannel message, received: {:?}",
-                msg
+                msg;
+                self.proxy_info
             );
             let err_msg = v2::messages::OpenMiningChannelError {
                 req_id: msg.req_id,
@@ -1435,7 +1463,8 @@ impl V2ToV1Translation {
         trace!(
             "handle_submit_shares_standard() state={:?} payload:{:02x?}",
             self.state,
-            msg,
+            msg;
+            self.proxy_info
         );
         self.last_submit = Some(Instant::now());
         // Report invalid channel ID
@@ -1510,7 +1539,7 @@ impl V2ToV1Translation {
         // and processing broken frame should result in closing the connection
         match parsed_frame {
             Ok(v2_frame) => {
-                warn!("Unknown stratum v2 message received: {:?}", v2_frame);
+                warn!("Unknown stratum v2 message received: {:?}", v2_frame; self.proxy_info);
                 Ok(())
             }
             Err(e) => Err(V2ProtocolError::Other(format!(
