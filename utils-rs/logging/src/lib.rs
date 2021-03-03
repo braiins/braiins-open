@@ -78,6 +78,8 @@ pub enum LoggingTarget {
     Stderr,
     /// Log to standard output
     Stdout,
+    /// Log to standard output as JSON
+    StdoutJson,
     /// Log to a file
     File(PathBuf),
     /// Don't log anything anywhere
@@ -189,6 +191,15 @@ pub fn setup_for_app(drain_channel_size: usize) -> FlushGuard {
     setup(LoggingConfig::for_app(drain_channel_size))
 }
 
+/// Default setup for standalone programs running in production
+/// It is identical as the `setup_for_app` but uses Json drain and logs to
+/// standard output
+pub fn setup_for_production_server(drain_channel_size: usize) -> FlushGuard {
+    let mut cfg = LoggingConfig::for_app(drain_channel_size);
+    cfg.target = LoggingTarget::StdoutJson;
+    setup(cfg)
+}
+
 /// Logging setup that should be used by integration tests.
 ///
 /// This setup is mindful of tests running in multiple threads,
@@ -245,6 +256,12 @@ fn get_terminal_drain(stderr: bool) -> impl Drain<Ok = (), Err = impl fmt::Debug
     };
     let terminal_decorator = builder.build();
     slog_term::FullFormat::new(terminal_decorator).build()
+}
+
+fn get_json_drain() -> impl Drain<Ok = (), Err = impl fmt::Debug> {
+    slog_json::Json::new(std::io::stdout())
+        .add_default_keys()
+        .build()
 }
 
 /// Create file drain for logger
@@ -356,6 +373,7 @@ impl GuardedLogger {
             None => self.switch_drain(Discard, filters),
             Stderr => self.switch_drain(get_terminal_drain(true), filters),
             Stdout => self.switch_drain(get_terminal_drain(false), filters),
+            StdoutJson => self.switch_drain(get_json_drain(), filters),
             File(path) => self.switch_drain(get_file_drain(path), filters),
         }
     }
@@ -367,6 +385,7 @@ impl GuardedLogger {
             None => Self::with_discard(),
             Stderr => Self::with_drain(config, get_terminal_drain(true)),
             Stdout => Self::with_drain(config, get_terminal_drain(false)),
+            StdoutJson => Self::with_drain(config, get_json_drain()),
             File(path) => Self::with_drain(config, get_file_drain(path)),
         }
     }

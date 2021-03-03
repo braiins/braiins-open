@@ -10,6 +10,7 @@ lazy_static = "1.4.0"
 slog = { version = "2.7.0", features = ["max_level_trace", "release_max_level_info"] }
 slog-term = "2.6.0"
 slog-async = "2.5.0"
+slog-json = "2.3.0"
 slog-envlogger = "2.2.0" # slog-envlogger = { path = "../envlogger" }
 slog-atomic = "3.0.0"
 
