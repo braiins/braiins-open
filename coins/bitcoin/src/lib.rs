@@ -392,6 +392,12 @@ impl MeetsTarget for DHash {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum SharesError {
+    #[error("Hash rate is undefined on zero-length time window")]
+    UndefinedHashrate,
+}
+
 /// Structure used for storing all shares determined from solution target difficulty
 /// Share=1 represents a space of 2^32 calculated hashes for Bitcoin mainnet; exactly
 /// 2^256 / (0xffff << 208), where 0xffff << 208 is defined as target difficulty 1 for Bitcoin
@@ -422,10 +428,10 @@ impl Shares {
         self.0
     }
 
-    pub fn into_hashrate(self, interval: time::Duration) -> Result<HashesUnit, ()> {
+    pub fn into_hashrate(self, interval: time::Duration) -> Result<HashesUnit, SharesError> {
         let secs = interval.as_secs_f64();
         if secs == 0.0 {
-            return Err(());
+            return Err(SharesError::UndefinedHashrate);
         }
         let hashes = self.into_hashes().into_f64();
         let hashrate = hashes / secs;
