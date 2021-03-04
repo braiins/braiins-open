@@ -131,7 +131,7 @@ pub struct Frame {
 impl Frame {
     /// Builds a frame from `src`. No copying occurs as `BytesMut` allows us splitting off
     /// the payload part. The method panics if  `src` doesn't contain exactly one frame.
-    fn deserialize(src: &mut BytesMut) -> Result<Self> {
+    fn deserialize(src: &mut BytesMut) -> Self {
         let header = Header::deserialize(src);
         // Missing length is considered a bug
         let msg_len: u32 = header.msg_length.expect("BUG: missing header length field");
@@ -148,10 +148,10 @@ impl Frame {
         );
         trace!("V2: deserialized header: {:?}", header);
         let payload = src.split();
-        Ok(Self {
+        Self {
             header,
             payload: payload.into(),
-        })
+        }
     }
 
     pub fn from_serialized_payload(
@@ -248,7 +248,7 @@ pub(crate) mod test {
         let header = Header::deserialize(&mut expected_bytes.clone());
 
         let mut header_bytes = BytesMut::new();
-        header.serialize(&mut header_bytes, Some(0xaabbcc as u32));
+        header.serialize(&mut header_bytes, Some(0xaabbcc_u32));
         assert_eq!(
             BytesMut::from(&expected_bytes[..]),
             header_bytes,
@@ -286,7 +286,7 @@ pub(crate) mod test {
         expected_payload.extend_from_slice(&frame_bytes[frame_bytes.len() - 4..]);
         let expected_frame = Frame::from_serialized_payload(true, 0, 0x16, expected_payload);
 
-        let frame = Frame::deserialize(&mut frame_bytes_buf).expect("BUG: Building frame failed");
+        let frame = Frame::deserialize(&mut frame_bytes_buf);
 
         assert_eq!(expected_frame, frame, "Frames don't match");
     }
@@ -315,8 +315,7 @@ pub(crate) mod test {
             .serialize(&mut frame_bytes_buf)
             .expect("BUG: Expected frame serialization failed");
 
-        let frame =
-            Frame::deserialize(&mut frame_bytes_buf).expect("BUG: Cannot deserialize frame");
+        let frame = Frame::deserialize(&mut frame_bytes_buf);
 
         assert_eq!(expected_frame, frame, "Frames don't match");
     }
@@ -331,14 +330,14 @@ pub(crate) mod test {
 
     #[test]
     fn test_frame_from_serializable_payload() {
-        const EXPECTED_FRAME_BYTES: &'static [u8] =
+        const EXPECTED_FRAME_BYTES: &[u8] =
             &[0x00u8, 0x80, 0x16, 0x04, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef];
 
         struct TestPayload;
 
         impl AnyPayload<Protocol> for TestPayload {
             fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
-                writer.write(&EXPECTED_FRAME_BYTES[6..])?;
+                writer.write_all(&EXPECTED_FRAME_BYTES[6..])?;
                 Ok(())
             }
         }

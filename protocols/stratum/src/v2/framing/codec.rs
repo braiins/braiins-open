@@ -73,7 +73,7 @@ impl Decoder for Codec {
             Some(bytes) => bytes,
             None => return Ok(None),
         };
-        Frame::deserialize(&mut bytes).map(Some)
+        Ok(Some(Frame::deserialize(&mut bytes)))
     }
 }
 

@@ -1293,7 +1293,7 @@ mod test {
     }
 
     #[rustfmt::skip]
-    static SEQ_BIN_255: &'static [u8] = &[
+    static SEQ_BIN_255: &[u8] = &[
         2u8,
         0, 0, 0, 0,
         0, 0, 0, 0,
@@ -1302,7 +1302,7 @@ mod test {
     ];
 
     #[rustfmt::skip]
-    static SEQ_BIN_64K: &'static [u8] = &[
+    static SEQ_BIN_64K: &[u8] = &[
         2u8, 0,
         0, 0, 0, 0,
         0, 0, 0, 0,
@@ -1311,7 +1311,7 @@ mod test {
     ];
 
     #[rustfmt::skip]
-    static SEQ_BIN_64K_BYTES_64K: &'static [u8] = &[
+    static SEQ_BIN_64K_BYTES_64K: &[u8] = &[
         2u8, 0,
         3u8, 0,
         1, 2, 3,
@@ -1431,7 +1431,7 @@ mod test {
             s_32: Str1_32::try_from("Hello, World!").expect("BUG: Str1_32 c-tor failed"),
             s_255: Str1_255::try_from("Hello, World!").expect("BUG: Str1_255 c-tor failed"),
             e_unit: MyEnum::Unit,
-            e_tuple: MyEnum::Tuple(3.14),
+            e_tuple: MyEnum::Tuple(std::f32::consts::PI),
             e_struct: MyEnum::Struct { data: 1.618 },
             vec: bytes.clone(),
             seq_255: SeqItem::make_seq()

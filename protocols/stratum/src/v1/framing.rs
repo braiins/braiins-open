@@ -42,8 +42,8 @@ impl Frame {
 
     /// Builds a frame from `src`. No copying occurs as `BytesMut` allows us splitting off
     /// the payload part.
-    pub(crate) fn deserialize(src: &mut BytesMut) -> Result<Self> {
-        Ok(Self::from_serialized_payload(src.split()))
+    pub(crate) fn deserialize(src: &mut BytesMut) -> Self {
+        Self::from_serialized_payload(src.split())
     }
 
     pub fn from_serialized_payload(payload: BytesMut) -> Self {
@@ -85,12 +85,12 @@ mod test {
 
     #[test]
     fn test_frame_from_serializable_payload() {
-        const EXPECTED_FRAME_BYTES: &'static [u8] = &[0xde, 0xad, 0xbe, 0xef, 0x0a];
+        const EXPECTED_FRAME_BYTES: &[u8] = &[0xde, 0xad, 0xbe, 0xef, 0x0a];
         struct TestPayload;
 
         impl AnyPayload<Protocol> for TestPayload {
             fn serialize_to_writer(&self, writer: &mut dyn std::io::Write) -> Result<()> {
-                writer.write(&EXPECTED_FRAME_BYTES)?;
+                writer.write_all(&EXPECTED_FRAME_BYTES)?;
                 Ok(())
             }
         }

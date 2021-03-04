@@ -25,7 +25,6 @@ use std::str::FromStr;
 use super::*;
 use crate::test_utils::v1::*;
 use crate::v1::rpc::Rpc;
-use serde_json;
 use serde_json::Value;
 
 #[test]
@@ -61,7 +60,7 @@ fn test_build_subscribe_from_rpc_request() {
 
         assert_eq!(expected_subscribe, subscribe, "Subscribe request mismatch");
     } else {
-        assert!(false, "Request expected");
+        panic!("BUG: Request expected");
     }
 }
 
@@ -77,7 +76,7 @@ fn test_build_subscribe_good_result_from_response() {
             "Subscribe result mismatch"
         );
     } else {
-        assert!(false, "Response expected, the test needs to be fixed")
+        panic!("BUG: Response expected, the test needs to be fixed")
     }
 }
 

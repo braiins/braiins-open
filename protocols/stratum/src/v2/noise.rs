@@ -702,7 +702,7 @@ pub(crate) mod test {
                 remote_static_key,
                 self.authority_public_key,
             );
-            certificate.validate(|| std::time::SystemTime::now())?;
+            certificate.validate(std::time::SystemTime::now)?;
 
             Ok(())
         }
@@ -728,7 +728,7 @@ pub(crate) mod test {
                 }
                 1 => {
                     // <- e, ee, s, es
-                    let in_msg = in_msg.ok_or(Error::Noise("No message arrived".to_string()))?;
+                    let in_msg = in_msg.ok_or_else(|| Error::Noise("No message arrived".to_string()))?;
                     let signature_len =
                         self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
                     self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
@@ -860,7 +860,7 @@ pub(crate) mod test {
     }
 
     fn bind_test_server() -> Option<(ii_wire::Server, ii_wire::Address)> {
-        const ADDR: &'static str = "127.0.0.1";
+        const ADDR: &str = "127.0.0.1";
         const MIN_PORT: u16 = 9999;
         const MAX_PORT: u16 = 10001;
 

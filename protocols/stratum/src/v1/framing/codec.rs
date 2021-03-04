@@ -46,7 +46,7 @@ impl Decoder for Codec {
             Some(frame_str) => BytesMut::from(frame_str.as_bytes()),
             None => return Ok(None),
         };
-        Frame::deserialize(&mut bytes).map(Some)
+        Ok(Some(Frame::deserialize(&mut bytes)))
     }
 }
 
