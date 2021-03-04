@@ -531,7 +531,13 @@ pub(crate) mod test {
     use super::*;
     use futures::prelude::*;
     use handshake::Step as _;
-    use std::time::SystemTime;
+    use std::net::Ipv4Addr;
+    use std::sync::Arc;
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::Notify;
+
+    const TEST_MESSAGE: &str = "Some short test message";
+    const TEST_SERVER_SOCKET: (Ipv4Addr, u16) = (Ipv4Addr::new(127, 0, 0, 1), 13225);
 
     /// Helper that builds:
     /// - serialized signature noise message
@@ -728,7 +734,8 @@ pub(crate) mod test {
                 }
                 1 => {
                     // <- e, ee, s, es
-                    let in_msg = in_msg.ok_or_else(|| Error::Noise("No message arrived".to_string()))?;
+                    let in_msg =
+                        in_msg.ok_or_else(|| Error::Noise("No message arrived".to_string()))?;
                     let signature_len =
                         self.handshake_state.read_message(&in_msg.inner, &mut buf)?;
                     self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
@@ -859,93 +866,90 @@ pub(crate) mod test {
         assert_eq!(&message[..], &decrypted_msg, "Messages don't match");
     }
 
-    fn bind_test_server() -> Option<(ii_wire::Server, ii_wire::Address)> {
-        const ADDR: &str = "127.0.0.1";
-        const MIN_PORT: u16 = 9999;
-        const MAX_PORT: u16 = 10001;
+    /// When running both detached parts, initiator needs to be started after the test server
+    /// binds to tcp socket, otherwise initiator fails. The Notify instance is notified after
+    /// this happens
+    async fn detached_responder(start_synchronizer: Arc<Notify>) {
+        // Prepare test certificate and a serialized noise message that contains the signature
+        let (signature_noise_message, _, static_keypair) =
+            build_deterministic_serialized_signature_noise_message_and_keypairs();
+        let tcp_listener = TcpListener::bind(TEST_SERVER_SOCKET)
+            .await
+            .expect("BUG: Failed to bind the test detached server");
+        start_synchronizer.notify_one();
+        let responder = Responder::new(
+            &static_keypair,
+            signature_noise_message,
+            vec![EncryptionAlgorithm::ChaChaPoly, EncryptionAlgorithm::AESGCM],
+        );
+        let (downstream, _) = tcp_listener
+            .accept()
+            .await
+            .expect("BUG: Failed to accept tcp connection");
+        let mut framed = responder
+            .accept_with_codec::<String, _, _>(downstream, |noise| {
+                CompoundCodec::<tokio_util::codec::LinesCodec>::new(Some(noise))
+            })
+            .await
+            .expect("BUG: failed finish noise handshake");
 
-        // Find first available port for the test
-        for port in MIN_PORT..MAX_PORT {
-            let addr = ii_wire::Address(ADDR.into(), port);
-            if let Ok(server) = ii_wire::Server::bind(&addr) {
-                return Some((server, addr));
-            }
-        }
-        None
+        let msg = framed
+            .next()
+            .await
+            .expect("BUG: Failed to receive test message")
+            .expect("BUG: Failed to decode test message");
+        assert_eq!(
+            TEST_MESSAGE,
+            msg,
+            "BUG: Expected ({:x?}) and decoded ({:x?}) messages don't match",
+            TEST_MESSAGE,
+            msg
+        );
+    }
+
+    async fn detached_initiator() {
+        let stream = TcpStream::connect(TEST_SERVER_SOCKET)
+            .await
+            .expect("BUG: Failed to connect to the detached server");
+        let (_, authority_keys, _) =
+            build_deterministic_serialized_signature_noise_message_and_keypairs();
+        let initiator = Initiator::new(
+            authority_keys.public,
+            vec![EncryptionAlgorithm::ChaChaPoly, EncryptionAlgorithm::AESGCM],
+        );
+        let mut framed = initiator
+            .connect_with_codec::<String, _, _>(stream, |noise| {
+                CompoundCodec::<tokio_util::codec::LinesCodec>::new(Some(noise))
+            })
+            .await
+            .expect("BUG: Failed to finish noise handshake");
+        framed
+            .send(TEST_MESSAGE)
+            .await
+            .expect("BUG: Failed to send test message");
     }
 
     #[tokio::test]
-    async fn test_initiator_connect_responder_accept() {
-        let (mut server, addr) =
-            bind_test_server().expect("BUG: binding failed, no available ports");
-        let payload = BytesMut::from(&[1u8, 2, 3, 4][..]);
-        let expected_frame =
-            v2::framing::Frame::from_serialized_payload(true, 0, 0x16, payload.clone());
-        // This is currently due to the fact that Frame doesn't support cloning and it will be
-        // consumed by the initiator codec
-        let expected_frame_copy =
-            v2::framing::Frame::from_serialized_payload(true, 0, 0x16, payload);
+    async fn combined_initiator_and_responder() {
+        let start_synchronizer = Arc::new(Notify::const_new());
+        let jh1 = tokio::spawn(detached_responder(start_synchronizer.clone()));
+        start_synchronizer.notified().await;
+        let jh2 = tokio::spawn(detached_initiator());
+        jh2.await.expect("BUG: Responder failed");
+        jh1.await.expect("BUG: Initiator failed");
+    }
 
-        // Prepare test certificate and a serialized noise message that contains the signature
-        let (signature_noise_message, authority_keypair, static_keypair) =
-            build_deterministic_serialized_signature_noise_message_and_keypairs();
+    /// This is usefull if the counterparts are run on separate machines.
+    #[tokio::test]
+    #[ignore]
+    async fn run_detached_responder() {
+        detached_responder(Arc::new(Notify::const_new())).await
+    }
 
-        // Spawn server task that reacts to any incoming message and responds
-        // with SetupConnectionSuccess
-        tokio::spawn(async move {
-            let responder = Responder::new(
-                &static_keypair,
-                signature_noise_message,
-                vec![EncryptionAlgorithm::ChaChaPoly, EncryptionAlgorithm::AESGCM],
-            );
-
-            let conn = server
-                .next()
-                .await
-                .expect("BUG: Server has terminated")
-                .expect("BUG: Server returned an error");
-
-            let mut server_framed_stream = responder
-                .accept(conn)
-                .await
-                .expect("BUG: Responder: noise handshake failed");
-
-            server_framed_stream
-                .send(expected_frame)
-                .await
-                .expect("BUG: Cannot send a stream")
-        });
-
-        let mut client = ii_wire::Client::new(addr);
-        let connection = client
-            .next()
-            .await
-            .expect("BUG: Cannot connect to noise endpoint");
-
-        let initiator = Initiator::new(
-            authority_keypair.public,
-            vec![EncryptionAlgorithm::ChaChaPoly, EncryptionAlgorithm::AESGCM],
-        );
-        let (mut client_framed_stream, responder_certificate) = initiator
-            .connect_with_codec_and_cert(connection, |noise_codec| {
-                codec::CompoundCodec::<v2::Codec>::new(Some(noise_codec))
-            })
-            .await
-            .expect("BUG: cannot connect to noise responder");
-
-        responder_certificate
-            .validate(SystemTime::now)
-            .expect("BUG: Responder cerficate invalid");
-
-        let received_frame = client_framed_stream
-            .next()
-            .await
-            .expect("BUG: connection unexpectedly terminated")
-            .expect("BUG: error when receiving stream");
-        assert_eq!(
-            expected_frame_copy, received_frame,
-            "BUG: Expected ({:x?}) and decoded ({:x?}) frames don't match",
-            expected_frame_copy, received_frame
-        );
+    /// This is usefull if the counterparts are run on separate machines.
+    #[tokio::test]
+    #[ignore]
+    async fn run_detached_initiator() {
+        detached_initiator().await
     }
 }
