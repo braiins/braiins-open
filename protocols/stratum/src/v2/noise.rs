@@ -537,7 +537,7 @@ pub(crate) mod test {
     /// - serialized signature noise message
     /// - certification authority key pair
     /// - server (responder) static key pair
-    fn build_serialized_signature_noise_message_and_keypairs(
+    fn build_deterministic_serialized_signature_noise_message_and_keypairs(
     ) -> (Bytes, ed25519_dalek::Keypair, StaticKeypair) {
         let (signed_part, authority_keypair, static_keypair, signature) =
             auth::test::build_test_signed_part_and_auth();
@@ -553,7 +553,7 @@ pub(crate) mod test {
     pub(crate) fn perform_handshake() -> (TransportMode, TransportMode) {
         // Prepare test certificate and a serialized noise message that contains the signature
         let (signature_noise_message, authority_keypair, static_keypair) =
-            build_serialized_signature_noise_message_and_keypairs();
+            build_deterministic_serialized_signature_noise_message_and_keypairs();
 
         let mut initiator = Initiator::new(
             authority_keypair.public,
@@ -748,7 +748,7 @@ pub(crate) mod test {
     pub(crate) fn perform_legacy_handshake() -> (TransportMode, TransportMode) {
         // Prepare test certificate and a serialized noise message that contains the signature
         let (signature_noise_message, authority_keypair, static_keypair) =
-            build_serialized_signature_noise_message_and_keypairs();
+            build_deterministic_serialized_signature_noise_message_and_keypairs();
 
         let mut initiator = LegacyInitiator::new(authority_keypair.public);
 
@@ -888,7 +888,7 @@ pub(crate) mod test {
 
         // Prepare test certificate and a serialized noise message that contains the signature
         let (signature_noise_message, authority_keypair, static_keypair) =
-            build_serialized_signature_noise_message_and_keypairs();
+            build_deterministic_serialized_signature_noise_message_and_keypairs();
 
         // Spawn server task that reacts to any incoming message and responds
         // with SetupConnectionSuccess

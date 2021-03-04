@@ -47,14 +47,21 @@ pub struct SignedPartHeader {
 impl SignedPartHeader {
     const VERSION: u16 = 0;
 
+    pub fn new(valid_from: u32, not_valid_after: u32) -> Self {
+        Self {
+            version: Self::VERSION,
+            valid_from,
+            not_valid_after,
+        }
+    }
+
     pub fn with_duration(valid_for: Duration) -> Result<Self> {
         let valid_from = SystemTime::now();
         let not_valid_after = valid_from + valid_for;
-        Ok(Self {
-            version: Self::VERSION,
-            valid_from: Self::system_time_to_unix_time_u32(&valid_from)?,
-            not_valid_after: Self::system_time_to_unix_time_u32(&not_valid_after)?,
-        })
+        Ok(Self::new(
+            Self::system_time_to_unix_time_u32(&valid_from)?,
+            Self::system_time_to_unix_time_u32(&not_valid_after)?,
+        ))
     }
 
     pub fn valid_from(&self) -> SystemTime {
@@ -199,11 +206,7 @@ impl TryFrom<&[u8]> for SignatureNoiseMessage {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use super::{
-        super::{generate_keypair, StaticKeypair},
-        *,
-    };
-    use rand::rngs::OsRng;
+    use super::{super::StaticKeypair, *};
     const TEST_CERT_VALIDITY: Duration = Duration::from_secs(3600);
 
     // Helper that builds a `SignedPart` (as a base e.g. for a noise message or a certificate),
@@ -215,27 +218,36 @@ pub(crate) mod test {
         StaticKeypair,
         ed25519_dalek::Signature,
     ) {
-        let mut csprng = OsRng {};
-        let to_be_signed_keypair =
-            generate_keypair().expect("BUG: cannot generate noise static keypair");
-        let authority_keypair = ed25519_dalek::Keypair::generate(&mut csprng);
-        let header = SignedPartHeader::with_duration(TEST_CERT_VALIDITY)
-            .expect("BUG: cannot prepare certificate header");
+        let ca_keypair_bytes = [
+            228, 230, 186, 46, 141, 75, 176, 50, 58, 88, 5, 122, 144, 27, 124, 162, 103, 98, 75,
+            204, 205, 238, 48, 242, 170, 21, 38, 183, 32, 199, 88, 251, 48, 45, 168, 81, 159, 57,
+            81, 233, 0, 127, 137, 160, 19, 132, 253, 60, 188, 136, 48, 64, 180, 215, 118, 149, 61,
+            223, 246, 125, 215, 76, 73, 28,
+        ];
+        let server_static_pub = [
+            21, 50, 22, 157, 231, 160, 237, 11, 91, 131, 166, 162, 185, 55, 24, 125, 138, 176, 99,
+            166, 20, 161, 157, 57, 177, 241, 215, 0, 51, 13, 150, 31,
+        ];
+        let server_static_priv = [
+            83, 75, 77, 152, 164, 249, 65, 65, 239, 36, 159, 145, 250, 29, 58, 215, 250, 9, 55,
+            243, 134, 157, 198, 189, 182, 21, 182, 36, 34, 4, 125, 122,
+        ];
 
+        let static_server_keypair = snow::Keypair {
+            public: server_static_pub.to_vec(),
+            private: server_static_priv.to_vec(),
+        };
+        let ca_keypair = ed25519_dalek::Keypair::from_bytes(&ca_keypair_bytes)
+            .expect("BUG: Failed to construct key_pair");
         let signed_part = SignedPart::new(
-            header,
-            to_be_signed_keypair.public.clone(),
-            authority_keypair.public,
+            SignedPartHeader::new(0, u32::MAX),
+            static_server_keypair.public.clone(),
+            ca_keypair.public,
         );
         let signature = signed_part
-            .sign_with(&authority_keypair)
-            .expect("BUG: cannot sign");
-        (
-            signed_part,
-            authority_keypair,
-            to_be_signed_keypair,
-            signature,
-        )
+            .sign_with(&ca_keypair)
+            .expect("BUG: Failed to sign certificate");
+        (signed_part, ca_keypair, static_server_keypair, signature)
     }
 
     #[test]
