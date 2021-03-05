@@ -28,6 +28,8 @@ use std::convert::TryFrom;
 use std::fmt;
 use std::time::SystemTime;
 
+use ed25519_dalek::ed25519::signature::Signature;
+
 use super::{SignatureNoiseMessage, SignedPart, SignedPartHeader};
 use crate::error::{Error, Result};
 use crate::v2::noise::{StaticPublicKey, StaticSecretKey};
@@ -258,7 +260,7 @@ impl Certificate {
     //        }
     //    }
 
-    /// See  https://docs.rs/ed25519-dalek/1.0.0-pre.3/ed25519_dalek/struct.PublicKey.html on
+    /// See  https://docs.rs/ed25519-dalek/1.0.1/ed25519_dalek/struct.PublicKey.html on
     /// details for the strict verification.
     /// Returns expiration timestamp stated in certificate represented as SystemTime
     pub fn validate<FN>(&self, get_current_time: FN) -> Result<SystemTime>
