@@ -220,6 +220,10 @@ impl handshake::Step for Initiator {
                 // -> list supported algorithms
                 let msg = NegotiationMessage::new(self.algorithms.clone());
                 noise_bytes.extend_from_slice(&v2::serialization::to_vec(&msg)?[..]);
+                trace!(
+                    "Noise Handshake Initiator: step 0: Sending Negotiation: {:02x?}",
+                    msg
+                );
                 prologue.initiator_msg = Some(msg);
                 handshake::StepResult::ExpectReply(handshake::Message::new(noise_bytes))
             }
@@ -230,6 +234,10 @@ impl handshake::Step for Initiator {
                     in_msg.ok_or_else(|| Error::Noise("No message arrived".to_string()))?;
                 let negotiation_message: NegotiationMessage =
                     v2::serialization::from_slice(&in_msg.inner)?;
+                trace!(
+                    "Noise Handshake Initiator: step 1: Received Negotiation resp: {:02x?}",
+                    negotiation_message
+                );
                 if negotiation_message.encryption_algos.len() != 1 {
                     return Err(Error::Noise(
                         "Wrong number of algorithms arrived (expected 1)".to_string(),
@@ -250,12 +258,17 @@ impl handshake::Step for Initiator {
                     .ok_or_else(|| Error::Noise("Handshake state shouldn't be None".to_string()))?
                     .write_message(&[], &mut buf)?;
                 noise_bytes.extend_from_slice(&buf[..len_written]);
+                trace!(
+                    "Noise Handshake Initiator: step 1: Sending e: {:02x}",
+                    noise_bytes
+                );
                 handshake::StepResult::ExpectReply(handshake::Message::new(noise_bytes))
             }
             2 => {
                 // <- e, ee, s, es
                 let in_msg =
                     in_msg.ok_or_else(|| Error::Noise("No message arrived".to_string()))?;
+                trace!("Noise Handshake Initiator: step 2: Received e, ee, s, es noise message: {:02x}", in_msg.inner);
                 let signature_len = self
                     .handshake_state
                     .as_mut()
@@ -263,6 +276,10 @@ impl handshake::Step for Initiator {
                     .read_message(&in_msg.inner, &mut buf)?;
                 let certificate =
                     self.verify_remote_static_key_signature(BytesMut::from(&buf[..signature_len]))?;
+                trace!(
+                    "Noise Handshake Initiator: step 2: Validated cert: {:02x?}",
+                    certificate
+                );
                 handshake::StepResult::Done(Some(certificate))
             }
             _ => {
@@ -389,12 +406,15 @@ impl<'a> handshake::Step for Responder<'a> {
         let mut prologue = Prologue::default();
 
         let result = match self.stage {
-            0 => handshake::StepResult::ReceiveMessage,
+            0 => {
+                trace!("Noise Handshake Responder: step 0");
+                handshake::StepResult::ReceiveMessage
+            }
             1 => {
                 let in_msg =
                     in_msg.ok_or_else(|| Error::Noise("No message arrived".to_string()))?;
                 if let Ok(m) = v2::serialization::from_slice::<NegotiationMessage>(&in_msg.inner) {
-                    trace!("Noise: received {:x?}", m);
+                    trace!("Noise Handshake Responder: step 1: received {:x?}", m);
                     // If list of algorithms is provided, go on with negotiation
                     let algs: Vec<EncryptionAlgorithm> = m.encryption_algos.into();
 
@@ -412,7 +432,7 @@ impl<'a> handshake::Step for Responder<'a> {
                     noise_bytes
                         .extend_from_slice(&v2::serialization::to_vec(&negotiation_message)?[..]);
                     trace!(
-                        "Noise: preparing response: {:x?}, serialized bytes: {:x?}",
+                        "Noise Handshake Responder: step 1: generated: {:02x?}, serialized bytes: {:02x}",
                         negotiation_message,
                         noise_bytes
                     );
@@ -425,7 +445,7 @@ impl<'a> handshake::Step for Responder<'a> {
                     let negotiation =
                         EncryptionNegotiation::new(prologue, EncryptionAlgorithm::ChaChaPoly);
                     trace!(
-                        "Noise: no negotiation received, defaulting to {:x?} encryption",
+                        "Noise Handshake Responder: step 1: no negotiation received, defaulting to {:x?}",
                         negotiation
                     );
                     self.build_handshake_state(negotiation)?;
@@ -436,6 +456,10 @@ impl<'a> handshake::Step for Responder<'a> {
                 // <- e
                 let in_msg =
                     in_msg.ok_or_else(|| Error::Noise("No message arrived".to_string()))?;
+                trace!(
+                    "Noise Handshake Responder: step 2: Received e: {:02x}",
+                    in_msg.inner
+                );
                 self.handshake_state
                     .as_mut()
                     .ok_or_else(|| Error::Noise("Handshake state shouldn't be None".to_string()))?
@@ -447,11 +471,18 @@ impl<'a> handshake::Step for Responder<'a> {
                     .as_mut()
                     .ok_or_else(|| Error::Noise("Handshake state shouldn't be None".to_string()))?
                     .write_message(&self.signature_noise_message, &mut buf)?;
+                trace!(
+                    "Noise Handshake Responder: step 2: Sent e, ee, s, es, cert: {:02x}",
+                    self.signature_noise_message
+                );
                 noise_bytes.extend_from_slice(&buf[..len_written]);
                 handshake::StepResult::NoMoreReply(handshake::Message::new(noise_bytes))
             }
             // Responer will not provide the certificate as it has been already loaded
-            3 => handshake::StepResult::Done(None),
+            3 => {
+                trace!("Noise Handshake Responder: step 3: Done");
+                handshake::StepResult::Done(None)
+            }
             _ => {
                 panic!("BUG: No more steps that can be done by the Responder in Noise handshake");
             }
