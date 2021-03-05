@@ -23,8 +23,7 @@
 //! Authentication module that provides pubkey and certificate handling API
 
 use bytes::{BufMut, BytesMut};
-// use ed25519_dalek::Signer;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize, Serializer};
 use std::convert::TryFrom;
 use std::time::{Duration, SystemTime};
 
@@ -174,7 +173,52 @@ impl SignedPart {
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct SignatureNoiseMessage {
     header: SignedPartHeader,
+    #[serde(
+        serialize_with = "SignatureNoiseMessage::sig_serialize",
+        deserialize_with = "SignatureNoiseMessage::sig_deserialize"
+    )]
     signature: ed25519_dalek::Signature,
+}
+
+// Custom implementation is needed because the underlying type implemented
+// serialization and deserialization using two different approaches in pre-release
+// and the stable release. Previously the type used to be serialized as a byte sequence.
+// The stable release serializes signature as a fixed byte-tuple. That results in not including
+// the byte_length prefix in stratum-serialization and encoding failure.
+impl SignatureNoiseMessage {
+    fn sig_serialize<S>(
+        sig: &ed25519_dalek::Signature,
+        serializer: S,
+    ) -> std::result::Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        sig.to_bytes().serialize(serializer)
+    }
+
+    fn sig_deserialize<'de, D>(
+        deserializer: D,
+    ) -> std::result::Result<ed25519_dalek::Signature, <D as de::Deserializer<'de>>::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct SignatureVisitor;
+        impl<'e> de::Visitor<'e> for SignatureVisitor {
+            type Value = ed25519_dalek::Signature;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(formatter, "Unrecognized data")
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                ed25519_dalek::Signature::from_bytes(v).map_err(de::Error::custom)
+            }
+        }
+        deserializer.deserialize_bytes(SignatureVisitor)
+    }
 }
 
 impl SignatureNoiseMessage {
@@ -207,7 +251,35 @@ impl TryFrom<&[u8]> for SignatureNoiseMessage {
 #[cfg(test)]
 pub(crate) mod test {
     use super::{super::StaticKeypair, *};
+
     const TEST_CERT_VALIDITY: Duration = Duration::from_secs(3600);
+
+    const SERIALIZED_SIG_NOISE_MSG: &[u8] = &[
+        0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 64, 0, 35, 159, 78, 73, 200, 197, 47, 127, 79, 28,
+        121, 233, 192, 10, 59, 133, 157, 228, 146, 40, 162, 18, 233, 65, 140, 182, 127, 97, 98,
+        125, 44, 235, 11, 108, 202, 62, 223, 77, 207, 186, 101, 2, 247, 78, 93, 73, 173, 71, 136,
+        255, 191, 194, 99, 95, 159, 147, 141, 89, 101, 253, 179, 154, 222, 4,
+    ];
+
+    #[test]
+    fn deserialize_signature() {
+        let deserialized =
+            v2::serialization::from_slice::<'_, SignatureNoiseMessage>(SERIALIZED_SIG_NOISE_MSG)
+                .expect("BUG: Failed to deserialize SignatureNoiseMessage");
+        let (signed_part, _, _, signature) = build_test_signed_part_and_auth();
+        let original = SignatureNoiseMessage {
+            header: signed_part.header,
+            signature,
+        };
+        assert_eq!(
+            deserialized.header, original.header,
+            "BUG: Ser-/Deserialization roundtrip failed"
+        );
+        assert_eq!(
+            deserialized.signature, original.signature,
+            "BUG: Ser-/Deserialization roundtrip failed"
+        );
+    }
 
     // Helper that builds a `SignedPart` (as a base e.g. for a noise message or a certificate),
     // testing authority `ed25519_dalek::Keypair` (that actually generated the signature) and the
