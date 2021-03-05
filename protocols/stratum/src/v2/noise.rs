@@ -899,11 +899,9 @@ pub(crate) mod test {
             .expect("BUG: Failed to receive test message")
             .expect("BUG: Failed to decode test message");
         assert_eq!(
-            TEST_MESSAGE,
-            msg,
+            TEST_MESSAGE, msg,
             "BUG: Expected ({:x?}) and decoded ({:x?}) messages don't match",
-            TEST_MESSAGE,
-            msg
+            TEST_MESSAGE, msg
         );
     }
 
