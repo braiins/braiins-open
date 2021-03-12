@@ -41,6 +41,14 @@ impl Version {
             .expect("BUG: version is already set");
     }
 
+    /// Try to set version, return resul of operation
+    pub fn try_set(signature: &str, full: &str) -> Result<(), Self> {
+        VERSION.set(Self {
+            signature: signature.to_string(),
+            full: full.to_string(),
+        })
+    }
+
     #[inline]
     pub fn get() -> &'static Self {
         VERSION.get().expect("BUG: version is not set")
