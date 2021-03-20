@@ -22,12 +22,23 @@
 
 use once_cell::sync::OnceCell;
 
+use std::default::Default;
+
 static VERSION: OnceCell<Version> = OnceCell::new();
 
 #[derive(Clone, Debug)]
 pub struct Version {
     signature: String,
     full: String,
+}
+
+impl Default for Version {
+    fn default() -> Self {
+        Self {
+            signature: "version-not-set".into(),
+            full: "version-not-set".into(),
+        }
+    }
 }
 
 impl Version {
@@ -51,7 +62,7 @@ impl Version {
 
     #[inline]
     pub fn get() -> &'static Self {
-        VERSION.get().expect("BUG: version is not set")
+        VERSION.get_or_init(Default::default)
     }
 
     #[inline]
