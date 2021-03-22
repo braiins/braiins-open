@@ -119,6 +119,47 @@ impl MetricsRegistry {
         Self { registry }
     }
 
+    pub fn default_with_prefix(prefix: String) -> Self {
+        let registry: Arc<Registry> = match Registry::new_custom(Some(prefix), None) {
+            Ok(registry) => Arc::new(registry),
+            Err(_e) => panic!("Cant create registry with prefix"),
+        };
+
+        let toolchain_version =
+            rustc_version::version().map_or_else(|_| String::from("unknown"), |t| t.to_string());
+
+        let application_version_details = [
+            ("version_full", ii_scm::global::Version::full()),
+            ("toolchain", &toolchain_version),
+        ];
+
+        let version_details_gauge = GenericGaugeVec::<prometheus::core::AtomicU64>::new(
+            opts!(
+                "application_version_details",
+                "Version details of the application producing time series"
+            ),
+            &application_version_details
+                .iter()
+                .map(|(label, _)| *label)
+                .collect::<Vec<_>>(),
+        )
+        .expect("BUG: Couldn't set up app version details");
+
+        registry
+            .register(Box::new(version_details_gauge.clone()))
+            .expect("BUG: Failed to register version details");
+        version_details_gauge
+            .with_label_values(
+                &application_version_details
+                    .iter()
+                    .map(|(_, label_values)| label_values.as_str())
+                    .collect::<Vec<_>>(),
+            )
+            .set(1);
+
+        Self { registry }
+    }
+
     pub fn register_generic_gauge<T: Atomic + 'static>(
         &self,
         name: &str,
