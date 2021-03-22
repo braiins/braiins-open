@@ -39,12 +39,7 @@ pub struct MetricsRegistry {
 
 impl Default for MetricsRegistry {
     fn default() -> Self {
-        let toolchain_version =
-            rustc_version::version().map_or_else(|_| String::from("unknown"), |t| t.to_string());
-        Self::new(&[
-            (&"version_full", ii_scm::global::Version::full()),
-            (&"toolchain", &toolchain_version),
-        ])
+        Self::new()
     }
 }
 
@@ -63,8 +58,40 @@ impl MetricsRegistry {
     /// * on (instance, job) group_left(version)
     ///   application_version_details{job="static"}
     /// ```
-    pub fn new(application_version_details: &[(&str, &str)]) -> Self {
-        let registry: Arc<Registry> = Default::default();
+    pub fn new() -> Self {
+        Self::build(None)
+    }
+
+    /// Creates new metrics registry and provides associated metadata to the application.
+    /// The information is slice of ('label', 'value') tuples: e. g.:
+    /// `[("rust", "1.47"), ("version", "1.5.4")]`
+    /// This metadata can be extracted or joined with prometheus query
+    /// ```text
+    ///   some_metric{job="static"}
+    /// * on (instance, job) group_left(version)
+    ///   application_version_details{job="static"}
+    /// ```
+    ///
+    ///  If prefix is set then Metrics will have "prefix" + "_" + "metrics_name"
+    ///  Note: System metrics starting with `process_` are not affected
+    pub fn new_with_prefix(prefix: String) -> Self {
+        Self::build(Some(prefix))
+    }
+
+    fn build(prefix: Option<String>) -> Self {
+        let registry: Arc<Registry> = match Registry::new_custom(prefix, None) {
+            Ok(registry) => Arc::new(registry),
+            Err(_e) => panic!("Cant create registry with prefix"),
+        };
+
+        let toolchain_version =
+            rustc_version::version().map_or_else(|_| String::from("unknown"), |t| t.to_string());
+
+        let application_version_details = [
+            ("version_full", ii_scm::global::Version::full()),
+            ("toolchain", &toolchain_version),
+        ];
+
         let version_details_gauge = GenericGaugeVec::<prometheus::core::AtomicU64>::new(
             opts!(
                 "application_version_details",
@@ -84,7 +111,7 @@ impl MetricsRegistry {
             .with_label_values(
                 &application_version_details
                     .iter()
-                    .map(|(_, label_values)| *label_values)
+                    .map(|(_, label_values)| label_values.as_str())
                     .collect::<Vec<_>>(),
             )
             .set(1);
