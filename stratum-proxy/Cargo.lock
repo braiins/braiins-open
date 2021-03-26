@@ -762,6 +762,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "x25519-dalek",
 ]
 
 [[package]]
