@@ -310,6 +310,137 @@ impl TryFrom<Certificate> for String {
     }
 }
 
+/// Server security bundle is held by the server and provided to each (noise secured) connection so
+/// that it can successfully perform the noise handshake and authenticate itself to the client
+/// NOTE: this struct intentionally implements Debug manually to prevent leakage of the secure key
+/// into log messages
+#[derive(Serialize, Deserialize, PartialEq, Clone)]
+pub struct ServerSecurityBundle {
+    #[serde(flatten)]
+    pub certificate: Certificate,
+    secret_key: StaticSecretKeyFormat,
+}
+
+impl ServerSecurityBundle {
+    pub fn new(certificate: Certificate, secret_key: StaticSecretKeyFormat) -> Self {
+        Self {
+            certificate,
+            secret_key,
+        }
+    }
+
+    fn authority_pubkey(&self) -> EncodedEd25519PublicKey {
+        EncodedEd25519PublicKey::new(self.certificate.authority_public_key.clone().into_inner())
+    }
+
+    pub fn read_from_string(raw_bundle: &str) -> Result<Self> {
+        let bundle = serde_json::from_str::<Self>(raw_bundle)?;
+        Ok(bundle)
+    }
+
+    pub fn read_from_strings(certificate: &str, secret_key: &str) -> Result<Self> {
+        let bundle = serde_json::from_str::<Certificate>(certificate).and_then(|certificate| {
+            serde_json::from_str::<StaticSecretKeyFormat>(secret_key).map(|secret_key| Self {
+                certificate,
+                secret_key,
+            })
+        })?;
+        Ok(bundle)
+    }
+
+    /// Returns remaining time of certificate validity or error if the certificate has expired
+    /// ```
+    /// use std::time::{Duration, UNIX_EPOCH};
+    /// use ii_stratum::v2::noise::auth::ServerSecurityBundle;
+    /// let ctx = ServerSecurityBundle::read_from_string(r#"{
+    ///   "signed_part_header": {
+    ///     "version": 0,
+    ///     "valid_from": 1612897727,
+    ///     "not_valid_after": 1612954827
+    ///   },
+    ///   "public_key": {
+    ///     "noise_public_key": "2Nki8zRNjrYLdcGbRLFrTbwLsDfKSiDMsiK3UWGTJNJpaPjAZW"
+    ///   },
+    ///   "authority_public_key": {
+    ///     "ed25519_public_key": "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx"
+    ///   },
+    ///   "signature": {
+    ///     "ed25519_signature": "ZAefGhUNHn6u26Vob5T4UM32mH9Wujx7oDR1bmf4ei6cVNvrFtbaNkSvdRyJz13KdU92tK3DrdcG4AwfSAuj7MXRFdKLE"
+    ///   },
+    ///   "secret_key": {
+    ///     "noise_secret_key": "2owBcKCGg7k46rTUYEwNEKJsnT2TqYDtFsMAuicrsLXhi3VwK4"
+    ///   }
+    /// }"#).expect("BUG: Failed to parse certificate");
+    ///
+    /// let time_before_expiration = || UNIX_EPOCH + Duration::from_secs(1612954826);
+    /// let time_after_expiration = || UNIX_EPOCH + Duration::from_secs(1612954828);
+    ///
+    /// assert!(
+    ///     ctx.validate_by_time(time_before_expiration).is_ok(),
+    ///     "BUG: Certificate should be valid"
+    /// );
+    /// assert!(
+    ///     ctx.validate_by_time(time_after_expiration).is_err(),
+    ///     "BUG: Certificate shouldn't be valid"
+    /// );
+    /// ```
+    pub fn validate_by_time<FN>(&self, get_current_time: FN) -> Result<SystemTime>
+    where
+        FN: FnOnce() -> SystemTime,
+    {
+        self.certificate
+            .validate(get_current_time)
+            .map_err(|_| Error::Noise("Time validation failed".into()))
+    }
+}
+/// Show certificate authority public key and expiry timestamp
+/// ```
+/// use ii_stratum::v2::noise::auth::ServerSecurityBundle;
+/// let ctx = ServerSecurityBundle::read_from_string(r#"{
+///   "signed_part_header": {
+///     "version": 0,
+///     "valid_from": 1613145976,
+///     "not_valid_after": 2477145976
+///   },
+///   "public_key": {
+///     "noise_public_key": "2Nki8zRNjrYLdcGbRLFrTbwLsDfKSiDMsiK3UWGTJNJpaPjAZW"
+///   },
+///   "authority_public_key": {
+///     "ed25519_public_key": "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx"
+///   },
+///   "signature": {
+///     "ed25519_signature": "AdrgZxKNM3wCQmv5q3aTn8T96DV6egAYYFQRgcxuQjfiKvraR2xp3pNLRuDTvwQApYZc6YXnwbxXzUdHbGxaxSMq4g67c"
+///   },
+///   "secret_key": {
+///     "noise_secret_key": "2owBcKCGg7k46rTUYEwNEKJsnT2TqYDtFsMAuicrsLXhi3VwK4"
+///   }
+/// }"#).expect("BUG: Failed to parse certificate");
+/// assert_eq!(
+///     format!("{:?}", ctx),
+///     String::from(
+///r#"ServerSecurityBundle { certificate_authority: "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx", certificate_expiry: "2477145976" }"#)
+/// );
+///
+/// ```
+impl fmt::Debug for ServerSecurityBundle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let certificate_authority = self.authority_pubkey();
+        let expiry_timestamp = self.certificate.validate(SystemTime::now).map_or_else(
+            |_| "certificate is invalid".to_owned(),
+            |t| {
+                let expiration_time = t
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("BUG: Invalid expiry date");
+                format!("{:?}", expiration_time.as_secs())
+            },
+        );
+        f.debug_struct("ServerSecurityBundle")
+            .field("certificate_authority", &certificate_authority.to_string())
+            .field("certificate_expiry", &expiry_timestamp)
+            .finish()
+    }
+}
+
 #[cfg(test)]
 pub mod test {
     use super::super::test::build_test_signed_part_and_auth;
