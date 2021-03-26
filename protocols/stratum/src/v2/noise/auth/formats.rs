@@ -322,10 +322,27 @@ pub struct ServerSecurityBundle {
 }
 
 impl ServerSecurityBundle {
-    pub fn new(certificate: Certificate, secret_key: StaticSecretKeyFormat) -> Self {
-        Self {
+    pub fn new(certificate: Certificate, secret_key: StaticSecretKeyFormat) -> Result<Self> {
+        let bundle = Self {
             certificate,
             secret_key,
+        };
+        bundle.validate_secret_key()?;
+        Ok(bundle)
+    }
+
+    fn validate_secret_key(&self) -> Result<()> {
+        let mut raw_secret_key = [0_u8; 32];
+        raw_secret_key.copy_from_slice(&self.secret_key.inner.inner);
+        let raw_public_key =
+            x25519_dalek::x25519(raw_secret_key, x25519_dalek::X25519_BASEPOINT_BYTES);
+        let calculated_public_key = StaticPublicKeyFormat::new(raw_public_key.to_vec());
+        if calculated_public_key == self.certificate.public_key {
+            Ok(())
+        } else {
+            Err(Error::Noise(
+                "Inconsistent secret and public key in security bundle".to_owned(),
+            ))
         }
     }
 
@@ -335,16 +352,15 @@ impl ServerSecurityBundle {
 
     pub fn read_from_string(raw_bundle: &str) -> Result<Self> {
         let bundle = serde_json::from_str::<Self>(raw_bundle)?;
+        bundle.validate_secret_key()?;
         Ok(bundle)
     }
 
     pub fn read_from_strings(certificate: &str, secret_key: &str) -> Result<Self> {
-        let bundle = serde_json::from_str::<Certificate>(certificate).and_then(|certificate| {
-            serde_json::from_str::<StaticSecretKeyFormat>(secret_key).map(|secret_key| Self {
-                certificate,
-                secret_key,
-            })
-        })?;
+        let bundle = serde_json::from_str::<Certificate>(certificate).and_then(|cert| {
+            serde_json::from_str::<StaticSecretKeyFormat>(secret_key)
+                .map(|sec_key| Self::new(cert, sec_key))
+        })??;
         Ok(bundle)
     }
 
@@ -455,6 +471,31 @@ pub mod test {
         certificate
             .validate(SystemTime::now)
             .expect("BUG: Certificate not valid!");
+    }
+
+    #[test]
+    fn validate_bundle() {
+        let (signed_part, _authority_keypair, static_keypair, signature) =
+            build_test_signed_part_and_auth();
+        let certificate = Certificate::new(signed_part, signature);
+        let mut server_bundle = ServerSecurityBundle {
+            certificate: certificate.clone(),
+            secret_key: StaticSecretKeyFormat::new(static_keypair.private.clone()),
+        };
+        server_bundle
+            .validate_secret_key()
+            .expect("BUG: Validation failed for correct server security bundle");
+        // arbitrarily change the secret key
+        let x = server_bundle
+            .secret_key
+            .inner
+            .inner
+            .get_mut(10)
+            .expect("BUG: Empty secret key array");
+        *x = x.wrapping_add(1);
+        server_bundle
+            .validate_secret_key()
+            .expect_err("BUG: Validation passed for inconsistent server security bundle");
     }
 
     #[test]
