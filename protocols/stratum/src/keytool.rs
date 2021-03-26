@@ -27,6 +27,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use ii_stratum::v2::noise;
+use ii_stratum::v2::noise::auth::{ServerSecurityBundle, StaticPublicKeyFormat};
 use rand::rngs::OsRng;
 use std::convert::{TryFrom, TryInto};
 use std::fs::{File, OpenOptions};
@@ -48,8 +49,10 @@ enum Command {
     GenCAKey(GenCAKeyCommand),
     /// Generate Noise handshake keypair
     GenNoiseKey(GenNoiseKeyCommand),
-    /// Sign a specified key
+    /// Sign a specified public key and output a certificate
     SignKey(SignKeyCommand),
+    /// Sign a specified secret key and output a server security bundle
+    SignBundle(SignBundleCommand),
 }
 
 /// Generates keypair suitable for certification authority and stores secret and public key into
@@ -135,6 +138,109 @@ impl GenNoiseKeyCommand {
         println!("DONE");
 
         Ok(())
+    }
+}
+
+/// Command that creates a bundle of signed certificate and server static secret key from a
+/// specified `secret_key_to_sign`, signing the certificate with `signing_key`.
+#[derive(Debug, StructOpt)]
+struct SignBundleCommand {
+    /// File that contains the secret key that we want to sign
+    #[structopt(long, parse(from_os_str))]
+    secret_key_to_sign: PathBuf,
+    /// Actual signing key
+    #[structopt(short, long, parse(from_os_str))]
+    signing_key: PathBuf,
+    /// How many days the generated certificate should be valid for
+    #[structopt(short, long, default_value = "90")]
+    valid_for_days: usize,
+}
+
+impl SignBundleCommand {
+    fn open_file(file: &PathBuf, descr: &str) -> Result<File> {
+        OpenOptions::new().read(true).open(file).context(format!(
+            "cannot open {} ({:?})",
+            descr,
+            file.clone().into_os_string()
+        ))
+    }
+
+    fn read_from_file<T: TryFrom<String>>(
+        file_path_buf: &PathBuf,
+        error_context_descr: &str,
+    ) -> Result<T>
+    where
+        T: TryFrom<String>,
+        <T as std::convert::TryFrom<std::string::String>>::Error: std::fmt::Display,
+    {
+        let mut file = Self::open_file(file_path_buf, error_context_descr)?;
+        let mut file_content = String::new();
+        file.read_to_string(&mut file_content).context(format!(
+            "Cannot read {} ({:?})",
+            error_context_descr, file_path_buf
+        ))?;
+
+        let parsed_file_content = T::try_from(file_content).map_err(|e| {
+            anyhow!(
+                "Cannot parse {} ({:?}) {}",
+                error_context_descr,
+                file_path_buf,
+                e
+            )
+        })?;
+
+        Ok(parsed_file_content)
+    }
+
+    fn execute(self) -> Result<()> {
+        let secret_key = Self::read_from_file::<noise::auth::StaticSecretKeyFormat>(
+            &self.secret_key_to_sign,
+            "static secret key to sign",
+        )?;
+
+        let mut raw_secret_key = [0_u8; 32];
+        raw_secret_key.copy_from_slice(&secret_key.clone().into_inner());
+        let inner_public_key =
+            x25519_dalek::x25519(raw_secret_key, x25519_dalek::X25519_BASEPOINT_BYTES).to_vec();
+        let public_key = StaticPublicKeyFormat::new(inner_public_key);
+
+        let authority_secret_key = Self::read_from_file::<noise::auth::Ed25519SecretKeyFormat>(
+            &self.signing_key,
+            "signing key",
+        )?
+        .into_inner();
+
+        // Dalek crate requires the full Keypair for signing
+        let authority_keypair = ed25519_dalek::Keypair {
+            // Derive the public key from the secret key
+            public: (&authority_secret_key).into(),
+            secret: authority_secret_key,
+        };
+
+        let header = noise::auth::SignedPartHeader::with_duration(Duration::from_secs(
+            (self.valid_for_days * 24 * 60 * 60) as u64,
+        ))
+        .map_err(|e| anyhow!("{}", e))?;
+
+        let signed_part =
+            noise::auth::SignedPart::new(header, public_key.into_inner(), authority_keypair.public);
+
+        let signature = signed_part
+            .sign_with(&authority_keypair)
+            .map_err(|e| anyhow!("{}", e))
+            .context("Signing certificate")?;
+
+        // Final step is to compose the certificate from all components and serialize it into a file
+        let certificate = noise::auth::Certificate::new(signed_part, signature);
+        let bundle = ServerSecurityBundle::new(certificate, secret_key)
+            .expect("BUG: Inconsistent server security bundle has been generated");
+        let bundle_string =
+            serde_json::to_string_pretty(&bundle).context("Couldn't serialize security bundle")?;
+        // Derive the certificate file name from the public key filename
+        let mut bundle_file = self.secret_key_to_sign;
+        bundle_file.set_extension("cert");
+
+        write_to_file(&bundle_file, bundle_string, "security bundle")
     }
 }
 
@@ -279,5 +385,6 @@ fn main() -> Result<()> {
         Command::GenCAKey(gen_key_cmd) => gen_key_cmd.execute(),
         Command::GenNoiseKey(gen_key_cmd) => gen_key_cmd.execute(),
         Command::SignKey(sign_key_cmd) => sign_key_cmd.execute(),
+        Command::SignBundle(sign_key_cmd) => sign_key_cmd.execute(),
     }
 }
