@@ -245,25 +245,6 @@ impl Certificate {
         }
     }
 
-    // TODO research if it is possible to generate the public key via existing 'snow' API as we don't
-    // want to cross the API boundary that carefully hides the underalying type of the keys
-    //    /// TODO implement unit test
-    //    /// Ensures that the secret key generates the same public key as the one present in this
-    //    /// certificate
-    //    pub fn validate_secret_key(&self, secret_key: StaticSecretKey) -> Result<StaticPublicKey> {
-    //        let public_key = SecretStaticKeyFormat::new(ed25519_dalek::PublicKey::from(secret_key));
-    //
-    //        match public_key == self.pubkey {
-    //            true => Ok(public_key.into_inner()),
-    //            false => Err(ErrorKind::Noise(format!(
-    //                "Invalid certificate: public key({}) doesn't match public key({}) generated from \
-    //                 secret key",
-    //                public_key.inner, self.pubkey.inner,
-    //            ))
-    //            .into()),
-    //        }
-    //    }
-
     /// See  https://docs.rs/ed25519-dalek/1.0.1/ed25519_dalek/struct.PublicKey.html on
     /// details for the strict verification.
     /// Returns expiration timestamp stated in certificate represented as SystemTime
@@ -334,6 +315,10 @@ impl ServerSecurityBundle {
         Ok(bundle)
     }
 
+    // FIXME: This breaks layers of abstraction. We are using external library to validate
+    // keys for noise protocol internal structures. Unfortunately snow is unlikely to implement
+    // mechanisms for secret key validation.
+    // TODO: Consider moving it onto Certificate structure
     fn validate_secret_key(&self) -> Result<()> {
         let mut raw_secret_key = [0_u8; 32];
         raw_secret_key.copy_from_slice(&self.secret_key.inner.inner);
