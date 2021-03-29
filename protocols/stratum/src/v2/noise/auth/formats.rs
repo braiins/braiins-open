@@ -356,7 +356,7 @@ impl ServerSecurityBundle {
     /// ```
     /// use std::time::{Duration, UNIX_EPOCH};
     /// use ii_stratum::v2::noise::auth::ServerSecurityBundle;
-    /// let ctx = ServerSecurityBundle::read_from_string(r#"{
+    /// let ctx = ServerSecurityBundle::read_from_string(concat!(r#"{
     ///   "certificate": {
     ///     "signed_part_header": {
     ///       "version": 0,
@@ -370,13 +370,14 @@ impl ServerSecurityBundle {
     ///       "ed25519_public_key": "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx"
     ///     },
     ///     "signature": {
-    ///       "ed25519_signature": "ZAefGhUNHn6u26Vob5T4UM32mH9Wujx7oDR1bmf4ei6cVNvrFtbaNkSvdRyJz13KdU92tK3DrdcG4AwfSAuj7MXRFdKLE"
+    ///       "ed25519_signature": "ZAefGhUNHn6u26Vob5T4UM32mH9Wujx7oDR1bmf4ei6cVNvrFtbaNkSvdRyJ"#,
+    ///       r#"z13KdU92tK3DrdcG4AwfSAuj7MXRFdKLE"
     ///     }
     ///   },
     ///   "secret_key": {
     ///     "noise_secret_key": "2owBcKCGg7k46rTUYEwNEKJsnT2TqYDtFsMAuicrsLXhi3VwK4"
     ///   }
-    /// }"#).expect("BUG: Failed to parse certificate");
+    /// }"#)).expect("BUG: Failed to parse certificate");
     ///
     /// let time_before_expiration = || UNIX_EPOCH + Duration::from_secs(1612954826);
     /// let time_after_expiration = || UNIX_EPOCH + Duration::from_secs(1612954828);
@@ -390,7 +391,6 @@ impl ServerSecurityBundle {
     ///     "BUG: Certificate shouldn't be valid"
     /// );
     /// ```
-
     pub fn validate_by_time<FN>(&self, get_current_time: FN) -> Result<SystemTime>
     where
         FN: FnOnce() -> SystemTime,
@@ -468,7 +468,7 @@ impl ServerSecurityBundle {
 /// Show certificate authority public key and expiry timestamp
 /// ```
 /// use ii_stratum::v2::noise::auth::ServerSecurityBundle;
-/// let ctx = ServerSecurityBundle::read_from_string(r#"{
+/// let ctx = ServerSecurityBundle::read_from_string(concat!(r#"{
 ///   "certificate": {
 ///     "signed_part_header": {
 ///       "version": 0,
@@ -482,16 +482,18 @@ impl ServerSecurityBundle {
 ///       "ed25519_public_key": "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx"
 ///     },
 ///     "signature": {
-///       "ed25519_signature": "AdrgZxKNM3wCQmv5q3aTn8T96DV6egAYYFQRgcxuQjfiKvraR2xp3pNLRuDTvwQApYZc6YXnwbxXzUdHbGxaxSMq4g67c"
+///       "ed25519_signature": "AdrgZxKNM3wCQmv5q3aTn8T96DV6egAYYFQRgcxuQjfiKvraR2xp3pNLRuDTvwQA"#,
+///        r#"pYZc6YXnwbxXzUdHbGxaxSMq4g67c"
 ///     }
 ///   },
 ///   "secret_key": {
 ///     "noise_secret_key": "2owBcKCGg7k46rTUYEwNEKJsnT2TqYDtFsMAuicrsLXhi3VwK4"
 ///   }
-/// }"#).expect("BUG: Failed to parse certificate");
+/// }"#)).expect("BUG: Failed to parse certificate");
 /// assert_eq!(
 ///     format!("{:?}", ctx),
-///     String::from( r#"ServerSecurityBundle { certificate_authority: "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx", certificate_expiry: "2477145976" }"#)
+///     String::from(concat!(r#"ServerSecurityBundle { certificate_authority: "2eMjqMKXXFjhY1eAd"#,
+///     r#"vnmhk3xuWYdPpawYSWXXabPxVmCdeuWx", certificate_expiry: "2477145976" }"#))
 /// );
 ///
 /// ```
