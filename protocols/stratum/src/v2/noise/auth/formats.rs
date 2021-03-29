@@ -320,7 +320,6 @@ impl TryFrom<Certificate> for String {
 /// into log messages
 #[derive(Serialize, Deserialize, PartialEq, Clone)]
 pub struct ServerSecurityBundle {
-    #[serde(flatten)]
     pub certificate: Certificate,
     secret_key: StaticSecretKeyFormat,
 }
@@ -373,19 +372,21 @@ impl ServerSecurityBundle {
     /// use std::time::{Duration, UNIX_EPOCH};
     /// use ii_stratum::v2::noise::auth::ServerSecurityBundle;
     /// let ctx = ServerSecurityBundle::read_from_string(r#"{
-    ///   "signed_part_header": {
-    ///     "version": 0,
-    ///     "valid_from": 1612897727,
-    ///     "not_valid_after": 1612954827
-    ///   },
-    ///   "public_key": {
-    ///     "noise_public_key": "2Nki8zRNjrYLdcGbRLFrTbwLsDfKSiDMsiK3UWGTJNJpaPjAZW"
-    ///   },
-    ///   "authority_public_key": {
-    ///     "ed25519_public_key": "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx"
-    ///   },
-    ///   "signature": {
-    ///     "ed25519_signature": "ZAefGhUNHn6u26Vob5T4UM32mH9Wujx7oDR1bmf4ei6cVNvrFtbaNkSvdRyJz13KdU92tK3DrdcG4AwfSAuj7MXRFdKLE"
+    ///   "certificate": {
+    ///     "signed_part_header": {
+    ///       "version": 0,
+    ///       "valid_from": 1612897727,
+    ///       "not_valid_after": 1612954827
+    ///     },
+    ///     "public_key": {
+    ///       "noise_public_key": "2Nki8zRNjrYLdcGbRLFrTbwLsDfKSiDMsiK3UWGTJNJpaPjAZW"
+    ///     },
+    ///     "authority_public_key": {
+    ///       "ed25519_public_key": "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx"
+    ///     },
+    ///     "signature": {
+    ///       "ed25519_signature": "ZAefGhUNHn6u26Vob5T4UM32mH9Wujx7oDR1bmf4ei6cVNvrFtbaNkSvdRyJz13KdU92tK3DrdcG4AwfSAuj7MXRFdKLE"
+    ///     }
     ///   },
     ///   "secret_key": {
     ///     "noise_secret_key": "2owBcKCGg7k46rTUYEwNEKJsnT2TqYDtFsMAuicrsLXhi3VwK4"
@@ -404,6 +405,7 @@ impl ServerSecurityBundle {
     ///     "BUG: Certificate shouldn't be valid"
     /// );
     /// ```
+
     pub fn validate_by_time<FN>(&self, get_current_time: FN) -> Result<SystemTime>
     where
         FN: FnOnce() -> SystemTime,
@@ -482,19 +484,21 @@ impl ServerSecurityBundle {
 /// ```
 /// use ii_stratum::v2::noise::auth::ServerSecurityBundle;
 /// let ctx = ServerSecurityBundle::read_from_string(r#"{
-///   "signed_part_header": {
-///     "version": 0,
-///     "valid_from": 1613145976,
-///     "not_valid_after": 2477145976
-///   },
-///   "public_key": {
-///     "noise_public_key": "2Nki8zRNjrYLdcGbRLFrTbwLsDfKSiDMsiK3UWGTJNJpaPjAZW"
-///   },
-///   "authority_public_key": {
-///     "ed25519_public_key": "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx"
-///   },
-///   "signature": {
-///     "ed25519_signature": "AdrgZxKNM3wCQmv5q3aTn8T96DV6egAYYFQRgcxuQjfiKvraR2xp3pNLRuDTvwQApYZc6YXnwbxXzUdHbGxaxSMq4g67c"
+///   "certificate": {
+///     "signed_part_header": {
+///       "version": 0,
+///       "valid_from": 1613145976,
+///       "not_valid_after": 2477145976
+///     },
+///     "public_key": {
+///       "noise_public_key": "2Nki8zRNjrYLdcGbRLFrTbwLsDfKSiDMsiK3UWGTJNJpaPjAZW"
+///     },
+///     "authority_public_key": {
+///       "ed25519_public_key": "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx"
+///     },
+///     "signature": {
+///       "ed25519_signature": "AdrgZxKNM3wCQmv5q3aTn8T96DV6egAYYFQRgcxuQjfiKvraR2xp3pNLRuDTvwQApYZc6YXnwbxXzUdHbGxaxSMq4g67c"
+///     }
 ///   },
 ///   "secret_key": {
 ///     "noise_secret_key": "2owBcKCGg7k46rTUYEwNEKJsnT2TqYDtFsMAuicrsLXhi3VwK4"
@@ -502,8 +506,7 @@ impl ServerSecurityBundle {
 /// }"#).expect("BUG: Failed to parse certificate");
 /// assert_eq!(
 ///     format!("{:?}", ctx),
-///     String::from(
-///r#"ServerSecurityBundle { certificate_authority: "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx", certificate_expiry: "2477145976" }"#)
+///     String::from( r#"ServerSecurityBundle { certificate_authority: "2eMjqMKXXFjhY1eAdvnmhk3xuWYdPpawYSWXXabPxVmCdeuWx", certificate_expiry: "2477145976" }"#)
 /// );
 ///
 /// ```
