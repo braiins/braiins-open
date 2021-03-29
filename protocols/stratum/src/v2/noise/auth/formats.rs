@@ -29,10 +29,14 @@ use std::fmt;
 use std::time::SystemTime;
 
 use ed25519_dalek::ed25519::signature::Signature;
+use tokio::net::TcpStream;
+use tokio_util::codec::{Decoder, Encoder, Framed};
 
 use super::{SignatureNoiseMessage, SignedPart, SignedPartHeader};
 use crate::error::{Error, Result};
-use crate::v2::noise::{StaticPublicKey, StaticSecretKey};
+use crate::v2::noise::{
+    self, negotiation::EncryptionAlgorithm::*, StaticPublicKey, StaticSecretKey,
+};
 
 /// Generates implementation for the encoded type, Display trait and the file format and
 macro_rules! impl_basic_type {
@@ -407,6 +411,71 @@ impl ServerSecurityBundle {
         self.certificate
             .validate(get_current_time)
             .map_err(|_| Error::Noise("Time validation failed".into()))
+    }
+
+    pub async fn build_framed_tcp<C, F>(
+        &self,
+        tcp_stream: TcpStream,
+    ) -> Result<Framed<TcpStream, noise::CompoundCodec<C>>>
+    where
+        C: Default + Decoder + Encoder<F>,
+        <C as Encoder<F>>::Error: Into<Error>,
+    {
+        // TODO: consolidate the two functions build_framed_tcp and build_framed_tcp_from_parts
+        // Note that Responder construction cannot be moved to a separate function because
+        // it contains reference to a static_key_pair
+        let signature_noise_message = self
+            .certificate
+            .build_noise_message()
+            .serialize_to_bytes_mut()?
+            .freeze();
+        let static_key_pair = snow::Keypair {
+            private: self.secret_key.clone().into_inner(),
+            public: self.certificate.public_key.clone().into_inner(),
+        };
+        let responder = noise::Responder::new(
+            &static_key_pair,
+            signature_noise_message,
+            vec![AESGCM, ChaChaPoly],
+        );
+        responder
+            .accept_with_codec(tcp_stream, |noise_codec| {
+                noise::CompoundCodec::<C>::new(Some(noise_codec))
+            })
+            .await
+    }
+
+    pub async fn build_framed_tcp_from_parts<C, F, P>(
+        &self,
+        parts: P,
+    ) -> Result<Framed<TcpStream, noise::CompoundCodec<C>>>
+    where
+        C: Default + Decoder + Encoder<F>,
+        <C as Encoder<F>>::Error: Into<Error>,
+        P: Into<tokio_util::codec::FramedParts<TcpStream, noise::Codec>>,
+    {
+        let signature_noise_message = self
+            .certificate
+            .build_noise_message()
+            .serialize_to_bytes_mut()?
+            .freeze();
+        let static_key_pair = noise::StaticKeypair {
+            private: self.secret_key.clone().into_inner(),
+            public: self.certificate.public_key.clone().into_inner(),
+        };
+        let responder = noise::Responder::new(
+            &static_key_pair,
+            signature_noise_message,
+            vec![AESGCM, ChaChaPoly],
+        );
+        responder
+            // TODO this needs refactoring there is no point of passing the codec
+            // type, we should be able to run noise just with anything that
+            // implements AsyncRead/AsyncWrite
+            .accept_parts_with_codec(parts, |noise_codec| {
+                noise::CompoundCodec::<C>::new(Some(noise_codec))
+            })
+            .await
     }
 }
 /// Show certificate authority public key and expiry timestamp
