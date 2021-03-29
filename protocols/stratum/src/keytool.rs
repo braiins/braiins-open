@@ -141,6 +141,7 @@ impl GenNoiseKeyCommand {
     }
 }
 
+// TODO: This was cloned and derived from SignKeyCommand. Remove duplicate code.
 /// Command that creates a bundle of signed certificate and server static secret key from a
 /// specified `secret_key_to_sign`, signing the certificate with `signing_key`.
 #[derive(Debug, StructOpt)]
@@ -198,6 +199,8 @@ impl SignBundleCommand {
             "static secret key to sign",
         )?;
 
+        // FIXME: this breaks layers of abstraction of noise protocol. Certificate should be generated
+        // from existing public key.
         let mut raw_secret_key = [0_u8; 32];
         raw_secret_key.copy_from_slice(&secret_key.clone().into_inner());
         let inner_public_key =
@@ -385,6 +388,6 @@ fn main() -> Result<()> {
         Command::GenCAKey(gen_key_cmd) => gen_key_cmd.execute(),
         Command::GenNoiseKey(gen_key_cmd) => gen_key_cmd.execute(),
         Command::SignKey(sign_key_cmd) => sign_key_cmd.execute(),
-        Command::SignBundle(sign_key_cmd) => sign_key_cmd.execute(),
+        Command::SignBundle(sign_bundle_cmd) => sign_bundle_cmd.execute(),
     }
 }
